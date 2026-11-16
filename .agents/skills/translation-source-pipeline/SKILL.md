@@ -11,6 +11,10 @@ description: Design, change, test or review Spoken Ukrainian's configurable orde
 2. Inspect `adapters/translation_sources.py`, `adapters/spoken/text_index.py`, `tools/stage4_coverage.py`, `tests/test_translation_sources.py`, `tests/test_stage4_coverage.py`, `docs/STAGE_4A_INVENTORY_COVERAGE.md` and the canonical ID inventory interface (`docs/STAGE_3_IMPLEMENTATION.md`). Stage 4A now reads the real pinned public Spoken IDs and verified originals for Quests/Gossip/Readables, but remains offline and is **not** a completed ClassicUA join/pack pipeline; it is not wired into `tools/stage3_report.py` or the future pack builder.
 3. Treat Stage 3's **0 reviewed real joins** as the baseline; target inventory size is not approved translation coverage. Stage 4B now makes a metadata-only Quest review queue but does **not** bind Ukrainian text into Stage 4A; see `docs/STAGE_4B_REVIEW_WORKBENCH.md`.
 
+## Stage 4C restricted bridge
+
+- `adapters/reviewed_bridge.py` is an offline, synthetic-tested Quest-only bridge: Stage 3 approval and current audited source/target/field SHA are prerequisites; it only produces `candidate_pending_review` assignments under the configured source priority. Do not call it a completed Stage 4A real-pipeline integration or infer actual reviewed mappings from matching IDs.
+
 ## Ordered matching behavior
 
 - Config is an **ordered allow-list**, not merely a preference hint: arbitrary permutations/subsets, including English first or omitted, must be honored exactly. Reject duplicates, unknown providers, malformed/unknown-schema JSON, missing/blank files.

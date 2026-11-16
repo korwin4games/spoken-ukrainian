@@ -33,6 +33,11 @@ description: Work on Stage 3 source-to-canonical-Spoken ID crosswalks, independe
 - When **effective translated text** changes but identity context stays valid, preserve mapping ID, reset dependent content/grammar review, and flag affected recordings for re-review. **Source-file-only drift** or line movement with unchanged effective content does not invalidate a mapping. Speaker/voice/owner/page chain/target identity changes require identity review.
 - After translation removal or conflict, report unresolved eligibility/fallback honestly; no dummy English/translated content, no fake audio, no automatic publication or update.
 
+## Stage 4C handoff
+
+- Review Stage 3 proofs and real source/target metadata before passing any records to `adapters/reviewed_bridge.py`. It is an offline, synthetic-tested Quest-only foundation, not a production pack builder.
+- Preserve source field text SHA and origin file/layer/revision provenance and reject stale identity decisions. Never infer a source ID from a target number. A Ukrainian candidate is never proof that text/grammar/rights/audio were independently approved.
+
 ## Test and report
 
 1. Add small **synthetic** fixtures for positive and negative provenance, cross-family/variant ambiguity, rejected joins, update diff stability, and saved-review corruption.
