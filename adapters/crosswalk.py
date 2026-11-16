@@ -125,12 +125,39 @@ class VerifiedTarget:
 
 
 @dataclass(frozen=True)
+class VerifiedJoin:
+    """Reviewer-supplied evidence that *this* source unit matches *this* target.
+
+    Verified source and target identities separately do not prove a join.
+    The reference must point to independently inspected public identity evidence.
+    """
+    source_id: str
+    target_id: str
+    source_evidence_sha256: str
+    target_evidence_sha256: str
+    join_evidence_ref: str
+    join_evidence_sha256: str
+
+    def __post_init__(self):
+        if not self.source_id or not self.target_id or not self.join_evidence_ref:
+            raise ValueError("Explicit source-target join reference required")
+        for sha in (self.source_evidence_sha256, self.target_evidence_sha256, self.join_evidence_sha256):
+            if not FULL_SHA.fullmatch(sha):
+                raise ValueError("Invalid reviewed join digest")
+
+
+@dataclass(frozen=True)
 class MappingDecision:
     source_id: str
     target_id: str
     source_evidence_sha256: str
     target_evidence_sha256: str
+    join_evidence_sha256: str
     text_sha256: str
+    source_revision: str
+    source_file_sha256: str
+    target_revision: str
+    join_evidence_ref: str
     review_by: str
     mapping_status: str = "approved"
     content_status: str = "pending"
@@ -138,9 +165,12 @@ class MappingDecision:
     ai_status: str = "pending"
 
     def __post_init__(self):
-        for code in (self.source_evidence_sha256, self.target_evidence_sha256, self.text_sha256):
+        for code in (self.source_evidence_sha256, self.target_evidence_sha256,
+                     self.join_evidence_sha256, self.text_sha256, self.source_file_sha256):
             if not FULL_SHA.fullmatch(code):
                 raise ValueError("Invalid SHA-256 mapping review input")
+        if not self.source_revision or not self.target_revision or not self.join_evidence_ref:
+            raise ValueError("Pinned provenance and join evidence reference required")
         if not self.review_by or self.mapping_status != "approved":
             raise ValueError("Mapping requires an explicit review attestation")
         for value in (self.content_status, self.grammar_status, self.ai_status):
@@ -148,12 +178,12 @@ class MappingDecision:
                 raise ValueError("Review states must be independent and explicit")
 
 
-def approve_mapping(unit, target_id, verified_targets, reviewer):
-    """Approve a hand-evidenced crosswalk; never guess or mint a Spoken ID.
+def approve_mapping(unit, target_id, verified_targets, verified_joins, reviewer):
+    """Approve only a reviewer-evidenced join to a pinned canonical inventory.
 
-    verified_targets must be an independently authenticated canonical inventory
-    from the pinned *public* Spoken source. This function cannot prove the
-    inventory was collected correctly; that is a separate evidence review gate.
+    Neither a source key, a canonical target's existence nor a similar title is
+    sufficient. The independently inspected join reference is a human review
+    gate: this function validates provenance consistency, not external truth.
     """
     target = verified_targets.get(target_id)
     if target is None or not isinstance(target, VerifiedTarget):
@@ -162,11 +192,24 @@ def approve_mapping(unit, target_id, verified_targets, reviewer):
         raise ValueError("Cross-family mapping forbidden")
     if unit.identity_evidence_sha256 is None:
         raise ValueError("Source identity evidence absent: cannot approve mapping")
+    if unit.family == "quest":
+        parts = unit.source_id.split(":")
+        if len(parts) != 4 or parts[1] not in ("alliance", "horde") or target_id != f"q:{parts[2]}:{parts[3]}":
+            raise ValueError("Quest ID/event must match canonical target")
+    join = verified_joins.get((unit.source_id, target_id))
+    if not isinstance(join, VerifiedJoin):
+        raise ValueError("Verified source-target join evidence required")
+    if ((join.source_id, join.target_id) != (unit.source_id, target_id)
+            or join.source_evidence_sha256 != unit.identity_evidence_sha256
+            or join.target_evidence_sha256 != target.evidence_sha256):
+        raise ValueError("Stale or inconsistent source-target join evidence")
     if not reviewer or not reviewer.strip():
         raise ValueError("Reviewer is required")
     return MappingDecision(unit.source_id, target.canonical_id,
                            unit.identity_evidence_sha256, target.evidence_sha256,
-                           unit.effective_sha256, reviewer.strip())
+                           join.join_evidence_sha256, unit.effective_sha256,
+                           unit.source_revision, unit.source_file_sha256,
+                           target.spoken_revision, join.join_evidence_ref, reviewer.strip())
 
 
 def compare_effective(old_units, new_units):
