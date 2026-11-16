@@ -9,6 +9,7 @@ or GitHub Release has been published.
 
 ### Added
 
+- Add Stage 4A offline pinned public Spoken English-original index and configurable source-coverage CLI: sequential source passes over verified canonical original texts, full-inventory metadata accounting, and strict zero-unreviewed-join behavior; synthetic regression tests and honest coverage docs. No real mapped translation or live fallback is implemented.
 - Record approved four-module policy and configurable ordered translation sources. Add an offline, sequential Spoken-inventory candidate resolver, provider/remaining/total metadata coverage reports, synthetic tests, and editable draw.io/SVG architecture diagrams. `another` remains stub-only; `own_translator` is a non-publishable mock; `[]` / `{}` selects the real client locale. No real identity joins or translated packs are approved.
 - Add Stage 3 pinned public canonical inventories, independently reviewed join-proof validation, persistent metadata review schema, offline two-revision effective comparison, coverage/impact CLI, and 23 additional tests. Real mapping acceptance remains pending: zero independently approved real joins; runtime display gates remain unchanged.
 - Add Stage 2B pinned Lua runtime characterization, per-surface compatibility evidence, manual Forever checks and minimal upstream text/audio API proposals.

@@ -90,7 +90,8 @@ Spoken Ukrainian готує український контент **офлайн
 | Stage 2A — обмежений парсер Lua, перевизначення ClassicUA та аудит метаданих | Реалізовано |
 | Stage 2B — сумісність модулів із незалежним українським текстом | Офлайн-перевірки реалізовано; [результати](docs/STAGE_2B_COMPATIBILITY.md), [перевірка у Forever очікує виконання](docs/STAGE_2B_TESTING.md) |
 | Stage 3 — зіставлення ClassicUA з ID Spoken та модель майбутніх оновлень | Локальний індекс, схема перевірки та порівняння реалізовані; **0 схвалених реальних відповідностей, незалежна перевірка очікується** ([покриття](docs/STAGE_3_IMPLEMENTATION.md)) |
-| Налаштовувані джерела та послідовна звітність (PR #8) | Офлайн-прототип із синтетичними тестами; **реальні переклади не схвалені** |
+| Налаштовувані джерела та послідовна звітність (PR #8) | Офлайн-прототип пошуку, конфігурація й звіт; **реальні переклади не схвалені** |
+| Stage 4A — реальний індекс Spoken → звіт за джерелами | Реалізовано читання перевірених англійських текстів із закріплених джерел і офлайн-CLI; **0 схвалених зіставлень, немає українських пакетів** ([деталі](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Українські текстові й аудіопакети, оновлювач і публічні релізи | Ще не випущено |
 
 ## Збирання та тестування
@@ -115,6 +116,14 @@ python3 tools/stage3_report.py --classicua /absolute/path/to/clean-pinned-Classi
 
 Детермінований звіт із метаданими записується до ігнорованого `build/stage3-report.json`. Опції `--reviews` та `--candidate` з `--candidate-manifest` перевіряють збережені рішення й окрему локальну ревізію без зміни закріпленого джерела. Це ще **не запуск pipeline джерел перекладу**. Див. [документацію Stage 3](docs/STAGE_3_IMPLEMENTATION.md).
 
+### Офлайн-покриття реальних ID Spoken (Stage 4A)
+
+```sh
+python3 tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-wow
+```
+
+Інструмент читає **справжній закріплений індекс canonical ID Spoken**, перевіряє оригінальні тексти Quests/Gossip/Readables без їхнього експорту й записує звіт про джерела, записи без підтвердженого оригіналу та загальну кількість до `build/stage4-source-coverage.json` (ігнорується Git). Прив’язка до ClassicUA **навмисно вимкнена**, доки немає незалежно схвалених Stage 3 зіставлень. `another` — заглушка, `own_translator` — mock. Для порожньої конфігурації клієнтську локаль необхідно передати через `--client-locale`. Див. [межі Stage 4A](docs/STAGE_4A_INVENTORY_COVERAGE.md).
+
 ### Аудит закріпленої ревізії ClassicUA (Stage 2A)
 
 ```sh
@@ -131,7 +140,7 @@ python3 tools/classicua_audit.py --source /absolute/path/to/clean-pinned-Classic
 
 - [План реалізації](docs/IMPLEMENTATION_PLAN.md) · [Інтеграція джерел](docs/SOURCE_INTEGRATION.md) · [Матриця сумісності](docs/COMPATIBILITY_MATRIX.md)
 - [Специфікація Stage 3](docs/STAGE_3_SPECIFICATION.md) · [Дозвіл ClassicUA](docs/CLASSICUA_PERMISSION.md) · [Авторство й сторонні матеріали](THIRD_PARTY.md)
-- [Джерела перекладу та звітність](docs/TRANSLATION_SOURCE_CHAIN.md) · [Редагована схема](docs/diagrams/translation-pipeline.drawio) · [Чотири модулі](docs/APPROVED_MODULES_AND_FALLBACK.md)
+- [Stage 4A: офлайн-покриття](docs/STAGE_4A_INVENTORY_COVERAGE.md) · [Джерела перекладу та звітність](docs/TRANSLATION_SOURCE_CHAIN.md) · [Редагована схема](docs/diagrams/translation-pipeline.drawio) · [Чотири модулі](docs/APPROVED_MODULES_AND_FALLBACK.md)
 - [Посібник зі створення Spoken Community Packs](https://github.com/rusty-key/spoken-wow/blob/master/community/README.md)
 
 Документи Stage 0 зберігають **історичний стан на момент їх створення**, зокрема попередню згадку про відсутність дозволу. Отримане згодом погодження зафіксоване окремо, щоб не змінювати історичні документи та їхні контрольні суми.
