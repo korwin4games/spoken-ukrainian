@@ -10,9 +10,15 @@ import re
 
 QUEST_EVENTS = {2: "accept", 4: "progress", 5: "complete"}
 TARGET_PATTERNS = {
-    "quest": re.compile(r"q:[1-9][0-9]*:(?:accept|progress|complete)\Z"),
-    "gossip": re.compile(r"g:[^\s]+\Z"),
-    "readable": re.compile(r"b:[1-9][0-9]*\Z"),
+    "quest": re.compile(r"q:[1-9][0-9]*:(?:accept|progress|complete)(?::w[1-9][0-9]*)?(?::[mf])?(?:~[a-z0-9-]+)?\Z"),
+    "gossip": re.compile(r"g:(?:[a-f0-9]{32}|b[1-9][0-9]*-[a-z0-9-]+|[a-z]{2}[A-Z]{2}-[a-f0-9]{32})(?::[mf])?(?:~[a-z0-9-]+)?\Z"),
+    "places": re.compile(r"(?:z:[1-9][0-9]*|s:[1-9][0-9]*:[^\r\n:]+)\Z"),
+    "bosses": re.compile(r"boss:[1-9][0-9]*:[^\r\n:]+\Z"),
+    "readable": re.compile(r"b:(?:[1-9][0-9]*|n[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\Z"),
+}
+SOURCE_PATTERNS = {
+    "quest": re.compile(r"quest:(?:alliance|horde):[1-9][0-9]*:(?:accept|progress|complete)\Z"),
+    **{family: re.compile(family + r":[a-f0-9]{64}\Z") for family in ("gossip", "readable")},
 }
 FULL_SHA = re.compile(r"[a-f0-9]{64}\Z")
 
@@ -39,27 +45,35 @@ class EffectiveUnit:
     origin_file: str
     origin_layer: str
     identity_evidence_sha256: str | None = None
+    context_sha256: str | None = None
+    source_category: str = ""
+    predecessors: tuple = ()
 
     def __post_init__(self):
-        if self.family not in TARGET_PATTERNS:
-            raise ValueError("Unsupported mapping family")
+        if self.family not in SOURCE_PATTERNS or not SOURCE_PATTERNS[self.family].fullmatch(self.source_id):
+            raise ValueError("Invalid source mapping identity")
         for value in (self.effective_sha256, self.grammar_sha256, self.source_file_sha256):
             if not FULL_SHA.fullmatch(value):
                 raise ValueError("Invalid SHA-256 evidence")
+        if self.context_sha256 is not None and not FULL_SHA.fullmatch(self.context_sha256):
+            raise ValueError("Invalid source context digest")
         if self.identity_evidence_sha256 is not None and not FULL_SHA.fullmatch(self.identity_evidence_sha256):
             raise ValueError("Invalid identity-evidence SHA-256")
 
 
-def _make_unit(source_id, family, leaf, ai, evidence):
+def _make_unit(source_id, family, leaf, ai, evidence, record, context):
     # A stable identity must not depend on translation wording, origin line, or source revision.
     return EffectiveUnit(source_id, family,
                          hashlib.sha256(leaf.node.value.encode("utf-8")).hexdigest(),
                          digest([(x.category, x.status, x.detail, digest(x.syntax)) for x in leaf.grammar]),
                          bool(ai), leaf.origin.revision, leaf.origin.sha256,
-                         leaf.origin.file, leaf.origin.layer, evidence.get(source_id))
+                         leaf.origin.file, leaf.origin.layer, evidence.get(source_id),
+                         digest(context), record.category,
+                         tuple(sorted({(o.revision, o.file, o.layer, o.sha256)
+                                       for o in leaf.predecessors + record.predecessors})))
 
 
-def effective_units(dataset, identity_evidence=None):
+def effective_units(dataset, identity_evidence=None, include_ai=True):
     """Summarize already resolved Stage 2A records without serializing their text.
 
     Quest identity uses faction + ID + event (shared fallback is resolved by Dataset).
@@ -71,12 +85,12 @@ def effective_units(dataset, identity_evidence=None):
     evidence = identity_evidence or {}
     result = {}
 
-    def insert(source_id, family, leaf, ai):
+    def insert(source_id, family, leaf, record, context):
         if source_id in result:
             raise ValueError("Duplicate effective source identity: " + source_id)
-        result[source_id] = _make_unit(source_id, family, leaf, ai, evidence)
+        result[source_id] = _make_unit(source_id, family, leaf, record.ai, evidence, record, context)
 
-    views, _ = dataset.faction_views(include_ai=True)
+    views, _ = dataset.faction_views(include_ai=include_ai)
     for faction, rows in sorted(views.items()):
         for key, record in sorted(rows.items()):
             if type(key) is not int or key <= 0:
@@ -84,7 +98,8 @@ def effective_units(dataset, identity_evidence=None):
             for position, event in QUEST_EVENTS.items():
                 leaf = record.fields.get((position,))
                 if leaf and _nonempty_text(leaf):
-                    insert(f"quest:{faction}:{key}:{event}", "quest", leaf, record.ai)
+                    insert(f"quest:{faction}:{key}:{event}", "quest", leaf, record, [record.category, key, event, faction,
+                           digest(record.fields[("en",)].node.value) if ("en",) in record.fields else None])
 
     for category, family in (("gossip", "gossip"),
                              ("item_text", "readable"),
@@ -97,14 +112,20 @@ def effective_units(dataset, identity_evidence=None):
                 if not _nonempty_text(leaf):
                     continue
                 # Exclude !code metadata and non-page/nonnarratable shape fields.
-                if category == "gossip" and (not path or type(path[0]) is not int):
+                if category == "gossip" and (len(path) != 1 or type(path[0]) is not int):
                     continue
-                if category == "item_text" and (not path or type(path[-1]) is not int):
+                if category == "item_text" and (len(path) != 1 or type(path[0]) is not int or path[0] <= 0):
                     continue
-                if category == "object_text" and (not path or type(path[-1]) is not int):
+                if category == "object_text" and (len(path) not in (1, 2) or any(type(k) is not int or k <= 0 for k in path)):
                     continue
                 source_id = family + ":" + digest([category, record.key, path])
-                insert(source_id, family, leaf, record.ai)
+                # Page positions and namesake h1 are identity context, never page IDs.
+                chain = sorted([list(p) for p, f in record.fields.items()
+                                if p and all(type(k) is int for k in p) and _nonempty_text(f)])
+                h1 = sorted((digest(list(p)), digest(f.node.value)) for p, f in record.fields.items()
+                            if p and p[-1] == "h1")
+                insert(source_id, family, leaf, record,
+                       [category, digest(record.key), list(path), chain if family == "readable" else [], h1])
     return dict(sorted(result.items()))
 
 
@@ -194,7 +215,7 @@ def approve_mapping(unit, target_id, verified_targets, verified_joins, reviewer)
         raise ValueError("Source identity evidence absent: cannot approve mapping")
     if unit.family == "quest":
         parts = unit.source_id.split(":")
-        if len(parts) != 4 or parts[1] not in ("alliance", "horde") or target_id != f"q:{parts[2]}:{parts[3]}":
+        if len(parts) != 4 or parts[1] not in ("alliance", "horde") or target_id.split("~")[0].split(":")[:3] != ["q", parts[2], parts[3]]:
             raise ValueError("Quest ID/event must match canonical target")
     join = verified_joins.get((unit.source_id, target_id))
     if not isinstance(join, VerifiedJoin):
@@ -238,13 +259,15 @@ def compare_effective(old_units, new_units):
             reasons.append("ai_status_changed")
         if old.identity_evidence_sha256 != new.identity_evidence_sha256:
             reasons.append("identity_evidence_changed")
-        identity = "identity_evidence_changed" in reasons
+        if old.context_sha256 != new.context_sha256:
+            reasons.append("source_context_changed")
+        identity = any(x in reasons for x in ("identity_evidence_changed", "source_context_changed"))
         content = any(x in reasons for x in ("text_changed", "grammar_changed", "origin_changed"))
         result.append({"source_id": key, "change": "modified" if reasons else "unchanged",
                        "reasons": reasons, "mapping": "revalidate" if identity else "retain_if_approved",
                        "content_review": "required" if content else "retain_if_approved",
                        "ai_review": "required" if "ai_status_changed" in reasons else "retain_if_approved",
-                       "audio": "stale_if_present" if content else "unchanged"})
+                       "audio": "stale_if_present" if content or identity else "unchanged"})
     return result
 
 

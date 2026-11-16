@@ -1,6 +1,8 @@
 # Stage 3 foundation — effective units, reviewed join contracts and semantic diffs
 
-**Status: implemented foundation, NOT complete Stage 3.** Branch: `feat/stage3-canonical-mapping`. This document records what is implemented and validated, and what is expressly not. Follow [full Stage 3 task](STAGE_3_TASK.md), [Stage 3 specification](STAGE_3_SPECIFICATION.md), [architecture decision](ARCHITECTURE_UNMODIFIED_SPOKEN.md) and [Stage 2B limitations](STAGE_2B_COMPATIBILITY.md).
+**Historical foundation record.** Current offline tooling, coverage and remaining independent-review gates are documented in [Stage 3 implementation](STAGE_3_IMPLEMENTATION.md). The limitations and results below describe the foundation commit, not the later implementation.
+
+**Status at foundation commit: implemented foundation, NOT complete Stage 3.** Branch: `feat/stage3-canonical-mapping`. This document records what is implemented and validated, and what is expressly not. Follow [full Stage 3 task](STAGE_3_TASK.md), [Stage 3 specification](STAGE_3_SPECIFICATION.md), [architecture decision](ARCHITECTURE_UNMODIFIED_SPOKEN.md) and [Stage 2B limitations](STAGE_2B_COMPATIBILITY.md).
 
 ## Implemented
 

@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import posixpath
+import re
 import subprocess
 from xml.parsers import expat
 
@@ -19,11 +20,15 @@ SCHEMA = ROW_FIELDS
 
 
 class GitSource:
-    def __init__(self, path):
+    def __init__(self, path, revision=None):
+        revision = PINNED_REVISION if revision is None else revision
+        if not re.fullmatch(r"[a-f0-9]{40}", revision):
+            raise SourceError("<checkout>", 1, "Explicit full source revision required")
+        self.revision = revision
         self.path = Path(path).resolve()
         self.hashes = {}
         revision = self.git("rev-parse", "HEAD").decode().strip()
-        if revision != PINNED_REVISION:
+        if revision != self.revision:
             raise SourceError("<checkout>", 1, "Git HEAD does not match the pinned ClassicUA revision")
         if Path(self.git("rev-parse", "--show-toplevel").decode().strip()).resolve() != self.path:
             raise SourceError("<checkout>", 1, "--source must name the Git checkout root")
@@ -39,7 +44,7 @@ class GitSource:
 
     def read(self, path):
         path = safe_relative(path)
-        data = self.git("show", PINNED_REVISION + ":" + path)
+        data = self.git("show", self.revision + ":" + path)
         self.hashes[path] = hashlib.sha256(data).hexdigest()
         try:
             return data.decode("utf-8-sig")
@@ -279,14 +284,14 @@ def metadata_report(dataset, hashes, order, revision=PINNED_REVISION):
     }
 
 
-def audit_checkout(path, expected_hashes):
-    reader = GitSource(path)
-    dataset, order = load_dataset(reader)
+def audit_checkout(path, expected_hashes, revision=PINNED_REVISION):
+    reader = GitSource(path, revision)
+    dataset, order = load_dataset(reader, revision)
     for path in ("scripts/entries.lua", "scripts/utils.lua", "entries/class.lua", "entries/race.lua"):
         reader.read(path)
     if reader.hashes != expected_hashes:
         raise SourceError("<lock>", 1, "ClassicUA source file hashes or manifest set differ from sources.lock.json")
-    report = metadata_report(dataset, reader.hashes, order)
+    report = metadata_report(dataset, reader.hashes, order, revision)
     return dataset, report
 
 

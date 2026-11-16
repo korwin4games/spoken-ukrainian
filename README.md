@@ -15,7 +15,8 @@ ClassicUA — version-pinned Ukrainian translations and terminology
 ClassicUA adapter — parse, apply classic → sod → forever overrides    [done]
     |
     v
-Canonical Spoken ID mapping + translation/grammar review              [planned]
+Canonical ID inventory + reviewed mapping tooling                    [implemented]
+Real identity joins + translation/grammar review                     [review pending]
     |
     v
 Validated Ukrainian content + optional approved AI TTS narration      [planned]
@@ -37,7 +38,7 @@ The intended player experience is to install Spoken and the corresponding Ukrain
 
 ClassicUA remains the upstream translation source rather than a one-time copy. Future updates will pin and audit a newer ClassicUA revision, compare **effective** translated records (after all overrides), reuse reviewed mappings to canonical Spoken identities, flag changed text and outdated audio for review, and rebuild only the affected packs after approval.
 
-**Stage 3 foundation** now extracts metadata-only effective translation units and tests evidence-gated review and impact diffs. **Real canonical crosswalks, two-revision source update checks, audio generation and pack release automation are not implemented.** See the [Stage 3 foundation](docs/STAGE_3_FOUNDATION.md), [full task](docs/STAGE_3_TASK.md) and [specification](docs/STAGE_3_SPECIFICATION.md). Ordinary builds never silently pull the latest ClassicUA branch.
+**Stage 3 offline tooling** now inventories pinned public Spoken identities, validates persistent independently reviewed joins, and compares two explicitly pinned local ClassicUA snapshots. **Zero real joins are approved; full mapping acceptance awaits independent identity review.** See the [implementation and exact coverage](docs/STAGE_3_IMPLEMENTATION.md) and [tests](docs/STAGE_3_TESTING.md). Audio generation, translated packs and release automation remain later work. Ordinary builds never update source pins.
 
 ## ClassicUA and attribution
 
@@ -57,7 +58,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 1 — `ukUA` registration and original text-only Places diagnostic | Implemented; manually tested in Forever |
 | Stage 2A — restricted ClassicUA Lua parser, override resolver and metadata-only audit | Implemented |
 | Stage 2B — runtime compatibility of independent Ukrainian text | Offline characterization implemented; [results](docs/STAGE_2B_COMPATIBILITY.md), [manual Forever acceptance pending](docs/STAGE_2B_TESTING.md) |
-| Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | **Foundation in progress:** unit fingerprints and review gates tested; no real verified crosswalk yet ([details](docs/STAGE_3_FOUNDATION.md)) |
+| Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | Offline inventory, review schema and local effective comparison implemented; **0 approved real joins, independent review pending** ([coverage](docs/STAGE_3_IMPLEMENTATION.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
@@ -73,6 +74,17 @@ python3 -m unittest discover -s tests -v
 Building requires Python 3. The tests additionally use Git, the system Lua 5.4 shared library and the pinned Spoken source checkout (normally in sibling `../spoken-wow`). Set `SPOKEN_SOURCE=/absolute/path/to/spoken-wow` if yours is elsewhere. These commands do not fetch source code, install packages or access production systems.
 
 The build writes `dist/SpokenCommunity_ukrainian-diagnostic.zip` plus its SHA-256 sidecar. It contains only the addon TOC and `Lore.lua`, with original language/font test text for Elwynn Forest (map 1429). **Do not install the entire repository into AddOns.** See the [Stage 1 installation and testing guide](docs/STAGE_1_TESTING.md) for manual installation.
+
+### Validate offline identities (Stage 3)
+
+```sh
+python3 tools/stage3_report.py --classicua /absolute/path/to/clean-pinned-ClassicUA --spoken /absolute/path/to/spoken-wow
+```
+
+Writes deterministic metadata only to ignored `build/stage3-report.json`. Optional
+`--reviews` validates reviewed attestations. `--candidate` with
+`--candidate-manifest` compares a separately reviewed local revision without
+changing the active lock. See the [review procedure](docs/STAGE_3_IMPLEMENTATION.md).
 
 ### Audit a pinned ClassicUA checkout (Stage 2A)
 

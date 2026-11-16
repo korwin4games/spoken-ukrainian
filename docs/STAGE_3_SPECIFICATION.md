@@ -1,6 +1,6 @@
 # Stage 3 specification — canonical mapping and update-ready ClassicUA integration
 
-**Status:** Stage 3 foundation implemented; full acceptance **not yet met**. Stage 2A provides the restricted pinned-source parser, effective-record resolver and metadata-only audit; Stage 2B documents the runtime text-display requirements. The [foundation](STAGE_3_FOUNDATION.md) adds preliminary effective-unit fingerprints, evidence-gated review contracts and semantic unit diffs; it does **not** implement real verified canonical mappings, full public reference indexing or update workflows. This specification adds a long-term **translation updateability** requirement and does not authorize source import, generated packs, automatic sync or publication.
+**Status:** offline inventory/review/diff tooling implemented; full real-mapping acceptance **not yet met** (zero independently approved joins). See [implementation and coverage](STAGE_3_IMPLEMENTATION.md). The foundation description below is historical. Stage 2A provides the restricted pinned-source parser, effective-record resolver and metadata-only audit; Stage 2B documents the runtime text-display requirements. The [foundation](STAGE_3_FOUNDATION.md) adds preliminary effective-unit fingerprints, evidence-gated review contracts and semantic unit diffs; it does **not** implement real verified canonical mappings, full public reference indexing or update workflows. This specification adds a long-term **translation updateability** requirement and does not authorize source import, generated packs, automatic sync or publication.
 
 See [implementation plan](IMPLEMENTATION_PLAN.md), [source integration](SOURCE_INTEGRATION.md), [Stage 2A implementation](STAGE_2A_IMPLEMENTATION.md), [compatibility](COMPATIBILITY_MATRIX.md), [rights](LEGAL_AND_ATTRIBUTION.md) and [versioning](VERSIONING.md).
 
@@ -75,7 +75,7 @@ Use stable deterministic ordering and report all reasons for invalidation. Compa
 6. **Audio later:** invalidate or regenerate changed takes only under approved provider, processing rights and budget. Never pair newly edited captions with stale audio unnoticed.
 7. **Publish later:** release new independently versioned packs after tests, content-rights checks and an explicit publication decision. Do not equate the root project `VERSION` with every pack's `.toc` version.
 
-The suggested CLI names (`check`, `diff`, `apply`) are *design ideas only*. No updater CLI or scheduled workflow currently exists. In particular, normal `tools/build.py` and `tools/classicua_audit.py` must remain offline/read-only with no silent network fetch or lock mutation.
+The suggested CLI names (`check`, `diff`, `apply`) are *design ideas only*. An opt-in local metadata comparison CLI now exists (see implementation); no downloader, apply/update command or scheduled workflow exists. In particular, normal `tools/build.py` and `tools/classicua_audit.py` must remain offline/read-only with no silent network fetch or lock mutation.
 
 ## Stage 3 acceptance criteria
 

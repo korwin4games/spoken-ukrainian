@@ -9,7 +9,7 @@ or GitHub Release has been published.
 
 ### Added
 
-- Begin Stage 3 with metadata-only effective source-unit extraction, independently reviewed canonical join contracts, deterministic impact diffing, 16 synthetic tests, and explicit mapping gates (foundation only; no real canonical crosswalk yet).
+- Add Stage 3 pinned public canonical inventories, independently reviewed join-proof validation, persistent metadata review schema, offline two-revision effective comparison, coverage/impact CLI, and 23 additional tests. Real mapping acceptance remains pending: zero independently approved real joins; runtime display gates remain unchanged.
 - Add Stage 2B pinned Lua runtime characterization, per-surface compatibility evidence, manual Forever checks and minimal upstream text/audio API proposals.
 - Document ClassicUA's project-specific permission and required attribution; explain the planned user experience and translation update workflow in README.
 - Add a Ukrainian README (`README.uk.md`) and language links between the English and Ukrainian guides.

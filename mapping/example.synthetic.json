@@ -1,0 +1,50 @@
+{
+  "decisions": [
+    {
+      "ai": false,
+      "decision": {
+        "ai_status": "pending",
+        "content_status": "pending",
+        "grammar_status": "pending",
+        "join_evidence_ref": "invented-identity-reference",
+        "join_evidence_sha256": "cf9b9e6d06aeb134e5e51fa623578debd4f9befc5833e42f7d1159f687af8d34",
+        "mapping_status": "approved",
+        "review_by": "Invented mapping reviewer",
+        "source_evidence_sha256": "cf9b9e6d06aeb134e5e51fa623578debd4f9befc5833e42f7d1159f687af8d34",
+        "source_file_sha256": "1279d8f03468c0254d81048a4a7581f63338c02df51d2dea2e5cb920318c38be",
+        "source_id": "quest:horde:42:accept",
+        "source_revision": "synthetic-revision",
+        "target_evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_id": "q:42:accept",
+        "target_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "text_sha256": "2148f9a6a580c0e86de55651d898795a3b0f4a1086c86205a5978207d46d4746"
+      },
+      "evidence": {
+        "evidence_reviewer": "Invented evidence reviewer",
+        "facts": {
+          "faction": "horde",
+          "npc_id": 7,
+          "npc_type": "creature",
+          "player_gender": null,
+          "quest_id": 42,
+          "source": "accept",
+          "voice": "invented-voice",
+          "wording_sha256": "7b7cd4a3c9fd81f462d32f04aa8631f69aec9846e0bc6b6012b5c68df2ff4cb4"
+        },
+        "greeting": false,
+        "source_blob_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "source_context_sha256": "aabfce161c401cfaa3c24f01d4818dab06e4a31f1e798016c3f59f7e1ce5ac0e",
+        "source_reference": "invented-identity-reference",
+        "target_blob_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "target_context_sha256": "3f1c1cbdbf552aa42fdfc05b298e9b9a41e9f6321bfeae26cadd874bf0345626",
+        "target_reference": "invented-public-reference"
+      },
+      "grammar_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "origin_file": "classic/quest_both.lua",
+      "origin_layer": "classic",
+      "source_context_sha256": "aabfce161c401cfaa3c24f01d4818dab06e4a31f1e798016c3f59f7e1ce5ac0e",
+      "target_context_sha256": "3f1c1cbdbf552aa42fdfc05b298e9b9a41e9f6321bfeae26cadd874bf0345626"
+    }
+  ],
+  "schema_version": 1
+}

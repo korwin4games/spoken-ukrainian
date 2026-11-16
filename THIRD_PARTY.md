@@ -19,3 +19,10 @@ Spoken is an external dependency. The tests read unmodified Spoken source from c
 The four Stage 0 documents remain preserved historical analyses. Their earlier "permission unresolved" notes predate the [maintainer's approval](docs/CLASSICUA_PERMISSION.md). Stage 2A's adapter reads a separately pinned ClassicUA checkout, generates metadata-only reports and does not yet import or publish translation text.
 
 **No public translated pack, audio take or GitHub Release has been published by the current project build.** Explicit release authorization, code/runtime compatibility verification, content review and provider terms are separate from the granted translation permission.
+
+Stage 3 tooling also reads the pinned public Spoken corpus and literal identity
+reference tables in memory. Only IDs, structural evidence and hashes are reported;
+no dialogue or lore snapshots are bundled. The ClassicUA numeric string fingerprint
+is independently implemented from the pinned public algorithm in
+`scripts/utils.lua` (commit `1770d208ad853d23d61105cf510d53804770d916`);
+it is not a canonical Spoken identity. ClassicUA remains external and unmodified.
