@@ -137,7 +137,7 @@ python3 tools/stage4b_workbench.py \
   --faction horde --limit 40
 ```
 
-Звіт: ігнорований `build/stage4b-review-queue.json`. Reviewer може **відхилити або відкласти** кандидатуру. **Схвалення canonical ID** потребує окремого `JoinProof` від реальних людей і двох різних reviewer; воно не схвалює автоматично український текст. Жодних реальних схвалень не додано. Див. [Stage 4B — процедуру](docs/STAGE_4B_REVIEW_WORKBENCH.md).
+Результати: ігноровані `build/stage4b-review-queue.json` і **CSV-таблиця для перевірки** `build/stage4b-review-worksheet.csv` (один рядок на кандидатний target/voice-варіант). CI прикріплює файли як короткоживучий артефакт із метаданими. Reviewer може **відхилити або відкласти** кандидатуру. **Схвалення canonical ID** потребує окремого `JoinProof` від реальних людей і двох різних reviewer; воно не схвалює автоматично український текст. Жодних реальних схвалень не додано. Див. [Stage 4B — процедуру](docs/STAGE_4B_REVIEW_WORKBENCH.md).
 
 ### Перевірена прив'язка Quest-перекладів (основа Stage 4C)
 

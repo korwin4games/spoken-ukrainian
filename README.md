@@ -140,7 +140,7 @@ python3 tools/stage4b_workbench.py \
   --faction horde --limit 40
 ```
 
-Output: ignored `build/stage4b-review-queue.json`. A reviewer can explicitly **reject or defer** individual source/target pairs. **Approval** requires a separate human-supplied Stage 3 `JoinProof` and two distinct reviewers, validated by the existing mapping gate; it never approves Ukrainian wording automatically. No real approvals are committed. See the [Stage 4B guide](docs/STAGE_4B_REVIEW_WORKBENCH.md).
+Outputs: ignored `build/stage4b-review-queue.json` and a **filterable, spreadsheet-safe** `build/stage4b-review-worksheet.csv` (one row per target/voice variant). The pinned CI attaches both as a short-lived metadata-only artifact. A reviewer can explicitly **reject or defer** individual source/target pairs. **Approval** requires a separate human-supplied Stage 3 `JoinProof` and two distinct reviewers, validated by the existing mapping gate; it never approves Ukrainian wording automatically. No real approvals are committed. See the [Stage 4B guide](docs/STAGE_4B_REVIEW_WORKBENCH.md).
 
 ### Reviewed Quest candidate bridge (Stage 4C foundation)
 
