@@ -94,6 +94,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 4A — real pinned Spoken inventory → source coverage dry-run | Implemented read-only public English text index and offline coverage CLI for verified originals; **0 real source joins, no Ukrainian packs** ([details](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Stage 4B — Quest mapping review workbench | Pinned source/target evidence queue, reject/defer, explicit Stage 3 two-reviewer approval gate; **0 real reviewed joins** ([procedure](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
 | Stage 4C — reviewed Quest candidate binding foundation | Synthetic-only audited effective ClassicUA field verification; **0 real identity joins or approved texts**, no CLI integration ([contract](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md)) |
+| Stage 4B.2 — local Quest Review UI | Loopback-only side-by-side UA/EN text comparison, variant browsing and evidence-bound reject/defer; **no automatic approval** ([guide](docs/STAGE_4B_LOCAL_REVIEW_UI.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
@@ -145,6 +146,18 @@ Outputs: ignored `build/stage4b-review-queue.json` and a **filterable, spreadshe
 ### Reviewed Quest candidate bridge (Stage 4C foundation)
 
 `adapters/reviewed_bridge.py` adds **synthetic-tested**, offline binding of independently approved Stage 3 Quest identity mappings to exact audited ClassicUA effective fields. It rechecks the stored evidence, original/source fingerprints and configured source priority; a found Ukrainian field is still **pending content review**, not an approved translation. The normal Stage 4A command **does not activate this bridge**, and **no real human-approved joins exist yet**. See [Stage 4C contract](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md).
+
+### Local Quest review UI (Stage 4B.2)
+
+A **local browser UI** shows the exact audited Ukrainian ClassicUA field **beside the verified original English Spoken wording**, plus NPC, voice and faction variants, without committing/displaying texts in reports. You can **Reject** or **Defer** specific candidates; identity approval still requires **two independent human reviewers** and an explicit Stage 3 `JoinProof` outside the UI.
+
+```sh
+python3 tools/review_ui_server.py \
+  --classicua /absolute/path/to/clean-pinned-ClassicUA \
+  --spoken /absolute/path/to/clean-pinned-spoken-wow
+```
+
+Open **http://127.0.0.1:8765/** on the same machine. The server binds only to 127.0.0.1, makes no internet calls, and stores only evidence-bound decisions in ignored `build/stage4b-decisions.json`. See the [Ukrainian UI quickstart and security limits](docs/STAGE_4B_LOCAL_REVIEW_UI.md).
 
 ### Audit a pinned ClassicUA checkout (Stage 2A)
 
