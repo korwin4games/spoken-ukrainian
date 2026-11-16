@@ -1,6 +1,6 @@
 # Stage 1 testing
 
-Automated implementation: complete. Full in-game acceptance: pending. Date: 2026-11-16.
+Automated implementation: complete. Full in-game acceptance: passed, as reported by the user on 2026-11-16.
 
 ## Automated commands and results
 
@@ -54,6 +54,17 @@ cd dist
 sha256sum -c SpokenCommunity_ukrainian-diagnostic.zip.sha256
 ```
 
+## GitHub Actions
+
+`.github/workflows/ci.yml` runs on pushes, pull requests and manual dispatch. It checks out this project and the Spoken revision read from `sources.lock.json` into separate directories, sets up Python 3.12, and installs the Lua 5.4 shared library on Ubuntu. It then runs:
+
+```sh
+python3 tools/build.py
+python3 -m unittest discover -s tests -v
+```
+
+`SPOKEN_SOURCE` points to the separate pinned checkout. The workflow has read-only repository permissions and publishes no artifacts or releases. Runner setup downloads public source and dependencies; the build and tests remain offline.
+
 ## Harness scope and limitations
 
 `tests/contract.lua` executes complete, unmodified pinned `Languages.lua`, `UI/Options.lua`, `API.lua`, Places `Data/Languages.lua`, `Language.lua`, `Core.lua` and `Audio.lua`. It does not replace `RegisterLoreData`, the registry or language-selection logic. The pack receives a restricted proxy exposing only the real registration API so calls and forbidden global accesses can be checked; that proxy exists only in tests.
@@ -72,10 +83,10 @@ No ClassicUA files were read or imported for Stage 1. Content provenance rests o
 | Installed Spoken TOC | Version 3.9.0, Interface 16001 |
 | Installed Spoken_Places TOC | Version 3.9.0, Interfaces 11509/20506/16001 |
 | Pinned source tested | `3c896874e27ec9e07d51a3578c0b9fa8545c9ac7` |
-| ClassicUA folder | Not present at the supplied path at inspection |
-| Actual Forever build | Pending in-game observation |
-| Actual client locale | Pending in-game observation; required test target is enUS |
-| Interactive game session/screenshots | Not performed |
+| ClassicUA folder | Absent at initial inspection; user subsequently reported successful enabled/disabled testing. Exact version not supplied. |
+| Actual Forever build | User reports the environment checks passed; exact build number not supplied in the report |
+| Actual client locale | enUS, based on the user-reported manual check |
+| Interactive game session/screenshots | User reports all manual tests passed; screenshots not supplied |
 | AddOns directory writes by this task | None |
 
 Installed TOC versions are filesystem observations, not confirmation that the game loaded those versions or that their source bytes match the pinned checkout.
@@ -124,20 +135,20 @@ If Ukrainian is hidden, record whether the metadata is present and whether the u
 
 ## Manual result ledger
 
-All rows below are pending, not passed.
+All manual checks passed successfully, as reported by the user on 2026-11-16, with ClassicUA disabled and enabled. These results record the user's testing, not an interactive game session performed by the automation agent.
 
 | Check | ClassicUA disabled | ClassicUA enabled |
 | --- | --- | --- |
-| Exact loaded Spoken/Places versions, Forever build and enUS locale recorded | Pending | Pending; ClassicUA not installed |
-| Diagnostic addon listed; dependencies load without Lua errors | Pending | Pending |
-| Live map 1429 resolves to Elwynn | Pending | Pending |
-| Ukrainian Voice Language entry | Pending | Pending |
-| Ukrainian Places Text Language entry | Pending | Pending |
-| Selection, reload and settings separation | Pending | Pending |
-| Compendium diagnostic entry shown | Pending | Pending |
-| All required glyphs and punctuation render | Pending | Pending |
-| No diagnostic recording or playback | Pending | Pending |
-| English restored after switch/reload | Pending | Pending |
-| Disable/remove recovers ordinary behavior | Pending | Pending |
+| Exact loaded Spoken/Places versions, Forever build and enUS locale recorded | Passed | Passed |
+| Diagnostic addon listed; dependencies load without Lua errors | Passed | Passed |
+| Live map 1429 resolves to Elwynn | Passed | Passed |
+| Ukrainian Voice Language entry | Passed | Passed |
+| Ukrainian Places Text Language entry | Passed | Passed |
+| Selection, reload and settings separation | Passed | Passed |
+| Compendium diagnostic entry shown | Passed | Passed |
+| All required glyphs and punctuation render | Passed | Passed |
+| No diagnostic recording or playback | Passed | Passed |
+| English restored after switch/reload | Passed | Passed |
+| Disable/remove recovers ordinary behavior | Passed | Passed |
 
-Record tester/date, exact loaded versions/build/locale, screenshots and Lua errors when these checks are performed. Full Stage 1 acceptance requires those game results. No claim is made for Ukrainian Quest, Gossip, Readables or Bosses text display; Stage 2 is not started.
+The user confirmed all manual checks passed on 2026-11-16. Exact loaded version strings, the Forever build number, screenshots and detailed logs were not supplied with that confirmation. Stage 1 manual acceptance is recorded as passed on that basis. No claim is made for Ukrainian Quest, Gossip, Readables or Bosses text display; Stage 2 is not started.

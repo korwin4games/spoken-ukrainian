@@ -1,6 +1,6 @@
 # Stage 1 implementation
 
-Implemented 2026-11-16 as an independent sibling workspace at `/home/korwin/projects/wow/spoken-ukrainian`. Automated implementation is complete; full acceptance remains pending actual WoW Forever testing. The upstream Spoken checkout and the game AddOns directory are read-only inputs to this task.
+Implemented 2026-11-16 as an independent sibling workspace at `/home/korwin/projects/wow/spoken-ukrainian`. Automated implementation is complete; the user reported all in-game acceptance checks passed on 2026-11-16. The upstream Spoken checkout and the game AddOns directory are read-only inputs to this task.
 
 ## Project structure
 
@@ -88,4 +88,4 @@ Output is `dist/SpokenCommunity_ukrainian-diagnostic.zip`. Build prints its size
 
 See [STAGE_1_TESTING.md](STAGE_1_TESTING.md) for results, exact installation commands and pending manual checks. Contract tests execute the real pinned source with necessary client API fixtures; they do not load the complete UI or prove game font rendering, load lifecycle or ClassicUA coexistence. The system Lua runtime is 5.4, not WoW's Lua runtime; the test-only environment bridge is described there.
 
-No new architectural blocker was found. Actual client fonts, dependency lifecycle and Compendium presentation remain manual acceptance gates. No new support is claimed for Ukrainian Quests, Gossip, Readables or Bosses. Stop at Stage 1; source adapters and any further stage require a separate task.
+No new architectural blocker was found. The user reported successful manual checks of client fonts, dependency lifecycle and Compendium presentation; exact build details and screenshots were not supplied. No new support is claimed for Ukrainian Quests, Gossip, Readables or Bosses. Stop at Stage 1; source adapters and any further stage require a separate task.

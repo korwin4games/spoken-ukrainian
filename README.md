@@ -11,7 +11,7 @@ Build requires Python 3. Tests additionally require Git, the system Lua 5.4 shar
 
 Output: `dist/SpokenCommunity_ukrainian-diagnostic.zip`, with a `.zip.sha256` sidecar. The archive contains only its TOC and `Lore.lua` in one addon folder. Do not install the whole project in AddOns.
 
-[Implementation](docs/STAGE_1_IMPLEMENTATION.md) describes the contract, structure and limitations. [Testing and exact manual installation](docs/STAGE_1_TESTING.md) records automated results and pending in-game checks. Full Stage 1 acceptance remains pending WoW Forever testing. This does not establish Ukrainian Quests, Gossip, Readables or Bosses display support.
+[Implementation](docs/STAGE_1_IMPLEMENTATION.md) describes the contract, structure and limitations. [Testing and exact manual installation](docs/STAGE_1_TESTING.md) records automated results and pending in-game checks. The user reported all Stage 1 manual checks passed on 2026-11-16. This does not establish Ukrainian Quests, Gossip, Readables or Bosses display support.
 
 Stage 0 documents are preserved byte for byte in `docs/`. Their upstream-relative source links retain their original checkout context; the pinned Community Packs guide is at https://github.com/rusty-key/spoken-wow/blob/3c896874e27ec9e07d51a3578c0b9fa8545c9ac7/community/README.md.
 

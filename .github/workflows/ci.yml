@@ -1,0 +1,54 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: spoken-ukrainian
+    env:
+      SPOKEN_SOURCE: ${{ github.workspace }}/spoken-wow
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out Spoken Ukrainian
+        uses: actions/checkout@v6
+        with:
+          path: spoken-ukrainian
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read pinned Spoken revision
+        id: spoken
+        run: python3 -c 'import json; print("revision=" + json.load(open("sources.lock.json"))["spoken"]["revision"])' >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned Spoken source
+        uses: actions/checkout@v6
+        with:
+          repository: rusty-key/spoken-wow
+          ref: ${{ steps.spoken.outputs.revision }}
+          path: spoken-wow
+          persist-credentials: false
+
+      - name: Install Lua shared library
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y liblua5.4-0
+
+      - name: Build diagnostic pack
+        run: python3 tools/build.py
+
+      - name: Run tests
+        run: python3 -m unittest discover -s tests -v
