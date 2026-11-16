@@ -20,10 +20,21 @@ Read only what the task needs; do not use old planning notes as proof of current
 - Use canonical Spoken identities, never guessed mappings from translated names. Do not treat ClassicUA item IDs as Spoken page IDs or numeric Gossip hashes as Spoken moment IDs.
 - Do not spoof `GetLocale() == "ukUA"`, create fake audio, monkey-patch player internals or claim independent text display without verified module support.
 
+## Project versioning and release discipline
+- Read `docs/VERSIONING.md`, `CHANGELOG.md`, and `VERSION` before a versioning or release task.
+- `VERSION` is the single source of truth for the **project** version (currently `0.0.1`). Read it with `python3 tools/version.py show`; never add another hardcoded project-version constant.
+- Project and addon versions are independent. In particular, the diagnostic addon's `.toc` version is `0.1.0`; do not synchronize it with `VERSION`, change its proven archive, or alter dependency versions in `sources.lock.json` as part of a project bump.
+- Use the repository's strict numeric `MAJOR.MINOR.PATCH` policy: PATCH for fixes, MINOR for features; during 0.x, breaking changes may use MINOR but must be labeled **BREAKING** in the changelog. The first stable MAJOR requires explicit approval and `--approve-stable`; do not assume Stage 2B or Stage 3 completion implies a release.
+- During ordinary development, describe notable changes under `CHANGELOG.md` > `[Unreleased]`. **Do not bump versions automatically for every commit, fix, feature or completed stage.** Bump only when the task expressly requests release/version preparation.
+- For a requested bump, first inspect Git state, version and changelog. Use `python3 tools/version.py bump patch|minor|major --dry-run` to preview, then the supported bump command. The CLI updates **only** `VERSION`: prepare the matching new dated changelog section separately, preserve history, and run `python3 tools/version.py check`. A check failure between the bump and changelog edit is expected; do not bypass validation.
+- CI validates version/changelog consistency. If verifying a project tag, use `python3 tools/version.py check --tag vX.Y.Z`. Never create, move, push tags, merge release PRs, publish GitHub Releases or publish Community Packs without explicit authorization and required content permissions.
+- Annotated Git project tags use `v<project-version>`; tag creation, Git pushes and GitHub Releases are separate decisions from incrementing the version.
+
 ## Changes and verification
 1. Inspect `git status`, branch and task scope; do not discard existing changes.
 2. Use focused edits, synthetic fixtures and source-backed tests. Source adapters read pinned local checkouts without executing arbitrary Lua.
 3. For code or build changes, run:
+   `python3 tools/version.py check`
    `python3 tools/build.py`
    `python3 -m unittest discover -s tests -v`
    Stage 1 tests require pinned Spoken and system Lua 5.4.
