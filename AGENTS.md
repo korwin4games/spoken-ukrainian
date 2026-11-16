@@ -11,6 +11,7 @@ Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. S
 - `docs/STAGE_1_*.md` and `docs/STAGE_2A_*.md`: implemented behavior and tests.
 - `sources.lock.json`: pinned source commits and hashes.
 - `docs/STAGE_3_SPECIFICATION.md`: canonical ID mapping, future ClassicUA updates, review invalidation and source diff requirements.
+- `docs/ARCHITECTURE_UNMODIFIED_SPOKEN.md`: binding no-fork/no-patch architecture and fallback choices A/B/C.
 Read only what the task needs; do not use old planning notes as proof of current behavior.
 
 ## Hard boundaries
@@ -20,6 +21,14 @@ Read only what the task needs; do not use old planning notes as proof of current
 - Keep `build/` and `dist/` ignored, and preserve Stage 1 diagnostic archive determinism.
 - Use canonical Spoken identities, never guessed mappings from translated names. Do not treat ClassicUA item IDs as Spoken page IDs or numeric Gossip hashes as Spoken moment IDs.
 - Do not spoof `GetLocale() == "ukUA"`, create fake audio, monkey-patch player internals or claim independent text display without verified module support.
+
+## Integration policy — unmodified Spoken Player
+- **Primary strategy A:** ship standalone `ukUA` Community Packs using only actual public Spoken contracts; **optional strategy B:** allow an independently installed ClassicUA addon to translate native game windows. ClassicUA's native UI translation does not establish Ukrainian Spoken captions or Compendium support.
+- Do **not** fork, patch, vendor, overwrite, repackage, monkey-patch or inject into Spoken Player or its modules. No `GetLocale()` spoofing, rewriting private globals, fake/silent audio or fabricated metadata.
+- If a module lacks a safe public text-only/display contract (especially Readables on `enUS`), mark the feature **blocked**. Preserve exact Stage 2B test findings, fallback and manual-test status; never silently work around it.
+- Upstream API suggestions and issue drafts are documentation only, not an obligation to implement player code. Future official upstream releases may be considered via an independently approved, pinned compatibility update.
+- **Optional strategy C** (a separate addon with its own UI) is a future architectural investigation requiring explicit authorization. It must use public WoW APIs without modifying Spoken internals and must not claim to translate existing Spoken windows.
+- Read `docs/ARCHITECTURE_UNMODIFIED_SPOKEN.md` before designing, reviewing or publishing runtime integrations. Runtime readiness and source mapping are separate gates.
 
 ## Translation updateability (Stage 3 and later)
 - Treat ClassicUA as a **versioned upstream input**, not a one-time copy. Design mappings to work across explicitly reviewed new ClassicUA revisions and to reuse confirmed canonical Spoken IDs.
