@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: Spoken Ukrainian Diagnostic
+## Version: 0.1.0
+## Dependencies: Spoken, Spoken_Places
+## X-SpokenPlaces-Language: ukUA
+## X-SpokenPlaces-Lore: 1
+## X-Spoken-LanguageName: Ukrainian
+## X-Spoken-LanguageNative: Українська
+
+Lore.lua
