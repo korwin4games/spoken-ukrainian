@@ -60,8 +60,7 @@ def approved_quest_bindings(dataset, source: SourceInventory, inventory, reviews
         target = inventory.targets.get(decision.target_id)
         if unit is None or target is None or unit.family != "quest" or target.family != "quest":
             raise ValueError("reviewed_quest_target_required")
-        validate_source_unit(unit, source) if unit.identity_evidence_sha256 is None else (
-            validate_source_unit(replace(unit, identity_evidence_sha256=None), source))
+        validate_source_unit(unit, source)
         assessment = assess_review(review, bound_units, inventory,
                                    source_inventories={source.revision: source})
         if assessment["mapping_status"] != "approved":
