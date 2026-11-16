@@ -11,8 +11,8 @@ sys.path.insert(0, str(ROOT))
 from adapters.classicua.source import audit_checkout
 from adapters.classicua.evidence import from_audit
 from adapters.mapping import candidates, load_reviews
-from adapters.review_workbench import (build_workbench, empty_decisions,
-                                       record_decision)
+from adapters.review_workbench import (approve_explicit_join, build_workbench,
+                                       empty_decisions, record_decision)
 from adapters.spoken import PublicSource, build_index
 
 
@@ -35,7 +35,9 @@ def workbench_main(argv=None):
     parser.add_argument("--spoken", type=Path, required=True,
                         help="Clean pinned Spoken checkout")
     parser.add_argument("--reviews", type=Path,
-                        help="Optional externally approved Stage 3 review_file JSON")
+                        help="Stage 3 review_file JSON; output path when approving")
+    parser.add_argument("--approve-request", type=Path,
+                        help="Independently attested, explicit two-reviewer JoinProof JSON; requires --reviews")
     parser.add_argument("--decisions", type=Path,
                         default=ROOT / "build/stage4b-decisions.json",
                         help="Manual reject/defer-only metadata JSON (created on first decision)")
@@ -58,9 +60,18 @@ def workbench_main(argv=None):
         record_args = (args.source_id, args.target_id, args.decision,
                        args.reason, args.reviewer)
         wants_record = any(x is not None for x in record_args)
-        if wants_record and not all(x is not None for x in record_args):
-            raise ValueError("complete_decision_fields_required")
+        wants_approval = args.approve_request is not None
+        if (wants_record and not all(x is not None for x in record_args)
+                or wants_record and wants_approval):
+            raise ValueError("complete_exclusive_decision_fields_required")
+        if wants_approval and not args.reviews:
+            raise ValueError("approval_requires_reviews_output")
         output = protected_output(args.output, [args.classicua, args.spoken])
+        if wants_approval:
+            reviews_output = protected_output(
+                args.reviews, [args.classicua, args.spoken, args.approve_request])
+            if reviews_output == output or reviews_output == args.decisions.resolve():
+                raise ValueError("review_output_must_be_distinct")
         if wants_record:
             decision_output = protected_output(args.decisions, [args.classicua, args.spoken])
             if decision_output == output:
@@ -77,8 +88,10 @@ def workbench_main(argv=None):
         reviews = (
             load_reviews(json.loads(args.reviews.read_text(encoding="utf-8")),
                          source_inventories={source.revision: source})
-            if args.reviews else ()
+            if args.reviews and args.reviews.is_file() else ()
         )
+        if args.reviews and not wants_approval and not args.reviews.is_file():
+            raise ValueError("review_file_required_when_reading")
         decisions = (json.loads(args.decisions.read_text(encoding="utf-8"))
                      if args.decisions.is_file() else empty_decisions())
         if wants_record:
@@ -86,8 +99,21 @@ def workbench_main(argv=None):
                 decisions, candidates(source.units, spoken),
                 source_id=args.source_id, target_id=args.target_id,
                 decision=args.decision, reason=args.reason, reviewer=args.reviewer)
+        approved_json = None
+        if wants_approval:
+            approved_json = approve_explicit_join(
+                source, spoken, json.loads(args.approve_request.read_text(encoding="utf-8")),
+                existing_reviews=reviews, decisions=decisions)
+            reviews = load_reviews(approved_json,
+                                   source_inventories={source.revision: source})
         report = build_workbench(source, spoken, decisions=decisions, reviews=reviews,
                                  limit=args.limit, offset=args.offset, faction=args.faction)
+        if approved_json is not None:
+            reviews_output.parent.mkdir(parents=True, exist_ok=True)
+            reviews_output.write_text(
+                json.dumps(approved_json, sort_keys=True, ensure_ascii=False, indent=2) + "
+",
+                encoding="utf-8")
         if wants_record:
             decision_output.parent.mkdir(parents=True, exist_ok=True)
             decision_output.write_text(
