@@ -158,13 +158,23 @@ contract. Record that separately from the unchanged baseline characterization.
 
 ## Review and release boundaries
 
-Final scope review uses the repo's `code-reviewer` workflow: inspect all changed
-files, provenance, unmodified pins, synthetic fixtures, no fake audio, truthful
-enUS, absent production/TTS operations and retained Stage 1/2A behavior. No
-actionable defect remains in the completed local diff. Residual limits are the
-pending manual checks, symbolic audio and bounded upstream issue search, not
-evidence of newly working unsupported displays. No remote CI run is claimed.
+Review the changed files under the repo's `code-reviewer` workflow:
+provenance, unmodified pins, synthetic fixtures, no fake audio, truthful enUS,
+absent production/TTS operations and retained Stage 1/2A behavior. The local
+implementation report recorded no actionable code defect. Residual limits remain
+the pending manual Forever checks, symbolic audio and bounded upstream issue
+search; a passing characterization test does not prove a blocked capability works.
 
-No translated packs, source corpora, source updater or mapping were created. No
-version bump, Git commit, push, PR, merge, tag or release occurred. Stage 3 remains
-a separate authorized task with its own canonical-identity and review gates.
+**Remote verification (2026-11-16):** the Stage 2B implementation was committed and
+pushed to `feat/spoken-runtime-compatibility` at commit
+[`261e8bee544eb5ec90f167850009b82eb20ac9b0`](https://github.com/korwin4games/spoken-ukrainian/commit/261e8bee544eb5ec90f167850009b82eb20ac9b0).
+[GitHub Actions run 43880649210](https://github.com/korwin4games/spoken-ukrainian/actions/runs/43880649210)
+**passed for that commit**. Subsequent documentation corrections and branch
+synchronization require their own CI status check on the final PR head; this earlier
+run does not establish the result of later commits.
+
+No translated packs, source corpora, source updater or mappings were created.
+No project version bump, upstream player modification, tag or content release
+was performed. Stage 3 remains a separate authorized task with its own
+canonical-identity and review gates. Check GitHub for the current pull-request
+and merge state rather than relying on this time-stamped test record.
