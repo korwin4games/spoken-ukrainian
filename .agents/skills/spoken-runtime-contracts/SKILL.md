@@ -6,7 +6,7 @@ description: Investigate and test Spoken's ukUA Community Pack registration, Que
 # Spoken runtime contract workflow
 
 ## Evidence first
-1. Read `docs/COMPATIBILITY_MATRIX.md`, `docs/SOURCE_INTEGRATION.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/STAGE_1_TESTING.md` and applicable upstream module docs.
+1. Read `docs/ARCHITECTURE_UNMODIFIED_SPOKEN.md`, `docs/COMPATIBILITY_MATRIX.md`, `docs/SOURCE_INTEGRATION.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/STAGE_1_TESTING.md` and applicable upstream module docs.
 2. Verify the Spoken revision in `sources.lock.json`. Inspect actual pinned public Lua functions and the current upstream Community Packs guide; do not infer behavior from another language's client locale.
 3. Distinguish client game-window text, narrator captions, Compendium entries, lore pages and audio playback.
 
@@ -17,11 +17,19 @@ description: Investigate and test Spoken's ukUA Community Pack registration, Que
 - Bosses can have text-only core stories, but pack story selection for a non-client language on `enUS` has a locale gate; Bosses community distribution is not listed in the Manager's currently documented sections.
 - `ukUA` is non-client; never spoof `GetLocale()`, monkey-patch the player, create fake/silent sound entries or change canonical IDs.
 
+## Non-negotiable integration approach
+- Strategy A: existing public Spoken Community Pack interfaces with unmodified Spoken. Strategy B: optional coexistence with ClassicUA for native game UI only; do not confuse that with Spoken captions or Compendium.
+- Never fork, patch, vendor, monkey-patch or repackage Spoken, override private internals, spoof `GetLocale()` or invent silent/fake audio.
+- Treat text-only Readables on `enUS` as blocked if the pinned public contract errors or chooses English; report verified limitations instead of shipping a brittle workaround.
+- It is acceptable to describe an upstream public API extension or prepare a draft issue, but do not submit code to the upstream player. Reevaluate official future upstream versions only with a separately approved pinned compatibility update.
+- A standalone helper addon with **its own UI** is a separately approved fallback requiring explicit technical evaluation. It cannot be assumed to change existing Spoken windows or the player's internal language choice.
+- Distinguish mapping feasibility, text-display readiness, audio availability and in-game verification as different statuses.
+
 ## Tests and recommendations
 1. Build synthetic Lua fixtures using actual pinned code wherever feasible; mock only required WoW APIs. Keep `GetLocale() == "enUS"`.
 2. Test voice vs text settings, absent/audio-present cases, disabled packs, English fallback, load order and no unexpected global writes.
 3. Label baseline failing-capability characterizations honestly. Do not report them as a feature now working.
-4. Propose the smallest upstream-compatible public extension only after reproducing a gap; avoid editing Spoken in this repository.
+4. Propose a narrowly scoped, backward-compatible public extension **as design documentation only** after reproducing a gap. Do not patch Spoken, create a fork or submit an upstream code PR.
 5. Provide manual Forever test steps when the full game client is unavailable. Never claim in-game verification from a stub.
 
 ## Output
