@@ -10,6 +10,12 @@
 
 Spoken Ukrainian prepares Ukrainian content **offline** for the **unmodified Spoken Player**. Discovering a translation does **not** approve its canonical Spoken identity, text quality, content rights or runtime compatibility.
 
+### Current implementation priorities (November 2026)
+
+**First:** (P0) localize **Azeroth's Compendium UI**; (P1) translate **Places** lore; (P2) translate **Books and Notes** via `Spoken_Readables`; (P3) translate **Bosses** stories. **Quests/Gossip are deferred** while their existing review tools remain available.
+
+Compendium is the shared `Spoken` window, **not a separate fifth content pack**. UI strings and the content shown in its tabs need separate localization work. Under the pinned `enUS` client contract, a `ukUA` content pack alone cannot localize Compendium chrome. Places already supports a Ukrainian text-only diagnostic; Readables and Bosses need upstream-compatible display/language fixes. See [prioritized workstreams and gates](docs/PRODUCT_PRIORITIES_2026_11.md).
+
 ### Four approved modules
 
 | Official module | Planned Ukrainian content |
@@ -94,6 +100,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 4A — real pinned Spoken inventory → source coverage dry-run | Implemented read-only public English text index and offline coverage CLI for verified originals; **0 real source joins, no Ukrainian packs** ([details](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Stage 4B — Quest mapping review workbench | Pinned source/target evidence queue, reject/defer, explicit Stage 3 two-reviewer approval gate; **0 real reviewed joins** ([procedure](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
 | Stage 4C — reviewed Quest candidate binding foundation | Synthetic-only audited effective ClassicUA field verification; **0 real identity joins or approved texts**, no CLI integration ([contract](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md)) |
+| **Current priority** | **Compendium UI → Places → Readables (Books/Notes) → Bosses; Quests/Gossip deferred** ([roadmap](docs/PRODUCT_PRIORITIES_2026_11.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test

@@ -21,6 +21,7 @@ or GitHub Release has been published.
 
 ### Changed
 
+- Reprioritize near-term Ukrainian localization: **Compendium UI → Places lore → Readables (Books and Notes) → Bosses**, with Quests/Gossip review temporarily deferred. Add a dependency/rights/runtime-gated roadmap; no new fifth module, source-policy change or released translation.
 - Refresh English/Ukrainian READMEs with the four approved modules, configurable provider chain, sequential candidate accounting, synthetic coverage example and editable diagram; document current offline/runtime limitations. Clarify AGENTS.md guidance on mapping invalidation and bilingual parity, update existing code-review/runtime/ClassicUA skills, and add translation-source-pipeline and canonical-mapping-review Codex skills.
 
 ### Fixed
