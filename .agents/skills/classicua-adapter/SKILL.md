@@ -6,7 +6,7 @@ description: Audit or modify Spoken Ukrainian's pinned ClassicUA source adapter,
 # ClassicUA source adapter workflow
 
 ## Read and locate
-1. Read relevant parts of `docs/SOURCE_INTEGRATION.md`, `docs/STAGE_2A_IMPLEMENTATION.md`, `docs/STAGE_2A_TESTING.md` and `docs/LEGAL_AND_ATTRIBUTION.md`.
+1. Read relevant parts of `docs/SOURCE_INTEGRATION.md`, `docs/STAGE_2A_IMPLEMENTATION.md`, `docs/STAGE_2A_TESTING.md`, and `docs/CLASSICUA_PERMISSION.md` (current permission); `docs/LEGAL_AND_ATTRIBUTION.md` is Stage 0 historical context.
 2. Inspect `adapters/classicua/{lua,grammar,model,source}.py`, `tools/classicua_audit.py`, `tests/test_classicua.py` and `sources.lock.json` as needed.
 3. Confirm the source checkout is clean and exactly at the pinned ClassicUA revision. The audit must not fetch, checkout, modify or execute ClassicUA source code.
 
@@ -17,7 +17,8 @@ description: Audit or modify Spoken Ukrainian's pinned ClassicUA source adapter,
 - Resolve Alliance and Horde separately; faction-specific rows take precedence over shared entries; preserve AI-filter behavior and conflicts.
 - Retain sparse quest slots: 1 title, 2 description, 3 objective, 4 progress, 5 completion. Do not interpret objective as voiced dialogue.
 - Preserve namesake `h1` evidence, explicit nil, provenance, translation AI flags and unsupported grammar; classify tokens without expanding player data.
-- No ClassicUA source key/hash is automatically a Spoken canonical ID.
+- No ClassicUA source key/hash is automatically a Spoken canonical ID. For validated Stage 3 joins use `.agents/skills/canonical-mapping-review/SKILL.md`; for ordered provider lookup use `.agents/skills/translation-source-pipeline/SKILL.md`.
+- Keep source **file SHA-256** distinct from effective **field text SHA-256**; preserve origin and overridden-layer evidence. The source adapter does not by itself approve a translation for publication.
 
 ## Verify
 1. Add small **invented** Lua fixtures and regression tests before changing parser or merge rules.

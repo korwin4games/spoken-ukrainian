@@ -12,8 +12,10 @@ Review the requested diff against its base (or changed files if no base is given
 2. Check correctness, security, failure modes, compatibility, determinism, provenance and test gaps. Focus on **newly introduced** issues.
 3. For ClassicUA: verify restricted parsing, real load order, whole-row overrides, Gossip `!code`, sparse quest fields, faction precedence and no committed translations.
 4. For Spoken: verify public pack format, real client locale, stable IDs, no fake audio and no unsupported claims of text-only behavior.
-5. Check third-party rights, secrets, generated binaries, ignored `build/`/`dist/`, external writes, and unintended changes to pinned files.
-6. Run relevant local tests when possible; if reviewing remotely, distinguish GitHub CI results from locally executed tests and state access limits.
+5. If provider/order/coverage code changes: verify config permutations, omitted/English-first/empty policies, first-real-candidate semantics in both single/batch APIs, mock non-consumption, UTF-8 digest checks, deterministic metadata-only totals, and absence of real translated bodies in reports. See `.agents/skills/translation-source-pipeline/SKILL.md`.
+6. For canonical mapping code: verify source-file vs field fingerprints, independent review evidence, safe persistence and effective-change invalidation. See `.agents/skills/canonical-mapping-review/SKILL.md`.
+7. Check third-party rights, secrets, generated binaries, ignored `build/`/`dist/`, external writes, and unintended changes to pinned files.
+8. Run relevant local tests when possible; if reviewing remotely, distinguish GitHub CI results from locally executed tests and state access limits. Verify exact head SHA and its checks, not prior-success runs; resolve existing review threads only after confirming fixes and if authorized.
 
 ## Report format
 Start with findings ordered by severity (critical, high, medium, low). Each finding should contain:
