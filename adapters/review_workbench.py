@@ -6,7 +6,8 @@ Manual reject/defer decisions never become a Stage 3 ReviewedMapping.
 from collections import Counter
 from dataclasses import replace
 from adapters.classicua.evidence import SourceInventory, source_reference
-from adapters.crosswalk import SOURCE_PATTERNS
+from adapters.mapping import load_reviews, review_file
+from adapters.spoken.evidence import JoinProof, approve_review, proof_digest
 from adapters.mapping import assess_review, candidates, target_context
 
 DECISIONS = frozenset(("rejected", "deferred"))
@@ -180,3 +181,59 @@ def build_workbench(source: SourceInventory, inventory, *,
         },
         "queue": rows,
     }
+
+
+def approve_explicit_join(source: SourceInventory, inventory, request, *,
+                          existing_reviews=(), decisions=None):
+    """Explicit two-reviewer Stage 3 join gate; never synthesize a proof/attestation.
+
+    Input is a *human-supplied*, individually inspected JoinProof with all
+    source/target facts and pinned references, not a metadata candidate.
+    Only identity approval is possible; content, grammar and AI remain pending.
+    """
+    if (type(request) is not dict
+            or set(request) != {"schema_version", "source_id", "target_id",
+                                "mapping_reviewer", "proof"}
+            or type(request["schema_version"]) is not int
+            or request["schema_version"] != 1
+            or type(request["source_id"]) is not str
+            or type(request["target_id"]) is not str
+            or type(request["mapping_reviewer"]) is not str
+            or not request["mapping_reviewer"].strip()
+            or type(request["proof"]) is not dict):
+        raise ValueError("explicit_human_join_request_required")
+    source_id, target_id = request["source_id"], request["target_id"]
+    source_unit = source.units.get(source_id)
+    if source_unit is None or source_unit.family != "quest":
+        raise ValueError("reviewed_quest_source_required")
+    hints = candidates(source.units, inventory)
+    if target_id not in next((row["candidates"] for row in hints
+                              if row["source_id"] == source_id), ()):
+        raise ValueError("candidate_target_reference_required")
+    manual = validate_decisions(decisions if decisions is not None
+                                else empty_decisions(), hints)
+    if any((r["source_id"], r["target_id"], r["decision"])
+           == (source_id, target_id, "rejected") for r in manual):
+        raise ValueError("rejected_candidate_cannot_be_approved")
+    if any(r.decision.source_id == source_id for r in existing_reviews):
+        raise ValueError("existing_source_review_must_be_revalidated_not_overwritten")
+    try:
+        proof = JoinProof(**request["proof"])
+    except (TypeError, KeyError):
+        raise ValueError("invalid_explicit_join_proof_schema") from None
+    unit = replace(source_unit, identity_evidence_sha256=proof_digest(proof))
+    reviewed = approve_review(unit, target_id, inventory, proof,
+                              request["mapping_reviewer"], source_inventory=source)
+    assembled = review_file([*existing_reviews, reviewed])
+    loaded = load_reviews(assembled, source_inventories={source.revision: source})
+    # Independently reassess all persisted joins, including the newly approved
+    # one, before producing any file.
+    bound = {k: replace(u, identity_evidence_sha256=next(
+                (r.decision.source_evidence_sha256 for r in loaded
+                 if r.decision.source_id == k), None))
+             for k, u in source.units.items()}
+    if any(assess_review(r, bound, inventory,
+                         source_inventories={source.revision: source}
+                         )["mapping_status"] != "approved" for r in loaded):
+        raise ValueError("approved_join_revalidation_failed")
+    return assembled
