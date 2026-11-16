@@ -17,6 +17,7 @@ jobs:
         working-directory: spoken-ukrainian
     env:
       SPOKEN_SOURCE: ${{ github.workspace }}/spoken-wow
+      CLASSICUA_SOURCE: ${{ github.workspace }}/ClassicUA
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Check out Spoken Ukrainian
@@ -51,6 +52,18 @@ jobs:
           path: spoken-wow
           persist-credentials: false
 
+      - name: Read pinned ClassicUA revision
+        id: classicua
+        run: python3 -c 'import json; print("revision=" + json.load(open("sources.lock.json"))["classicua"]["revision"])' >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned ClassicUA source
+        uses: actions/checkout@v6
+        with:
+          repository: greenya/ClassicUA
+          ref: ${{ steps.classicua.outputs.revision }}
+          path: ClassicUA
+          persist-credentials: false
+
       - name: Install Lua shared library
         run: |
           sudo apt-get update
@@ -73,3 +86,11 @@ jobs:
             --client-locale deDE \
             --output build/stage4-client-language-coverage.json
           python3 -c 'import json; r=json.load(open("build/stage4-client-language-coverage.json")); c=r["coverage"]; assert c["client_language_selected"] == c["total_spoken_identities"]; assert c["without_verified_public_original"] > 0; assert r["stages"] == []; assert all(row["status"] == "client_language" and row["client_locale"] == "deDE" for row in r["records"])'
+
+      - name: Validate real pinned Stage 4B Quest review queue
+        run: |
+          python3 tools/stage4b_workbench.py \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE" \
+            --faction horde --limit 40
+          python3 -c 'import json; r=json.load(open("build/stage4b-review-queue.json")); s=r["summary"]; assert r["family"]=="quest"; assert 0<len(r["queue"])<=40; assert s["new_identity_approvals_created"]==0; assert s["human_stage3_approved_joins"]==0; assert s["translation_content_approvals_created"]==0; assert all(row["status"]=="identity_review_required" for row in r["queue"])'

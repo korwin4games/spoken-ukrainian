@@ -8,7 +8,7 @@ description: Work on Stage 3 source-to-canonical-Spoken ID crosswalks, independe
 ## Orient to the pinned evidence
 
 1. Read `AGENTS.md`, `docs/STAGE_3_SPECIFICATION.md`, `docs/STAGE_3_IMPLEMENTATION.md`, `docs/CLASSICUA_PERMISSION.md`, and the relevant `docs/COMPATIBILITY_MATRIX.md` module sections.
-2. Inspect `adapters/crosswalk.py`, `adapters/mapping.py`, `adapters/spoken/evidence.py`, source provenance code and `tests/test_crosswalk.py` / `tests/test_stage3.py`.
+2. Inspect `adapters/crosswalk.py`, `adapters/mapping.py`, `adapters/spoken/evidence.py`, `adapters/review_workbench.py`, `tools/stage4b_workbench.py`, `docs/STAGE_4B_REVIEW_WORKBENCH.md`, source provenance code, and `tests/test_crosswalk.py` / `tests/test_stage3.py` / `tests/test_review_workbench.py`.
 3. Use exact pinned Spoken and ClassicUA commits, supplemental public evidence manifests and clean local checkouts. Do not alter upstream, run untrusted Lua, call private APIs or advance pins silently.
 
 ## Identity is not translation
@@ -18,6 +18,12 @@ description: Work on Stage 3 source-to-canonical-Spoken ID crosswalks, independe
 - Gossip: prove NPC/object, **greeting vs menu option**, original moment and voice. Numeric ClassicUA hashes and Spoken `g:` IDs use different algorithms; known aliases do not justify guesswork.
 - Readables: require book/owner, original first page, exact ordered/sparse chain and per-page canonical `b:` ID. Item ID, title and page ordinal are not pageText IDs.
 - Places and Bosses: preserve existing `z:`, `s:` or `boss:` target references, but ClassicUA terminology is **not** authored zone lore or boss stories.
+
+## Candidate review queue
+
+- Use Stage 4B for **Quest ID/event candidate hints only** (default 40 Horde units); ensure metadata-only sorted output, no AI-marked automatic proposals, separate voice variants, faction conflicts, and strict pagination.
+- Manual decisions in `build/stage4b-decisions.json` are **rejected/deferred only** and must be validated against an actual pinned candidate pair. Do not call them approved mappings.
+- Promotion requires a separately supplied explicit `JoinProof` and two distinct real human reviewers. `approve_explicit_join` must re-run existing Stage 3 `approve_review`, `load_reviews` and `assess_review`; never fabricate reviewer identities or treat test fixtures as actual approvals.
 
 ## Approval gates and updates
 
