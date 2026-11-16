@@ -90,7 +90,8 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 2A — restricted ClassicUA Lua parser, override resolver and metadata-only audit | Implemented |
 | Stage 2B — runtime compatibility of independent Ukrainian text | Offline characterization implemented; [results](docs/STAGE_2B_COMPATIBILITY.md), [manual Forever acceptance pending](docs/STAGE_2B_TESTING.md) |
 | Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | Offline inventory, review schema and local effective comparison implemented; **0 approved real joins, independent review pending** ([coverage](docs/STAGE_3_IMPLEMENTATION.md)) |
-| Configurable source priority and sequential coverage (PR #8) | Implemented as an offline synthetic-tested prototype; **no approved real content** |
+| Configurable source priority and sequential coverage (PR #8) | Offline resolver, policy and candidate metadata reporting implemented; **no approved real content** |
+| Stage 4A — real pinned Spoken inventory → source coverage dry-run | Implemented read-only public English text index and offline coverage CLI for verified originals; **0 real source joins, no Ukrainian packs** ([details](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
@@ -118,6 +119,14 @@ Writes deterministic metadata only to ignored `build/stage3-report.json`. Option
 `--candidate-manifest` compares a separately reviewed local revision without
 changing the active lock. See the [review procedure](docs/STAGE_3_IMPLEMENTATION.md).
 
+### Dry-run source coverage against real Spoken IDs (Stage 4A)
+
+```sh
+python3 tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-wow
+```
+
+Reads the **real pinned canonical Spoken inventory** and checks original wording for Quests/Gossip/Readables without exporting text; reports a per-source lookup pass, missing-original targets and total counts in ignored `build/stage4-source-coverage.json`. Source identity is deliberately **unbound** until independently approved Stage 3 joins exist, so **no real ClassicUA translation is assigned**; `another` remains a stub and `own_translator` a mock. Empty policy requires an explicit `--client-locale` from the caller. See [Stage 4A scope and limitations](docs/STAGE_4A_INVENTORY_COVERAGE.md).
+
 ### Audit a pinned ClassicUA checkout (Stage 2A)
 
 ```sh
@@ -134,7 +143,7 @@ The root [VERSION](VERSION) is the **project** version (initial baseline `0.0.1`
 
 - [Implementation roadmap](docs/IMPLEMENTATION_PLAN.md) · [Source integration](docs/SOURCE_INTEGRATION.md) · [Compatibility matrix](docs/COMPATIBILITY_MATRIX.md)
 - [Stage 3 mapping/update specification](docs/STAGE_3_SPECIFICATION.md) · [Permission record](docs/CLASSICUA_PERMISSION.md) · [Attribution](THIRD_PARTY.md)
-- [Translation source architecture](docs/TRANSLATION_SOURCE_CHAIN.md) · [Editable diagram](docs/diagrams/translation-pipeline.drawio) · [Approved four-module policy](docs/APPROVED_MODULES_AND_FALLBACK.md)
+- [Stage 4A pinned inventory/coverage CLI](docs/STAGE_4A_INVENTORY_COVERAGE.md) · [Translation source architecture](docs/TRANSLATION_SOURCE_CHAIN.md) · [Editable diagram](docs/diagrams/translation-pipeline.drawio) · [Approved four-module policy](docs/APPROVED_MODULES_AND_FALLBACK.md)
 - [Spoken Community Packs guide](https://github.com/rusty-key/spoken-wow/blob/master/community/README.md)
 
 Stage 0 documents preserve the **historical state at the time they were written**, including an earlier unresolved-permission note. The subsequent permission is documented separately rather than rewriting their pinned historical contents.

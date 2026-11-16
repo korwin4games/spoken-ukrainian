@@ -54,13 +54,17 @@ class CandidateState(str, Enum):
 
 @dataclass(frozen=True)
 class TranslationRequest:
-    source_identity: str
+    source_identity: str | None
     original_english: str
     canonical_spoken_id: str | None = None
     client_locale: str | None = None
 
     def __post_init__(self):
-        if type(self.source_identity) is not str or not self.source_identity or not self.original_english:
+        # A canonical Spoken target can be indexed before anyone proves which
+        # ClassicUA source unit it corresponds to. None is *not* a source match.
+        if ((self.source_identity is not None
+             and (type(self.source_identity) is not str or not self.source_identity))
+                or type(self.original_english) is not str or not self.original_english):
             raise ValueError("source_identity_and_english_text_required")
         if self.client_locale is not None and (
                 type(self.client_locale) is not str or not CLIENT_LOCALE.fullmatch(self.client_locale)):
@@ -137,6 +141,11 @@ class ClassicUAProvider:
         self.effective_fields = effective_fields
 
     def lookup(self, request):
+        # An indexed Spoken target alone is not an independently reviewed
+        # ClassicUA source-to-target join. Never look up an unbound identity,
+        # even if a malformed provider registry happens to contain a None key.
+        if request.source_identity is None:
+            return None
         field = self.effective_fields.get(request.source_identity)
         if field is None or not field.text:
             return None

@@ -8,7 +8,7 @@ description: Design, change, test or review Spoken Ukrainian's configurable orde
 ## Start with the accepted contracts
 
 1. Read `AGENTS.md`, `docs/TRANSLATION_SOURCE_CHAIN.md`, `docs/APPROVED_MODULES_AND_FALLBACK.md`, and `config/translation_sources.json`.
-2. Inspect `adapters/translation_sources.py`, `tests/test_translation_sources.py` and the approved canonical ID inventory interface (`docs/STAGE_3_IMPLEMENTATION.md`). This is an **offline, caller-fed prototype**; it is not wired into `tools/stage3_report.py` or the future pack builder.
+2. Inspect `adapters/translation_sources.py`, `adapters/spoken/text_index.py`, `tools/stage4_coverage.py`, `tests/test_translation_sources.py`, `tests/test_stage4_coverage.py`, `docs/STAGE_4A_INVENTORY_COVERAGE.md` and the canonical ID inventory interface (`docs/STAGE_3_IMPLEMENTATION.md`). Stage 4A now reads the real pinned public Spoken IDs and verified originals for Quests/Gossip/Readables, but remains offline and is **not** a completed ClassicUA join/pack pipeline; it is not wired into `tools/stage3_report.py` or the future pack builder.
 3. Treat Stage 3's **0 reviewed real joins** as the baseline; target inventory size is not approved translation coverage.
 
 ## Ordered matching behavior
@@ -22,6 +22,7 @@ description: Design, change, test or review Spoken Ukrainian's configurable orde
 
 ## Identity, evidence and reporting
 
+- For full indexed coverage, separate the **entire canonical inventory denominator** from the **verified-original eligible subset**; never invent original wording for Places/Bosses or ambiguous variants. All Stage 4A requests have `source_identity=None` until a separately attested source→target join is revalidated.
 - Accept canonical Spoken IDs **only from an independently checked inventory**. Do not derive a canonical ID from Ukrainian text, a ClassicUA numeric Gossip hash, item ID, title or language name.
 - Audit provenance: original source revision/file and SHA-256 separate from exact UTF-8 field text SHA-256. Reject mismatches, corrupt input or an unauthorized provider. File and field digests are not interchangeable.
 - Keep content candidates as **pending**, never mark them approved or publishable. Separate source identity approval, translation/grammar/AI review, rights and runtime compatibility.
