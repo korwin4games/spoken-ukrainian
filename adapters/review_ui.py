@@ -15,7 +15,7 @@ from threading import RLock
 import tempfile
 
 from adapters.classicua.evidence import SourceInventory
-from adapters.crosswalk import QUEST_EVENTS
+from adapters.crosswalk import QUEST_EVENTS, digest
 from adapters.mapping import candidates
 from adapters.review_workbench import (build_workbench, empty_decisions,
                                        record_decision, validate_decisions)
@@ -54,6 +54,14 @@ class LocalReviewState:
             raise ValueError("verified_spoken_original_index_required")
         self.decisions_file = guarded_decisions_path(
             self.decisions_file, self.allowed_directory)
+        # Defense-in-depth: the caller may only display text whose digest
+        # belongs to the exact pinned canonical Spoken target context.
+        for identity, text in self.original_index.original_english.items():
+            if (type(identity) is not str or type(text) is not str
+                    or identity not in self.inventory.targets
+                    or not any(row.get("wording_sha256") == digest(text)
+                               for row in self.inventory.contexts.get(identity, ()))):
+                raise ValueError("unverified_spoken_original_text")
         self._views, _ = self.dataset.faction_views(include_ai=True)
         self._hints = candidates(self.source.units, self.inventory)
         self._lock = RLock()
