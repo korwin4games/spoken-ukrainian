@@ -15,4 +15,15 @@ Output: `dist/SpokenCommunity_ukrainian-diagnostic.zip`, with a `.zip.sha256` si
 
 Stage 0 documents are preserved byte for byte in `docs/`. Their upstream-relative source links retain their original checkout context; the pinned Community Packs guide is at https://github.com/rusty-key/spoken-wow/blob/3c896874e27ec9e07d51a3578c0b9fa8545c9ac7/community/README.md.
 
-No publication, production access, TTS or Stage 2 work is included.
+## ClassicUA source audit (Stage 2A)
+
+A read-only Python adapter parses a separate, clean ClassicUA checkout at commit `1770d208ad853d23d61105cf510d53804770d916`, resolves actual loading/override semantics and reports source inventory/provenance. It does not execute source Lua, create translated packs or convert source IDs to Spoken IDs.
+
+```sh
+python3 tools/classicua_audit.py --source /absolute/path/to/ClassicUA
+python3 -m unittest discover -s tests -v
+```
+
+The metadata-only report is written to ignored `build/classicua-audit.json`; no translation bodies are serialized. Its detailed provenance makes the local report about 52 MB. The 36 new tests use synthetic fixtures and need no ClassicUA installation. The standard suite now has 52 tests, including all 16 Stage 1 tests. CI already discovers them and never downloads the ClassicUA corpus.
+
+See [Stage 2A implementation](docs/STAGE_2A_IMPLEMENTATION.md) and [test results/source inventory](docs/STAGE_2A_TESTING.md). Source redistribution and TTS permissions remain unresolved. No production access, generation, translated pack publication or Stage 3 mapping is included.
