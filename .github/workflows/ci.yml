@@ -61,3 +61,6 @@ jobs:
 
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
+
+      - name: Validate real pinned Spoken source-coverage dry-run
+        run: python3 tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE"
