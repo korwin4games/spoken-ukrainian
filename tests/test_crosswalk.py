@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from adapters.classicua.lua import parse_value
 from adapters.classicua.model import Dataset, Origin
-from adapters.crosswalk import (VerifiedTarget, approve_mapping, compare_effective,
+from adapters.crosswalk import (VerifiedJoin, VerifiedTarget, approve_mapping, compare_effective,
                                 digest, effective_units, metadata_json, metadata_report)
 
 
@@ -142,24 +142,44 @@ class CrosswalkTests(unittest.TestCase):
         u = Fixture().add("quest_both", "classic", '{[42]={nil,"same"}}').units()
         unit = u["quest:horde:42:accept"]
         with self.assertRaisesRegex(ValueError, "Unverified"):
-            approve_mapping(unit, "q:42:accept", {}, "Reviewer")
+            approve_mapping(unit, "q:42:accept", {}, {}, "Reviewer")
         with self.assertRaisesRegex(ValueError, "Invalid canonical"):
             VerifiedTarget("q:42:objective", "quest", "pin", "path", "a" * 64)
         with self.assertRaisesRegex(ValueError, "Source identity"):
             approve_mapping(unit, "q:42:accept",
-                {"q:42:accept": VerifiedTarget("q:42:accept", "quest", "pin", "path", "a" * 64)}, "Reviewer")
+                {"q:42:accept": VerifiedTarget("q:42:accept", "quest", "pin", "path", "a" * 64)}, {}, "Reviewer")
 
     def test_explicit_review_requires_evidence_and_separate_review_status(self):
         f = Fixture().add("quest_both", "classic", '{[42]={nil,"same"}}')
         unit = f.units({"quest:horde:42:accept": "b" * 64})["quest:horde:42:accept"]
         target = VerifiedTarget("q:42:accept", "quest", "synthetic-pin", "synthetic-public-reference", "a" * 64)
-        decision = approve_mapping(unit, "q:42:accept", {"q:42:accept": target}, "Synthetic Reviewer")
+        join = VerifiedJoin(unit.source_id, target.canonical_id, "b" * 64, "a" * 64,
+                            "synthetic-permalink-to-explicit-match", "c" * 64)
+        decision = approve_mapping(unit, "q:42:accept", {"q:42:accept": target},
+                                   {(unit.source_id, target.canonical_id): join}, "Synthetic Reviewer")
         self.assertEqual(decision.target_id, "q:42:accept")
+        self.assertEqual(decision.join_evidence_sha256, "c" * 64)
         self.assertEqual((decision.mapping_status, decision.content_status, decision.grammar_status, decision.ai_status),
                          ("approved", "pending", "pending", "pending"))
         with self.assertRaisesRegex(ValueError, "Cross-family"):
             approve_mapping(unit, "b:42",
-                {"b:42": VerifiedTarget("b:42", "readable", "pin", "path", "a" * 64)}, "Reviewer")
+                {"b:42": VerifiedTarget("b:42", "readable", "pin", "path", "a" * 64)}, {}, "Reviewer")
+
+    def test_target_exists_but_join_missing_or_stale_is_rejected(self):
+        f = Fixture().add("quest_both", "classic", '{[42]={nil,"same"}}')
+        unit = f.units({"quest:horde:42:accept": "b" * 64})["quest:horde:42:accept"]
+        target = VerifiedTarget("q:42:accept", "quest", "pin", "path", "a" * 64)
+        with self.assertRaisesRegex(ValueError, "join evidence"):
+            approve_mapping(unit, target.canonical_id, {target.canonical_id: target}, {}, "Reviewer")
+        stale = VerifiedJoin(unit.source_id, target.canonical_id, "a" * 64, "a" * 64,
+                             "synthetic-link", "c" * 64)
+        with self.assertRaisesRegex(ValueError, "Stale"):
+            approve_mapping(unit, target.canonical_id, {target.canonical_id: target},
+                            {(unit.source_id, target.canonical_id): stale}, "Reviewer")
+        wrong_quest = VerifiedTarget("q:99:accept", "quest", "pin", "path", "a" * 64)
+        with self.assertRaisesRegex(ValueError, "Quest ID/event"):
+            approve_mapping(unit, wrong_quest.canonical_id, {wrong_quest.canonical_id: wrong_quest},
+                            {}, "Reviewer")
 
     def test_removed_and_added_require_review(self):
         first = Fixture().add("quest_both", "classic", '{[41]={nil,"one"}}').units()
