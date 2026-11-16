@@ -109,7 +109,7 @@ class WorkbenchTests(unittest.TestCase):
     def test_reject_one_variant_but_keep_other_variant_eligible(self):
         from adapters.mapping import candidates
         hints = candidates(self.source.units, self.inv)
-        d = record_decision(empty_decisions(), hints, source_id="quest:horde:43:progress",
+        d = record_decision(empty_decisions(), hints, self.source, self.inv, source_id="quest:horde:43:progress",
                             target_id="q:43:progress:w1", decision="rejected",
                             reviewer="Invented reviewer", reason="wrong_speaker")
         q = self.queue(decisions=d)
@@ -123,7 +123,7 @@ class WorkbenchTests(unittest.TestCase):
         hints = candidates(self.source.units, self.inv)
         d = empty_decisions()
         for target in ("q:43:progress:w1", "q:43:progress:w2"):
-            d = record_decision(d, hints, source_id="quest:horde:43:progress",
+            d = record_decision(d, hints, self.source, self.inv, source_id="quest:horde:43:progress",
                                 target_id=target, decision="rejected",
                                 reviewer="Invented reviewer", reason="wrong_speaker")
         q = self.queue(decisions=d)
@@ -133,6 +133,7 @@ class WorkbenchTests(unittest.TestCase):
     def test_defer_is_visible_but_never_approval(self):
         from adapters.mapping import candidates
         d = record_decision(empty_decisions(), candidates(self.source.units, self.inv),
+                            self.source, self.inv,
                             source_id="quest:horde:42:accept", target_id="q:42:accept",
                             decision="deferred", reviewer="Invented reviewer",
                             reason="insufficient_evidence")
@@ -144,18 +145,21 @@ class WorkbenchTests(unittest.TestCase):
     def test_invalid_manually_claimed_approval_and_unknown_pair_fail_closed(self):
         from adapters.mapping import candidates
         hints = candidates(self.source.units, self.inv)
-        data = {"schema_version": 1, "decisions": [
-            {"source_id": "quest:horde:42:accept", "target_id": "q:42:accept",
-             "decision": "approved", "reviewer": "Person", "reason": "other"}]}
+        data = record_decision(empty_decisions(), hints, self.source, self.inv,
+                               source_id="quest:horde:42:accept",
+                               target_id="q:42:accept", decision="rejected",
+                               reviewer="Person", reason="other")
+        data["decisions"][0]["decision"] = "approved"
         with self.assertRaisesRegex(ValueError, "invalid_or_duplicate"):
-            validate_decisions(data, hints)
+            validate_decisions(data, hints, self.source, self.inv)
         data["decisions"][0]["decision"] = "rejected"
         data["decisions"][0]["target_id"] = "q:44:accept"
         with self.assertRaisesRegex(ValueError, "invalid_or_duplicate"):
-            validate_decisions(data, hints)
+            validate_decisions(data, hints, self.source, self.inv)
         data["decisions"][0]["target_id"] = "q:42:accept"
         with self.assertRaisesRegex(ValueError, "invalid_or_duplicate"):
-            validate_decisions({"schema_version": 1, "decisions": data["decisions"] * 2}, hints)
+            validate_decisions({"schema_version": 2, "decisions": data["decisions"] * 2},
+                               hints, self.source, self.inv)
 
     def test_strict_decision_schema_and_no_source_bodies(self):
         from adapters.mapping import candidates
@@ -164,12 +168,55 @@ class WorkbenchTests(unittest.TestCase):
                      {"schema_version": 1, "decisions": [], "text": "Invented English"},
                      {"schema_version": 1, "decisions": {}}):
             with self.subTest(data=data), self.assertRaises(ValueError):
-                validate_decisions(data, hints)
+                validate_decisions(data, hints, self.source, self.inv)
         d = record_decision(empty_decisions(), hints,
                             source_id="quest:horde:42:accept", target_id="q:42:accept",
                             decision="rejected", reviewer="Invented reviewer", reason="other")
         self.assertNotIn("Invented English", json.dumps(d))
-        self.assertEqual(len(validate_decisions(d, hints)), 1)
+        self.assertEqual(len(validate_decisions(d, hints, self.source, self.inv)), 1)
+
+    def test_manual_rejection_rejects_changed_source_and_target_evidence(self):
+        from adapters.mapping import candidates
+        hints = candidates(self.source.units, self.inv)
+        record = record_decision(empty_decisions(), hints, self.source, self.inv,
+                                 source_id="quest:horde:42:accept",
+                                 target_id="q:42:accept", decision="rejected",
+                                 reviewer="Invented human", reason="wrong_speaker")
+        self.assertEqual(record["schema_version"], 2)
+        self.assertEqual(record["decisions"][0]["source_revision"], REV)
+        self.assertEqual(record["decisions"][0]["target_context_sha256"],
+                         target_context(self.inv, "q:42:accept"))
+        changed_units = dict(self.units)
+        changed_units["quest:horde:42:accept"] = replace(
+            changed_units["quest:horde:42:accept"], context_sha256="f" * 64)
+        changed_source = SourceInventory(REV, {FILE: SOURCE_SHA}, changed_units)
+        with self.assertRaisesRegex(ValueError, "stale_workbench_decision_evidence"):
+            build_workbench(changed_source, self.inv, decisions=record, faction="horde")
+        with self.assertRaisesRegex(ValueError, "stale_workbench_decision_evidence"):
+            build_workbench(self.source, replace(
+                self.inv, contexts=self.contexts | {"q:42:accept": [
+                    context(42, "accept", faction="both", voice="new-voice")]}),
+                decisions=record, faction="horde")
+        changed_file = {k: replace(u, source_revision="b" * 40,
+                                   source_file_sha256="d" * 64) for k, u in self.units.items()}
+        moved_source = SourceInventory("b" * 40, {FILE: "d" * 64}, changed_file)
+        with self.assertRaisesRegex(ValueError, "stale_workbench_decision_evidence"):
+            build_workbench(moved_source, self.inv, decisions=record, faction="horde")
+
+    def test_malformed_decision_ids_raise_value_error_not_type_error(self):
+        from adapters.mapping import candidates
+        valid = record_decision(empty_decisions(), candidates(self.source.units, self.inv),
+                                self.source, self.inv, source_id="quest:horde:42:accept",
+                                target_id="q:42:accept", decision="deferred",
+                                reviewer="Invented human", reason="other")
+        valid["decisions"][0]["target_id"] = ["q:42:accept"]
+        with self.assertRaisesRegex(ValueError, "invalid_or_duplicate"):
+            validate_decisions(valid, candidates(self.source.units, self.inv),
+                               self.source, self.inv)
+
+    def test_v1_manual_decisions_require_explicit_migration(self):
+        with self.assertRaisesRegex(ValueError, "invalid_workbench_decisions_schema"):
+            self.queue(decisions={"schema_version": 1, "decisions": []})
 
     def test_pure_function_requires_trusted_source_inventory(self):
         with self.assertRaisesRegex(ValueError, "audited_source_inventory_required"):
@@ -214,6 +261,7 @@ class WorkbenchTests(unittest.TestCase):
         from adapters.mapping import candidates
         review = self.approved_review()
         d = record_decision(empty_decisions(), candidates(self.source.units, self.inv),
+                            self.source, self.inv,
                             source_id="quest:horde:42:accept", target_id="q:42:accept",
                             decision="rejected", reviewer="Invented reviewer", reason="wrong_speaker")
         with self.assertRaisesRegex(ValueError, "conflicting_approved"):

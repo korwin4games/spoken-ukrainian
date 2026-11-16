@@ -31,7 +31,7 @@ python3 tools/stage4b_workbench.py \
   --reviewer 'Actual reviewer identifier'
 ```
 
-Use `--decision deferred --reason insufficient_evidence` to retain the candidate with a note. Decisions are written under ignored `build/stage4b-decisions.json`. The strict schema permits **only rejected/deferred**, requires real reviewer metadata and known reason codes, and rejects duplicate/unknown pairs and unexpected text/body fields. A manual decision file is never an identity approval.
+Use `--decision deferred --reason insufficient_evidence` to retain the candidate with a note. Decisions are written under ignored `build/stage4b-decisions.json`. The strict **schema version 2** binds each decision to exact audited ClassicUA/Spoken revisions, source field SHA-256, and source/target context/blob SHA-256. It rejects stale decisions after source/target evidence changes; re-review and record a fresh decision rather than silently migrating a version-1 file. It permits **only rejected/deferred**, requires real reviewer metadata and known reason codes, and rejects duplicate/unknown pairs and unexpected text/body fields. A manual decision file is never an identity approval.
 
 ## Independently attested Stage 3 approval
 

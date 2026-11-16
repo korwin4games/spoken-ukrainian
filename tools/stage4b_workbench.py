@@ -96,7 +96,7 @@ def workbench_main(argv=None):
                      if args.decisions.is_file() else empty_decisions())
         if wants_record:
             decisions = record_decision(
-                decisions, candidates(source.units, spoken),
+                decisions, candidates(source.units, spoken), source, spoken,
                 source_id=args.source_id, target_id=args.target_id,
                 decision=args.decision, reason=args.reason, reviewer=args.reviewer)
         approved_json = None

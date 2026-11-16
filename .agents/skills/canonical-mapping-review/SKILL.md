@@ -22,7 +22,7 @@ description: Work on Stage 3 source-to-canonical-Spoken ID crosswalks, independe
 ## Candidate review queue
 
 - Use Stage 4B for **Quest ID/event candidate hints only** (default 40 Horde units); ensure metadata-only sorted output, no AI-marked automatic proposals, separate voice variants, faction conflicts, and strict pagination.
-- Manual decisions in `build/stage4b-decisions.json` are **rejected/deferred only** and must be validated against an actual pinned candidate pair. Do not call them approved mappings.
+- Manual decisions in `build/stage4b-decisions.json` are **rejected/deferred only** and must be validated against an actual pinned candidate pair **and exact source/target revision/context evidence**. An outdated rejection/deferment must be explicitly re-reviewed, never silently applied across revisions. Do not call them approved mappings.
 - Promotion requires a separately supplied explicit `JoinProof` and two distinct real human reviewers. `approve_explicit_join` must re-run existing Stage 3 `approve_review`, `load_reviews` and `assess_review`; never fabricate reviewer identities or treat test fixtures as actual approvals.
 
 ## Approval gates and updates
