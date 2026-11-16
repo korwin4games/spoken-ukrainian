@@ -16,7 +16,7 @@ Stage 3 primarily delivers mapping and update-aware data contracts. A fully auto
 - Analyze ClassicUA from a **separate clean local checkout** using the existing Stage 2A adapter; do not execute arbitrary Lua, modify upstream, fetch production data or silently advance a lock in a normal build.
 - Canonical Spoken identities and matching evidence must come from pinned, authorized **public** references. When evidence is absent or ambiguous, reject and report the mapping rather than manufacture an ID.
 - Store only minimal hand-reviewed mapping decisions, exclusions, evidence references, hashes and review attestations in Git. Avoid tracked copies of ClassicUA translation text or large normalized records.
-- Rights to redistribute, adapt or send ClassicUA text to a TTS provider remain unresolved. Mapping/audit work does not grant publication rights. Use invented synthetic text in committed tests and metadata-only reports for real-source analysis.
+- The ClassicUA maintainer granted permission for project-specific translation use, adaptation, AI TTS and distribution ([permission record](CLASSICUA_PERMISSION.md)). This approval does not itself establish third-party lore/font rights or authorize our tooling to publish or call providers. Use invented synthetic text in committed tests and metadata-only reports for real-source analysis.
 
 ## Proposed mapping model (design contract, not a final schema)
 
@@ -87,7 +87,7 @@ The suggested CLI names (`check`, `diff`, `apply`) are *design ideas only*. No u
 6. Reports distinguish raw source inventory from mapped Spoken coverage and are deterministic, metadata-only and safe for Git/CI.
 7. Normal builds never update source pins silently, publish content, call production services or generate TTS.
 8. Existing project version checks, Stage 1 diagnostic ZIP regression and Stage 2A tests remain valid.
-9. Stage 2B runtime display limitations and ClassicUA rights remain explicit blockers for affected pack publication; successful mapping is **not** proof of a display-capable addon.
+9. Stage 2B runtime display limitations, required review/attribution, unrelated content rights and explicit release authorization remain gates for affected pack publication; ClassicUA's translation permission is recorded separately. Successful mapping is **not** proof of a display-capable addon.
 
 ## Out of scope now
 

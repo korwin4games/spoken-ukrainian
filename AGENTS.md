@@ -7,7 +7,7 @@ Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. S
 - `README.md`: supported commands and current implementation.
 - `docs/IMPLEMENTATION_PLAN.md`: architecture, stages and gates.
 - `docs/SOURCE_INTEGRATION.md`, `docs/COMPATIBILITY_MATRIX.md`: source semantics and runtime limitations.
-- `docs/LEGAL_AND_ATTRIBUTION.md`, `THIRD_PARTY.md`: third-party rights.
+- `docs/LEGAL_AND_ATTRIBUTION.md` (historical Stage 0), `docs/CLASSICUA_PERMISSION.md` (subsequent approval), `THIRD_PARTY.md`: third-party rights.
 - `docs/STAGE_1_*.md` and `docs/STAGE_2A_*.md`: implemented behavior and tests.
 - `sources.lock.json`: pinned source commits and hashes.
 - `docs/STAGE_3_SPECIFICATION.md`: canonical ID mapping, future ClassicUA updates, review invalidation and source diff requirements.
@@ -16,7 +16,7 @@ Read only what the task needs; do not use old planning notes as proof of current
 ## Hard boundaries
 - Do not modify upstream Spoken/ClassicUA checkouts or installed game AddOns unless specifically authorized.
 - Do not call production APIs, spend TTS credits, publish packs/releases, or change the player to bypass language restrictions.
-- ClassicUA redistribution, adaptation and TTS rights are unresolved. Use invented text in committed fixtures. Never commit copied translations, source snapshots, translated corpora or audit dumps.
+- ClassicUA maintainer granted project-specific permission for translation use, adaptation, AI TTS and distribution (see `docs/CLASSICUA_PERMISSION.md`). Follow the requested attribution and maintain provenance. Use invented text in committed fixtures; do not commit source snapshots, bulk translation corpora or audit dumps by default. Any change to that policy or content publication requires an explicit scoped task and independent third-party rights review.
 - Keep `build/` and `dist/` ignored, and preserve Stage 1 diagnostic archive determinism.
 - Use canonical Spoken identities, never guessed mappings from translated names. Do not treat ClassicUA item IDs as Spoken page IDs or numeric Gossip hashes as Spoken moment IDs.
 - Do not spoof `GetLocale() == "ukUA"`, create fake audio, monkey-patch player internals or claim independent text display without verified module support.
@@ -29,7 +29,7 @@ Read only what the task needs; do not use old planning notes as proof of current
 - Preserve stable source-to-Spoken crosswalk decisions across source revisions when identity evidence is still valid. A changed text/source hash **invalidates translation/grammar/audio review** and requires impact analysis; it must not silently rename a canonical Spoken ID or automatically discard a still-valid mapping.
 - Keep reviewed mapping decisions and minimal provenance in Git, not translated text. Reports and temporary normalized content belong only in ignored local build output; never commit source translation bodies, raw diffs, audio or derived packs without explicit permission.
 - Detect downstream impact separately for text, templates, matching/identity, AI-review flags and existing voice takes. If recording text changes, mark dependent audio stale until it is reviewed or regenerated under authorized TTS rights.
-- Future update checks may propose a PR with hashes, counts, changed IDs and risks; **never automatically merge, release, publish packs or make paid TTS calls**. Honor the ClassicUA permission gates and the Spoken runtime display contracts.
+- Future update checks may propose a PR with hashes, counts, changed IDs and risks; **never automatically merge, release, publish packs or make paid TTS calls**. Follow the ClassicUA permission scope/attribution in `docs/CLASSICUA_PERMISSION.md` and each Spoken runtime display contract.
 
 ## Project versioning and release discipline
 - Read `docs/VERSIONING.md`, `CHANGELOG.md`, and `VERSION` before a versioning or release task.
