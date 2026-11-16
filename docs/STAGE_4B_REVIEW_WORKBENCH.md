@@ -17,6 +17,14 @@ By default, the CLI displays at most **40 Horde Quest source units**, with optio
 
 Output is a metadata-only `build/stage4b-review-queue.json` with source/target IDs, public references and SHA-256, source field digest, candidate options and required review checklist. Neither English nor Ukrainian text bodies leave the tool.
 
+## First 40-record worksheet (Stage 4B.1)
+
+Every normal queue run now also writes `build/stage4b-review-worksheet.csv` (override with `--worksheet-output`, still restricted to ignored `build/`). This CSV has **one row per candidate target and voice/context variant**, so 40 source units may produce **more than 40 worksheet rows**. It includes provenance, Quest/event IDs, NPC, faction, gender, voice and wording SHA-256; **not** Ukrainian or English text bodies.
+
+GitHub Actions runs the real pinned Horde queue and attaches a short-lived, metadata-only `stage4b-first-40-horde-quest-review` artifact, containing the JSON queue and CSV worksheet. Download it from the successful workflow's **Artifacts** section. The initial sample is provided to help the two human reviewers choose a manageable set for actual independent inspection; this is not reviewed coverage.
+
+Spreadsheet clients can sort/filter the CSV. The exporter quotes values and prevents spreadsheet formulas from executing. The columns `review_check` and `human_notes` are **convenience fields only**; editing them or writing `approved` in a sheet **does not create a mapping**. Use the workbench's explicit reject/defer command or an independently evidenced Stage 3 `JoinProof` request. Manual rejection/deferment uses strict **schema v2** bound to current pinned source/target context; stale decisions are rejected.
+
 ## Reject or defer
 
 Only a real human should record a decision after inspecting pinned context. The following IDs and reviewer are **illustrative** and must be replaced with actual queue values:

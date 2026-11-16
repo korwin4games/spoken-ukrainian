@@ -94,3 +94,15 @@ jobs:
             --spoken "$SPOKEN_SOURCE" \
             --faction horde --limit 40
           python3 -c 'import json; r=json.load(open("build/stage4b-review-queue.json")); s=r["summary"]; assert r["family"]=="quest"; assert 0<len(r["queue"])<=40; assert s["new_identity_approvals_created"]==0; assert s["human_stage3_approved_joins"]==0; assert s["translation_content_approvals_created"]==0; assert all(row["status"]=="identity_review_required" for row in r["queue"])'
+
+          python3 -c 'import csv; p="build/stage4b-review-worksheet.csv"; rows=list(csv.DictReader(open(p,encoding="utf-8",newline=""))); assert len(rows)>=40; assert all(r["review_check"]=="requires_independent_context_verification" and r["source_id"] and r["target_id"] and r["source_context_sha256"] and r["target_context_sha256"] for r in rows); assert not any("original_text" in r or "translated_text" in r for r in rows); print("Stage 4B review rows:",len(rows))'
+
+      - name: Upload metadata-only initial Quest review worksheet
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage4b-first-40-horde-quest-review
+          path: |
+            spoken-ukrainian/build/stage4b-review-queue.json
+            spoken-ukrainian/build/stage4b-review-worksheet.csv
+          if-no-files-found: error
+          retention-days: 7
