@@ -64,3 +64,12 @@ jobs:
 
       - name: Validate real pinned Spoken source-coverage dry-run
         run: python3 tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE"
+
+      - name: Validate full canonical client-locale coverage with empty policy
+        run: |
+          python3 tools/stage4_coverage.py \
+            --spoken "$SPOKEN_SOURCE" \
+            --policy config/examples/client-language.json \
+            --client-locale deDE \
+            --output build/stage4-client-language-coverage.json
+          python3 -c 'import json; r=json.load(open("build/stage4-client-language-coverage.json")); c=r["coverage"]; assert c["client_language_selected"] == c["total_spoken_identities"]; assert c["without_verified_public_original"] > 0; assert r["stages"] == []; assert all(row["status"] == "client_language" and row["client_locale"] == "deDE" for row in r["records"])'
