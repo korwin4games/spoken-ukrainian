@@ -6,9 +6,9 @@
 
 - Read a **clean, exact-revision** Spoken checkout through Stage 3 `PublicSource` and `build_index`. Every public reference is SHA-256 validated against `tests/stage3_sources.json`; its revision must match `sources.lock.json`.
 - Independently extract original English text **in memory** from the pinned Quests/Gossip corpus and Readables pages. Accept only one unambiguous text whose deterministic wording digest occurs in the existing canonical target's evidence contexts.
-- Traverse the *real* complete inventory of canonical Spoken IDs, preserving **all four module-family totals**. If an English original cannot be established from the public verified corpus, mark the target `public_original_not_verified` instead of fabricating a text or translating a different record.
+- Traverse the *real* complete inventory of canonical Spoken IDs, preserving **all five content-family totals across four official Spoken module targets** (Gossip is part of `Spoken_Quests`). If an English original cannot be established from the public verified corpus, mark the target `public_original_not_verified` instead of fabricating a text or translating a different record.
 - Pass eligible records to the **existing ordered** `resolve_spoken_batch`. Real `classicua` content is **deliberately unbound** because Stage 3 has **0 independently approved real source→target joins**. An indexed target ID is not a ClassicUA field ID. The pipeline therefore uses `TranslationRequest(source_identity=None, original_english=verified_text, canonical_spoken_id=...)`.
-- Existing `another` stub and `own_translator` mock remain inert/non-publishable. Explicit `original_english` marks unclaimed eligible records as English-only; empty `sources: []` or `{}` selects the **caller-supplied actual client locale**, not necessarily English. All rules for subsets, ordering and omissions remain unchanged.
+- Existing `another` stub and `own_translator` mock remain inert/non-publishable. Explicit `original_english` marks unclaimed **verified-original** records as English-only; empty `sources: []` or `{}` selects the **caller-supplied actual client locale for all canonical IDs**, including records without a verified English original. The independent `original_verified` field preserves original-text availability; there are no provider calls in this mode. All rules for subsets, ordering and omissions remain unchanged.
 - Write deterministic **metadata-only** report under ignored `build/` with one row per public canonical identity, per-stage candidate/remaining totals and final totals by family. Never write source/translated wording bodies to JSON, Git, stdout or error messages.
 
 **This is an intentional discovery-only bridge.** It does not yet connect the audited ClassicUA field text to approved canonical joins. Real fields must remain locked behind independent evidence verification; an automatic same-number/name match is not allowed. Future separately reviewed work may extend original-text indexing for Places/Bosses with the real pinned story references, and bind independently approved ClassicUA joins after revalidating historical and current provenance.
@@ -39,7 +39,7 @@ python3 tools/stage4_coverage.py \
   --client-locale deDE
 ```
 
-The locale value is passed by the caller. This offline Python process **cannot detect the real WoW client locale**; using `deDE` above is only a demonstration. No `GetLocale()` spoofing is implemented. The CLI does not make network requests or write to the pinned source checkout.
+The locale value is passed by the caller. This offline Python process **cannot detect the real WoW client locale**; using `deDE` above is only a demonstration. The caller must provide a valid locale even when the public inventory has no verified English originals. No `GetLocale()` spoofing is implemented. The CLI does not make network requests or write to the pinned source checkout.
 
 ## Report contract
 
@@ -52,12 +52,12 @@ The locale value is passed by the caller. This offline Python process **cannot d
 | `coverage.approved_translations` | Always 0 in this stage, independently of English choices |
 | `coverage.without_approved_translation` | Total target identities, because no content has been approved |
 | `coverage.original_english_selected` | Explicit English source assignments *among text-eligible IDs*, not working in-game fallback |
-| `coverage.client_language_selected` | Text-eligible IDs assigned caller-supplied client locale under empty policy |
+| `coverage.client_language_selected` | All canonical IDs assigned caller-supplied client locale under empty policy, including those without a verified English original |
 | `coverage.families` | Per-family total/with-original/no-original denominators |
 | `stages` | Provider sequence: new candidates, mock skips, original-English selections, remaining after each pass, eligible total |
-| `records` | Exactly one metadata-only row per canonical ID (including excluded IDs), stable sorted output |
+| `records` | Exactly one metadata-only row per canonical ID, stable sorted output. `original_verified` tracks presence of a verified original separately from the source decision. Empty policy assigns `status=client_language` and `client_locale` to **all** IDs, even when `original_verified=false` |
 
-The `stages[*].total` is the **eligible subset** (verified English originals), while `coverage.total_spoken_identities` is the **complete canonical inventory**. They are different denominators. No per-source English selection implies a live Places/Compendium subtitle fallback or guarantees a stored English voice.
+The `stages[*].total` is the **eligible subset** (verified English originals) when providers run, while `coverage.total_spoken_identities` is the **complete canonical inventory**. They are different denominators. Under empty policy, no source stages run and `coverage.client_language_selected == coverage.total_spoken_identities` even when original English text was not verified; locale selection is not proof that localized content exists. No per-source English selection implies a live Places/Compendium subtitle fallback or guarantees a stored English voice.
 
 ## Safety and next gate
 

@@ -7,6 +7,10 @@ or GitHub Release has been published.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stage 4A empty-provider policy now selects client locale for every canonical Spoken ID, independently tracking whether an English original is verified; align optional source identity typing and clarify four modules vs five content families.
+
 ### Added
 
 - Add Stage 4A offline pinned public Spoken English-original index and configurable source-coverage CLI: sequential source passes over verified canonical original texts, full-inventory metadata accounting, and strict zero-unreviewed-join behavior; synthetic regression tests and honest coverage docs. No real mapped translation or live fallback is implemented.

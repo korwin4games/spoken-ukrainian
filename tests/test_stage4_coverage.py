@@ -86,6 +86,7 @@ class Stage4CoverageTests(unittest.TestCase):
         self.assertEqual(report["coverage"]["translation_candidates_pending_review"], 0)
         self.assertEqual(report["coverage"]["original_english_selected"], 3)
         self.assertEqual(len(report["records"]), 5)
+        self.assertEqual(sum(r["original_verified"] for r in report["records"]), 3)
         self.assertEqual(sum(s["candidate_translations"] for s in report["stages"]), 0)
         self.assertEqual([s["remaining_for_next_source"] for s in report["stages"]],
                          [3, 3, 3, 0])
@@ -95,11 +96,42 @@ class Stage4CoverageTests(unittest.TestCase):
 
     def test_empty_policy_uses_explicit_real_client_locale_without_calls(self):
         report = self.report([], "deDE")
-        self.assertEqual(report["coverage"]["client_language_selected"], 3)
+        self.assertEqual(report["coverage"]["client_language_selected"], 5)
         self.assertEqual(report["coverage"]["original_english_selected"], 0)
+        self.assertEqual(report["coverage"]["with_verified_public_original"], 3)
+        self.assertEqual(report["coverage"]["without_verified_public_original"], 2)
+        self.assertEqual(report["coverage"]["approved_translations"], 0)
         self.assertEqual(report["stages"], [])
-        self.assertEqual(len([r for r in report["records"]
-                              if r["client_locale"] == "deDE"]), 3)
+        self.assertEqual(len(report["records"]), 5)
+        self.assertTrue(all(r["source"] == "client_language" and
+                            r["status"] == "client_language" and
+                            r["client_locale"] == "deDE" and
+                            r["translated"] is False for r in report["records"]))
+        self.assertEqual(sum(r["original_verified"] for r in report["records"]), 3)
+        by_id = {r["canonical_spoken_id"]: r for r in report["records"]}
+        self.assertFalse(by_id["z:54"]["original_verified"])
+        self.assertFalse(by_id["boss:2:ogre"]["original_verified"])
+        self.assertIsNone(by_id["z:54"]["field_sha256"])
+        self.assertEqual(report["coverage"]["without_approved_translation"], 5)
+
+    def test_empty_policy_with_no_verified_originals_still_selects_client_locale(self):
+        base = inventory_for()
+        missing = {"z:54", "boss:2:ogre"}
+        inventory = Inventory({k: v for k, v in base.targets.items() if k in missing},
+                              {k: v for k, v in base.contexts.items() if k in missing},
+                              {}, base.revision, {})
+        report = self.report([], "frFR", inventory=inventory)
+        self.assertEqual(report["coverage"]["total_spoken_identities"], 2)
+        self.assertEqual(report["coverage"]["with_verified_public_original"], 0)
+        self.assertEqual(report["coverage"]["client_language_selected"], 2)
+        self.assertEqual(report["stages"], [])
+        self.assertEqual({r["canonical_spoken_id"] for r in report["records"]}, missing)
+        self.assertTrue(all(r["client_locale"] == "frFR" and
+                            r["original_verified"] is False for r in report["records"]))
+        with self.assertRaisesRegex(ValueError, "client_locale_required"):
+            self.report([], client_locale=None, inventory=inventory)
+        with self.assertRaisesRegex(ValueError, "client_locale_required"):
+            self.report([], client_locale="invalid", inventory=inventory)
 
     def test_english_first_and_only_skip_all_ukrainian_sources(self):
         report = self.report(["original_english", "classicua", "own_translator"])

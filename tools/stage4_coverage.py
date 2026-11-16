@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 from adapters.spoken import PublicSource, build_index
 from adapters.spoken.text_index import index_verified_originals
 from adapters.translation_sources import (
-    AlternativeSourceStub, ClassicUAProvider, OwnTranslatorMock,
+    AlternativeSourceStub, ClassicUAProvider, OwnTranslatorMock, CLIENT_LOCALE,
     TranslationRequest, load_source_policy, resolve_spoken_batch,
 )
 
@@ -29,6 +29,12 @@ def build_coverage(reader, inventory, policy, client_locale=None):
     Until that integration is independently reviewed, source_identity is None
     for every genuine target ID. No ClassicUA translation is therefore selected.
     """
+    # Client-locale selection is independent of English-original availability.
+    # Even a Places/Bosses target without a verified original gets the chosen
+    # locale under [] / {}; no provider is called in that mode.
+    if not policy.sources and (
+            type(client_locale) is not str or not CLIENT_LOCALE.fullmatch(client_locale)):
+        raise ValueError("client_locale_required_for_empty_source_policy")
     index = index_verified_originals(reader, inventory)
     requests = [
         TranslationRequest(None, text, identity, client_locale)
@@ -41,12 +47,19 @@ def build_coverage(reader, inventory, policy, client_locale=None):
     }
     selection = resolve_spoken_batch(requests, policy, registry, inventory.targets)
     batch = selection.metadata()
+    # Preserve missing-English evidence without suppressing client-locale
+    # selection. No fabricated text or source ID is introduced here.
     unavailable = [
-        {"canonical_spoken_id": identity, "status": "public_original_not_verified",
-         "source": None, "field_sha256": None, "client_locale": None, "translated": False}
+        {"canonical_spoken_id": identity,
+         "status": "client_language" if not policy.sources else "public_original_not_verified",
+         "source": "client_language" if not policy.sources else None,
+         "field_sha256": None,
+         "client_locale": client_locale if not policy.sources else None,
+         "translated": False, "original_verified": False}
         for identity in index.unresolved
     ]
-    combined = sorted(batch.pop("records") + unavailable,
+    eligible = [row | {"original_verified": True} for row in batch.pop("records")]
+    combined = sorted(eligible + unavailable,
                       key=lambda row: row["canonical_spoken_id"])
     if len(combined) != len(inventory.targets) or len({
             row["canonical_spoken_id"] for row in combined}) != len(combined):
@@ -66,7 +79,8 @@ def build_coverage(reader, inventory, policy, client_locale=None):
             "approved_translations": 0,
             "without_approved_translation": len(inventory.targets),
             "original_english_selected": batch["original_english_fallback"],
-            "client_language_selected": batch["client_language"],
+            "client_language_selected": batch["client_language"] + (
+                len(unavailable) if not policy.sources else 0),
             "untranslated_with_public_original": batch["untranslated_no_source"],
             "families": index.families,
         },

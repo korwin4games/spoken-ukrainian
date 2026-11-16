@@ -54,7 +54,7 @@ class CandidateState(str, Enum):
 
 @dataclass(frozen=True)
 class TranslationRequest:
-    source_identity: str
+    source_identity: str | None
     original_english: str
     canonical_spoken_id: str | None = None
     client_locale: str | None = None
