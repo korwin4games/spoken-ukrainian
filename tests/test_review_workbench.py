@@ -1,6 +1,8 @@
 """Synthetic tests for the Stage 4B reviewer workbench (no real source text)."""
 from dataclasses import replace
 import json
+import csv
+from io import StringIO
 import unittest
 
 from adapters.classicua.evidence import SourceInventory, source_reference
@@ -8,6 +10,7 @@ from adapters.crosswalk import EffectiveUnit, VerifiedTarget, digest
 from adapters.mapping import review_file, load_reviews, target_context
 from adapters.review_workbench import (build_workbench, empty_decisions, record_decision,
                                        validate_decisions)
+from adapters.review_worksheet import COLUMNS, worksheet_csv
 from adapters.spoken import Inventory
 from adapters.spoken.evidence import JoinProof, approve_review, proof_digest
 
@@ -174,6 +177,42 @@ class WorkbenchTests(unittest.TestCase):
                             decision="rejected", reviewer="Invented reviewer", reason="other")
         self.assertNotIn("Invented English", json.dumps(d))
         self.assertEqual(len(validate_decisions(d, hints, self.source, self.inv)), 1)
+
+    def test_review_worksheet_has_distinct_rows_for_each_voice_variant(self):
+        report = self.queue(limit=2)
+        csv_body = worksheet_csv(report)
+        rows = list(csv.DictReader(StringIO(csv_body)))
+        self.assertEqual(tuple(rows[0]), COLUMNS)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([r["source_id"] for r in rows],
+                         ["quest:horde:42:accept", "quest:horde:43:progress",
+                          "quest:horde:43:progress"])
+        self.assertEqual({r["voice"] for r in rows[1:]}, {"voice-1", "voice-2"})
+        self.assertTrue(all(r["review_check"] ==
+                            "requires_independent_context_verification" for r in rows))
+        self.assertTrue(all(not r["human_notes"] for r in rows))
+        self.assertEqual(rows[0]["target_context_sha256"],
+                         target_context(self.inv, "q:42:accept"))
+        self.assertNotIn("Invented English", csv_body)
+
+    def test_review_worksheet_rejects_nonworkbench_and_approved_mappings(self):
+        report = self.queue()
+        with self.assertRaisesRegex(ValueError, "stage4b_metadata_only_report_required"):
+            worksheet_csv(report | {"scope": "untrusted"})
+        approved = {**report, "summary": report["summary"] |
+                    {"new_identity_approvals_created": 1}}
+        with self.assertRaisesRegex(ValueError, "stage4b_metadata_only_report_required"):
+            worksheet_csv(approved)
+        corrupted = json.loads(json.dumps(report))
+        corrupted["queue"][0]["status"] = "mapped"
+        with self.assertRaisesRegex(ValueError, "unreviewed_quest_record_required"):
+            worksheet_csv(corrupted)
+
+    def test_review_worksheet_escapes_spreadsheet_formula_cells(self):
+        report = json.loads(json.dumps(self.queue(limit=1)))
+        report["queue"][0]["target_options"][0]["variants"][0]["voice"] = "=HYPERLINK(\"example\")"
+        rows = list(csv.DictReader(StringIO(worksheet_csv(report))))
+        self.assertTrue(rows[0]["voice"].startswith("'="))
 
     def test_manual_rejection_rejects_changed_source_and_target_evidence(self):
         from adapters.mapping import candidates
