@@ -1,6 +1,6 @@
 # Stage 3 specification — canonical mapping and update-ready ClassicUA integration
 
-**Status:** planned, not implemented. Stage 2A provides the restricted pinned-source parser, effective-record resolver and metadata-only audit. Stage 2B must establish runtime text-display requirements separately. This document adds a long-term **translation updateability** requirement to Stage 3; it does not authorize source import, generated packs, automatic sync or publication.
+**Status:** Stage 3 foundation implemented; full acceptance **not yet met**. Stage 2A provides the restricted pinned-source parser, effective-record resolver and metadata-only audit; Stage 2B documents the runtime text-display requirements. The [foundation](STAGE_3_FOUNDATION.md) adds preliminary effective-unit fingerprints, evidence-gated review contracts and semantic unit diffs; it does **not** implement real verified canonical mappings, full public reference indexing or update workflows. This specification adds a long-term **translation updateability** requirement and does not authorize source import, generated packs, automatic sync or publication.
 
 See [implementation plan](IMPLEMENTATION_PLAN.md), [source integration](SOURCE_INTEGRATION.md), [Stage 2A implementation](STAGE_2A_IMPLEMENTATION.md), [compatibility](COMPATIBILITY_MATRIX.md), [rights](LEGAL_AND_ATTRIBUTION.md) and [versioning](VERSIONING.md).
 
