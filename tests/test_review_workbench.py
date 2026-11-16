@@ -45,7 +45,7 @@ class WorkbenchTests(unittest.TestCase):
         )}
         self.source = SourceInventory(REV, {FILE: SOURCE_SHA}, self.units)
         self.contexts = {
-            "q:42:accept": [context(42, "accept")],
+            "q:42:accept": [context(42, "accept", faction="both")],
             "q:43:progress:w1": [context(43, "progress", voice="voice-1")],
             "q:43:progress:w2": [context(43, "progress", voice="voice-2")],
             "q:44:accept": [context(44, "accept")],
