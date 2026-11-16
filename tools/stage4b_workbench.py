@@ -111,8 +111,7 @@ def workbench_main(argv=None):
         if approved_json is not None:
             reviews_output.parent.mkdir(parents=True, exist_ok=True)
             reviews_output.write_text(
-                json.dumps(approved_json, sort_keys=True, ensure_ascii=False, indent=2) + "
-",
+                json.dumps(approved_json, sort_keys=True, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8")
         if wants_record:
             decision_output.parent.mkdir(parents=True, exist_ok=True)
