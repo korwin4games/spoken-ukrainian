@@ -92,6 +92,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | Offline inventory, review schema and local effective comparison implemented; **0 approved real joins, independent review pending** ([coverage](docs/STAGE_3_IMPLEMENTATION.md)) |
 | Configurable source priority and sequential coverage (PR #8) | Offline resolver, policy and candidate metadata reporting implemented; **no approved real content** |
 | Stage 4A — real pinned Spoken inventory → source coverage dry-run | Implemented read-only public English text index and offline coverage CLI for verified originals; **0 real source joins, no Ukrainian packs** ([details](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
+| Stage 4B — Quest mapping review workbench | Pinned source/target evidence queue, reject/defer, explicit Stage 3 two-reviewer approval gate; **0 real reviewed joins** ([procedure](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
@@ -126,6 +127,19 @@ python3 tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-
 ```
 
 Reads the **real pinned canonical Spoken inventory** and checks original wording for Quests/Gossip/Readables without exporting text; reports a per-source lookup pass, missing-original targets and total counts in ignored `build/stage4-source-coverage.json`. Source identity is deliberately **unbound** until independently approved Stage 3 joins exist, so **no real ClassicUA translation is assigned**; `another` remains a stub and `own_translator` a mock. Empty policy requires an explicit `--client-locale` from the caller. See [Stage 4A scope and limitations](docs/STAGE_4A_INVENTORY_COVERAGE.md).
+
+### Inspect Quest mapping candidates (Stage 4B)
+
+The review workbench audits **both pinned repositories**, produces a metadata-only shortlist of actual Quest ID/event candidates and requires independent speaker/voice/faction/wording evidence before accepting a canonical join:
+
+```sh
+python3 tools/stage4b_workbench.py \
+  --classicua /absolute/path/to/clean-pinned-ClassicUA \
+  --spoken /absolute/path/to/clean-pinned-spoken-wow \
+  --faction horde --limit 40
+```
+
+Output: ignored `build/stage4b-review-queue.json`. A reviewer can explicitly **reject or defer** individual source/target pairs. **Approval** requires a separate human-supplied Stage 3 `JoinProof` and two distinct reviewers, validated by the existing mapping gate; it never approves Ukrainian wording automatically. No real approvals are committed. See the [Stage 4B guide](docs/STAGE_4B_REVIEW_WORKBENCH.md).
 
 ### Audit a pinned ClassicUA checkout (Stage 2A)
 
