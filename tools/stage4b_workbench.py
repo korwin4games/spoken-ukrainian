@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 from adapters.classicua.source import audit_checkout
 from adapters.classicua.evidence import from_audit
 from adapters.mapping import candidates, load_reviews
+from adapters.review_worksheet import worksheet_csv
 from adapters.review_workbench import (approve_explicit_join, build_workbench,
                                        empty_decisions, record_decision)
 from adapters.spoken import PublicSource, build_index
@@ -43,6 +44,9 @@ def workbench_main(argv=None):
                         help="Manual reject/defer-only metadata JSON (created on first decision)")
     parser.add_argument("--output", type=Path,
                         default=ROOT / "build/stage4b-review-queue.json")
+    parser.add_argument("--worksheet-output", type=Path,
+                        default=ROOT / "build/stage4b-review-worksheet.csv",
+                        help="Metadata-only CSV for human review; never an approval file")
     parser.add_argument("--faction", choices=("alliance", "horde"),
                         default="horde")
     parser.add_argument("--limit", type=int, default=40)
@@ -67,14 +71,19 @@ def workbench_main(argv=None):
         if wants_approval and not args.reviews:
             raise ValueError("approval_requires_reviews_output")
         output = protected_output(args.output, [args.classicua, args.spoken])
+        worksheet_output = protected_output(args.worksheet_output,
+                                           [args.classicua, args.spoken])
+        if worksheet_output == output or worksheet_output == args.decisions.resolve():
+            raise ValueError("worksheet_file_must_be_distinct")
         if wants_approval:
             reviews_output = protected_output(
                 args.reviews, [args.classicua, args.spoken, args.approve_request])
-            if reviews_output == output or reviews_output == args.decisions.resolve():
+            if (reviews_output == output or reviews_output == worksheet_output
+                    or reviews_output == args.decisions.resolve()):
                 raise ValueError("review_output_must_be_distinct")
         if wants_record:
             decision_output = protected_output(args.decisions, [args.classicua, args.spoken])
-            if decision_output == output:
+            if decision_output == output or decision_output == worksheet_output:
                 raise ValueError("decision_file_must_differ_from_queue_report")
         lock = json.loads((ROOT / "sources.lock.json").read_text(encoding="utf-8"))
         manifest = json.loads((ROOT / "tests/stage3_sources.json").read_text(encoding="utf-8"))
@@ -108,6 +117,7 @@ def workbench_main(argv=None):
                                    source_inventories={source.revision: source})
         report = build_workbench(source, spoken, decisions=decisions, reviews=reviews,
                                  limit=args.limit, offset=args.offset, faction=args.faction)
+        csv_content = worksheet_csv(report)
         if approved_json is not None:
             reviews_output.parent.mkdir(parents=True, exist_ok=True)
             reviews_output.write_text(
@@ -118,6 +128,8 @@ def workbench_main(argv=None):
             decision_output.write_text(
                 json.dumps(decisions, sort_keys=True, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8")
+        worksheet_output.parent.mkdir(parents=True, exist_ok=True)
+        worksheet_output.write_text(csv_content, encoding="utf-8")
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, sort_keys=True, ensure_ascii=False,
                                      separators=(",", ":")) + "\n", encoding="utf-8")
