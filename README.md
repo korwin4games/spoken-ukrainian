@@ -37,7 +37,7 @@ The intended player experience is to install Spoken and the corresponding Ukrain
 
 ClassicUA remains the upstream translation source rather than a one-time copy. Future updates will pin and audit a newer ClassicUA revision, compare **effective** translated records (after all overrides), reuse reviewed mappings to canonical Spoken identities, flag changed text and outdated audio for review, and rebuild only the affected packs after approval.
 
-**Source-update diffing, mapping, audio generation and pack release automation are not implemented yet.** See the [Stage 3 specification](docs/STAGE_3_SPECIFICATION.md). Ordinary builds never silently pull the latest ClassicUA branch.
+**Stage 3 foundation** now extracts metadata-only effective translation units and tests evidence-gated review and impact diffs. **Real canonical crosswalks, two-revision source update checks, audio generation and pack release automation are not implemented.** See the [Stage 3 foundation](docs/STAGE_3_FOUNDATION.md), [full task](docs/STAGE_3_TASK.md) and [specification](docs/STAGE_3_SPECIFICATION.md). Ordinary builds never silently pull the latest ClassicUA branch.
 
 ## ClassicUA and attribution
 
@@ -57,7 +57,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 1 — `ukUA` registration and original text-only Places diagnostic | Implemented; manually tested in Forever |
 | Stage 2A — restricted ClassicUA Lua parser, override resolver and metadata-only audit | Implemented |
 | Stage 2B — runtime compatibility of independent Ukrainian text | Offline characterization implemented; [results](docs/STAGE_2B_COMPATIBILITY.md), [manual Forever acceptance pending](docs/STAGE_2B_TESTING.md) |
-| Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | Specified, not implemented |
+| Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | **Foundation in progress:** unit fingerprints and review gates tested; no real verified crosswalk yet ([details](docs/STAGE_3_FOUNDATION.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
