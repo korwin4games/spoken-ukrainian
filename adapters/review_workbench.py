@@ -19,44 +19,86 @@ FACTS = ("npc_id", "npc_type", "voice", "faction", "player_gender",
 SOURCE_FAMILY = "quest"
 
 
+# Rejections/deferments are decisions about an *audited evidence state*, not
+# permanent bans on a numerical ID pair. Never replay a decision on new context.
+DECISION_CONTEXT = (
+    "source_revision", "source_file_sha256", "source_context_sha256",
+    "source_field_sha256", "target_revision", "target_blob_sha256",
+    "target_context_sha256",
+)
+
+
 def empty_decisions():
-    return {"schema_version": 1, "decisions": []}
+    return {"schema_version": 2, "decisions": []}
 
 
-def validate_decisions(data, hints):
-    """Verify reviewer input against fresh candidate pairs; never trust a JSON ID."""
+def candidate_evidence(hints, source, inventory):
+    """Attach trusted exact pinned evidence to each eligible source/target pair."""
+    if not isinstance(source, SourceInventory):
+        raise ValueError("audited_source_inventory_required")
+    result = {}
+    for hint in hints:
+        unit = source.units[hint["source_id"]]
+        for target_id in hint["candidates"]:
+            target = inventory.targets[target_id]
+            result[(unit.source_id, target_id)] = {
+                "source_revision": unit.source_revision,
+                "source_file_sha256": unit.source_file_sha256,
+                "source_context_sha256": unit.context_sha256,
+                "source_field_sha256": unit.effective_sha256,
+                "target_revision": target.spoken_revision,
+                "target_blob_sha256": target.evidence_sha256,
+                "target_context_sha256": target_context(inventory, target_id),
+            }
+    return result
+
+
+def validate_decisions(data, hints, source, inventory):
+    """Require explicit human decisions tied to exact current pinned evidence."""
     if (type(data) is not dict or set(data) != {"schema_version", "decisions"}
-            or type(data["schema_version"]) is not int or data["schema_version"] != 1
+            or type(data["schema_version"]) is not int or data["schema_version"] != 2
             or type(data["decisions"]) is not list):
         raise ValueError("invalid_workbench_decisions_schema")
-    pairs = {(r["source_id"], t) for r in hints for t in r["candidates"]}
-    seen = set()
-    rows = []
+    pairs = candidate_evidence(hints, source, inventory)
+    seen, rows = set(), []
     for row in data["decisions"]:
-        if type(row) is not dict or set(row) != {
-                "source_id", "target_id", "decision", "reviewer", "reason"}:
+        if (type(row) is not dict
+                or set(row) != {"source_id", "target_id", "decision", "reviewer", "reason",
+                                *DECISION_CONTEXT}):
             raise ValueError("invalid_workbench_decision_fields")
-        key = (row["source_id"], row["target_id"])
+        # Validate value types before trying to use values as hash/set keys.
         if (type(row["source_id"]) is not str or type(row["target_id"]) is not str
-                or key not in pairs or key in seen
                 or type(row["decision"]) is not str or row["decision"] not in DECISIONS
                 or type(row["reason"]) is not str or row["reason"] not in REASONS
                 or type(row["reviewer"]) is not str or not row["reviewer"].strip()
-                or len(row["reviewer"]) > 120):
+                or len(row["reviewer"]) > 120
+                or any(type(row[k]) is not str or not row[k] for k in DECISION_CONTEXT)):
             raise ValueError("invalid_or_duplicate_workbench_decision")
+        key = (row["source_id"], row["target_id"])
+        if key not in pairs or key in seen:
+            raise ValueError("invalid_or_duplicate_workbench_decision")
+        if any(row[k] != pairs[key][k] for k in DECISION_CONTEXT):
+            raise ValueError("stale_workbench_decision_evidence")
         seen.add(key)
         rows.append(dict(row))
     return sorted(rows, key=lambda r: (r["source_id"], r["target_id"]))
 
 
-def record_decision(data, hints, *, source_id, target_id, decision, reviewer, reason):
-    """Create an explicit human reject/defer entry, never a mapping approval."""
-    existing = validate_decisions(data, hints)
+def record_decision(data, hints, source, inventory, *, source_id, target_id,
+                    decision, reviewer, reason):
+    """Persist reject/defer with current audited provenance, never approval."""
+    existing = validate_decisions(data, hints, source, inventory)
+    if type(source_id) is not str or type(target_id) is not str:
+        raise ValueError("invalid_or_duplicate_workbench_decision")
+    evidence = candidate_evidence(hints, source, inventory).get((source_id, target_id))
+    if evidence is None:
+        raise ValueError("invalid_or_duplicate_workbench_decision")
     new = {"source_id": source_id, "target_id": target_id, "decision": decision,
-           "reviewer": reviewer, "reason": reason}
-    return {"schema_version": 1,
-            "decisions": validate_decisions({"schema_version": 1,
-                                             "decisions": existing + [new]}, hints)}
+           "reviewer": reviewer, "reason": reason, **evidence}
+    return {"schema_version": 2,
+            "decisions": validate_decisions({"schema_version": 2,
+                                             "decisions": existing + [new]},
+                                            hints, source, inventory)}
 
 
 def build_workbench(source: SourceInventory, inventory, *,
@@ -69,7 +111,8 @@ def build_workbench(source: SourceInventory, inventory, *,
             or faction not in (None, "alliance", "horde")):
         raise ValueError("invalid_workbench_pagination_or_faction")
     hints = candidates(source.units, inventory)
-    saved = validate_decisions(decisions if decisions is not None else empty_decisions(), hints)
+    saved = validate_decisions(decisions if decisions is not None else empty_decisions(),
+                               hints, source, inventory)
     decision_by_pair = {(r["source_id"], r["target_id"]): r for r in saved}
 
     # Replay Stage 3 reviews with independent, audited historical provenance.
@@ -211,7 +254,7 @@ def approve_explicit_join(source: SourceInventory, inventory, request, *,
                               if row["source_id"] == source_id), ()):
         raise ValueError("candidate_target_reference_required")
     manual = validate_decisions(decisions if decisions is not None
-                                else empty_decisions(), hints)
+                                else empty_decisions(), hints, source, inventory)
     if any((r["source_id"], r["target_id"], r["decision"])
            == (source_id, target_id, "rejected") for r in manual):
         raise ValueError("rejected_candidate_cannot_be_approved")
