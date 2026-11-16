@@ -9,6 +9,8 @@ or GitHub Release has been published.
 
 ### Added
 
+- Document ClassicUA's project-specific permission and required attribution; explain the planned user experience and translation update workflow in README.
+
 ### Changed
 
 ### Fixed
