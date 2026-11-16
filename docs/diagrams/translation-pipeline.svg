@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1720" height="1120" viewBox="0 0 1720 1120" role="img" aria-label="Spoken Ukrainian translation coverage pipeline">
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1425"/><stop offset="1" stop-color="#142a45"/></linearGradient><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#88a5c6"/></marker></defs>
+<rect width="1720" height="1120" fill="url(#bg)"/>
+<text x="64" y="67" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="700">SPOKEN UKRAINIAN</text>
+<text x="64" y="122" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="40" font-weight="700">Translation coverage pipeline</text>
+<text x="64" y="160" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="18" font-weight="400">Canonical Spoken objects → ordered sources → metadata coverage → reviewed Community Packs</text>
+<text x="64" y="206" fill="#b69cff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">01  INPUTS</text>
+<text x="64" y="387" fill="#5bd2d9" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">02  ONLY STILL-UNTRANSLATED OBJECTS REACH THE NEXT SOURCE</text>
+<text x="1078" y="387" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">03  COVERAGE REPORT</text>
+<text x="64" y="955" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">04  REVIEW + FOUR OFFICIAL MODULE TARGETS</text>
+<rect x="64" y="223" width="740" height="116" rx="18" fill="#193650" stroke="#5bd2d9" stroke-width="2"/>
+<rect x="66" y="240" width="5" height="82" rx="3" fill="#5bd2d9"/>
+<text x="88" y="256" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700">Spoken canonical inventory</text>
+<text x="88" y="286" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Verified IDs + English originals · one object per canonical ID</text>
+<rect x="837" y="223" width="818" height="116" rx="18" fill="#302645" stroke="#b69cff" stroke-width="2"/>
+<rect x="839" y="240" width="5" height="82" rx="3" fill="#b69cff"/>
+<text x="861" y="256" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700">translation_sources.json</text>
+<text x="861" y="286" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Reorder/remove any source · [] or {} → client language</text>
+<rect x="64" y="401" width="970" height="108" rx="18" fill="#1a3049" stroke="#5bd2d9" stroke-width="2"/>
+<rect x="66" y="418" width="5" height="74" rx="3" fill="#5bd2d9"/>
+<text x="88" y="434" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700">1  ClassicUA</text>
+<text x="88" y="464" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Already audited effective translation fields</text>
+<rect x="64" y="531" width="970" height="108" rx="18" fill="#1a3049" stroke="#5bd2d9" stroke-width="2"/>
+<rect x="66" y="548" width="5" height="74" rx="3" fill="#5bd2d9"/>
+<text x="88" y="564" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700">2  Another</text>
+<text x="88" y="594" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Future permitted source (currently stub)</text>
+<rect x="64" y="661" width="970" height="108" rx="18" fill="#2c2542" stroke="#b69cff" stroke-width="2"/>
+<rect x="66" y="678" width="5" height="74" rx="3" fill="#b69cff"/>
+<text x="88" y="694" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700">3  Own Translator</text>
+<text x="88" y="724" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Currently mock · NEVER counted as translated</text>
+<rect x="64" y="791" width="970" height="108" rx="18" fill="#2f2c29" stroke="#fac175" stroke-width="2"/>
+<rect x="66" y="808" width="5" height="74" rx="3" fill="#fac175"/>
+<text x="88" y="824" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700">4  Original English</text>
+<text x="88" y="854" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Explicit terminal fallback · NOT a Ukrainian translation</text>
+<rect x="1078" y="401" width="577" height="498" rx="18" fill="#1b303e" stroke="#68dcaf" stroke-width="2"/>
+<rect x="1080" y="418" width="5" height="464" rx="3" fill="#68dcaf"/>
+<text x="1102" y="434" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="22" font-weight="700">Per-source accounting</text>
+<text x="1102" y="464" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Example 1,000 objects — numbers illustrative</text>
+<rect x="64" y="969" width="1591" height="62" rx="18" fill="#26504b" stroke="#68dcaf" stroke-width="2"/>
+<rect x="66" y="986" width="5" height="28" rx="3" fill="#68dcaf"/>
+<text x="88" y="1002" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="21" font-weight="700">Review: ID mapping · wording · grammar · rights · AI · runtime</text>
+<rect x="64" y="1044" width="384" height="56" rx="18" fill="#1e3a50" stroke="#4886a1" stroke-width="2"/>
+<rect x="66" y="1061" width="5" height="22" rx="3" fill="#4886a1"/>
+<text x="88" y="1077" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">Spoken_Quests</text>
+<text x="88" y="1107" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Quests + Gossip</text>
+<rect x="465" y="1044" width="384" height="56" rx="18" fill="#1e3a50" stroke="#4886a1" stroke-width="2"/>
+<rect x="467" y="1061" width="5" height="22" rx="3" fill="#4886a1"/>
+<text x="489" y="1077" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">Spoken_Places</text>
+<text x="489" y="1107" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Zones + Subzones</text>
+<rect x="866" y="1044" width="384" height="56" rx="18" fill="#1e3a50" stroke="#4886a1" stroke-width="2"/>
+<rect x="868" y="1061" width="5" height="22" rx="3" fill="#4886a1"/>
+<text x="890" y="1077" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">Spoken_Readables</text>
+<text x="890" y="1107" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Books + Notes</text>
+<rect x="1267" y="1044" width="384" height="56" rx="18" fill="#1e3a50" stroke="#4886a1" stroke-width="2"/>
+<rect x="1269" y="1061" width="5" height="22" rx="3" fill="#4886a1"/>
+<text x="1291" y="1077" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">Spoken_Bosses</text>
+<text x="1291" y="1107" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Dungeon / Raid boss stories</text>
+<path d="M432 339 L44 339 L44 455 L64 455" fill="none" stroke="#88a5c6" stroke-width="2.5"  marker-end="url(#arrow)"/>
+<path d="M1190 339 L1062 339 L1062 455 L1034 455" fill="none" stroke="#88a5c6" stroke-width="2.5" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+<path d="M549 509 L549 531" fill="none" stroke="#88a5c6" stroke-width="2.5"  marker-end="url(#arrow)"/>
+<path d="M549 639 L549 661" fill="none" stroke="#88a5c6" stroke-width="2.5"  marker-end="url(#arrow)"/>
+<path d="M549 769 L549 791" fill="none" stroke="#88a5c6" stroke-width="2.5"  marker-end="url(#arrow)"/>
+<rect x="696" y="413" width="150" height="34" rx="10" fill="#2a4358"/>
+<rect x="861" y="413" width="154" height="34" rx="10" fill="#2a4358"/>
+<text x="708" y="436" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">650 found</text>
+<text x="873" y="436" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">350 remain</text>
+<rect x="696" y="543" width="150" height="34" rx="10" fill="#2a4358"/>
+<rect x="861" y="543" width="154" height="34" rx="10" fill="#2a4358"/>
+<text x="708" y="566" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">200 found</text>
+<text x="873" y="566" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">150 remain</text>
+<rect x="696" y="673" width="150" height="34" rx="10" fill="#2a4358"/>
+<rect x="861" y="673" width="154" height="34" rx="10" fill="#2a4358"/>
+<text x="708" y="696" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">100 found*</text>
+<text x="873" y="696" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">50 remain</text>
+<rect x="696" y="803" width="150" height="34" rx="10" fill="#2a4358"/>
+<rect x="861" y="803" width="154" height="34" rx="10" fill="#2a4358"/>
+<text x="708" y="826" fill="#fac175" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">0 translated</text>
+<text x="873" y="826" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">50 English</text>
+<text x="1105" y="489" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Candidates require independent approval</text>
+<rect x="1098" y="513" width="537" height="46" rx="8" fill="#2e4558"/>
+<text x="1115" y="543" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">Source</text>
+<text x="1353" y="543" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">Found</text>
+<text x="1493" y="543" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="17" font-weight="700">Remaining</text>
+<text x="1115" y="606" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">ClassicUA</text>
+<text x="1353" y="606" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">650</text>
+<text x="1493" y="606" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">350</text>
+<text x="1115" y="659" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Another</text>
+<text x="1353" y="659" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">200</text>
+<text x="1493" y="659" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">150</text>
+<text x="1115" y="712" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Own Translator*</text>
+<text x="1353" y="712" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">100</text>
+<text x="1493" y="712" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">50</text>
+<text x="1115" y="765" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">Original English</text>
+<text x="1353" y="765" fill="#68dcaf" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">0</text>
+<text x="1493" y="765" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="400">0</text>
+<rect x="1098" y="787" width="537" height="48" rx="7" fill="#26564d"/>
+<text x="1115" y="818" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">TOTAL</text>
+<text x="1353" y="818" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">950</text>
+<text x="1493" y="818" fill="#eff5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="16" font-weight="700">50 English</text>
+<text x="1099" y="852" fill="#fac175" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" font-weight="400">* Future example, NOT current mock output.</text>
+<text x="1099" y="878" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" font-weight="400">Current verified real mappings: 0.</text>
+<text x="1082" y="927" fill="#a8b8d0" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" font-weight="400">Missing approved translations preserve supported native text.</text>
+</svg>

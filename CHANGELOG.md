@@ -9,6 +9,7 @@ or GitHub Release has been published.
 
 ### Added
 
+- Record approved four-module policy and configurable ordered translation sources. Add an offline, sequential Spoken-inventory candidate resolver, provider/remaining/total metadata coverage reports, synthetic tests, and editable draw.io/SVG architecture diagrams. `another` remains stub-only; `own_translator` is a non-publishable mock; `[]` / `{}` selects the real client locale. No real identity joins or translated packs are approved.
 - Add Stage 3 pinned public canonical inventories, independently reviewed join-proof validation, persistent metadata review schema, offline two-revision effective comparison, coverage/impact CLI, and 23 additional tests. Real mapping acceptance remains pending: zero independently approved real joins; runtime display gates remain unchanged.
 - Add Stage 2B pinned Lua runtime characterization, per-surface compatibility evidence, manual Forever checks and minimal upstream text/audio API proposals.
 - Document ClassicUA's project-specific permission and required attribution; explain the planned user experience and translation update workflow in README.
@@ -18,6 +19,7 @@ or GitHub Release has been published.
 
 ### Fixed
 
+- Align single-record translation source priority with the batch resolver (first real candidate wins), verify translation candidate field SHA-256 against UTF-8 text, and correct Markdown code fences in source-chain documentation.
 - Bind Stage 3 source evidence to independently audited ClassicUA revision/file/field provenance; reject forged or unverifiable persisted evidence while retaining reviewed canonical IDs across translation-only updates.
 
 ## [0.0.1] - 2026-11-16

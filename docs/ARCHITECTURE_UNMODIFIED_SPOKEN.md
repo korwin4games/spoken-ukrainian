@@ -21,6 +21,12 @@
 | C — separate decision, later | Small **standalone Ukrainian helper addon with its own UI** | Consider only if public contracts cannot supply an essential text display. It must be independently installable/removable; use public WoW events/APIs and avoid any monkey-patching, private globals, player overwrite, or implicit changes in Spoken. Do **not** assume it can alter existing Spoken windows. Evaluate technical/UX costs and request separate authorization before implementation. |
 | Upstream evolution | Maintainers of **Spoken** independently add public features to a new official version | We may document issues or propose backward-compatible API designs, without creating/modifying a player fork. Adoption of a newer released Spoken revision is a separate explicit, pinned and tested compatibility task. Never depend on an unmerged upstream idea. |
 
+## Offline translation source priority and batch reporting
+
+The approved [translation source architecture](TRANSLATION_SOURCE_CHAIN.md) reads an explicit ordered allow-list from [`config/translation_sources.json`](../config/translation_sources.json): `classicua`, `another` (stub), `own_translator` (mock), and `original_english`. Any order or subset is valid. No unlisted source or English fallback is silently added. **Empty `sources: []` / `{}` means the real WoW client language**, not forced English; the caller must supply genuine `GetLocale()` without spoofing. A missing or blank file is an error. The offline prototype does not configure a running client.
+
+The full, independently indexed **Spoken canonical object inventory** is the unit of work. Providers process the remaining unresolved objects **sequentially** in configured priority order. Each object carries canonical ID, selected candidate source, provisional review state and evidence SHA-256; each source reports candidate count and remaining records against the same total. Mock placeholders and English original/client-language selections are not counted as Ukrainian translations, and provisional candidates cannot enter packs without independently verified Stage 3 ID joins, source provenance, text/grammar/AI/rights review and per-module runtime checks. See the [editable diagram](diagrams/translation-pipeline.drawio).
+
 ## Verified limitations of the pinned baseline (not acceptance of a workaround)
 
 Stage 2B characterization (locally reported; not yet independently reviewed in the remote repository) identifies the following for Spoken `3c896874e27ec9e07d51a3578c0b9fa8545c9ac7`:
