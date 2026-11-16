@@ -56,7 +56,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 0 — architecture and source/compatibility review | Complete |
 | Stage 1 — `ukUA` registration and original text-only Places diagnostic | Implemented; manually tested in Forever |
 | Stage 2A — restricted ClassicUA Lua parser, override resolver and metadata-only audit | Implemented |
-| Stage 2B — runtime compatibility of independent Ukrainian text | Planned |
+| Stage 2B — runtime compatibility of independent Ukrainian text | Offline characterization implemented; [results](docs/STAGE_2B_COMPATIBILITY.md), [manual Forever acceptance pending](docs/STAGE_2B_TESTING.md) |
 | Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | Specified, not implemented |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 

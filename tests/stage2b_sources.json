@@ -1,0 +1,27 @@
+{
+  "revision": "3c896874e27ec9e07d51a3578c0b9fa8545c9ac7",
+  "files": {
+    "addons/Spoken/SoundQueue.lua": "a6ac14f565aed3403216acc88d60a662b9d3cd02eb2677bd75822faf1f14d2cd",
+    "addons/Spoken/UI/Transcript.lua": "1228a6eb2aa40f22917c9766a00b3baf2693fbfa4c0e13c7872a85f07d22cfe1",
+    "addons/Spoken_Bosses/Audio.lua": "fd9f12a01612555d436ec4352b7a1d68639998b5650b8d1157f1d16b281c91b6",
+    "addons/Spoken_Bosses/Core.lua": "bfdb2eb1702b5e6d689c2ad9d70856a191167a335baa40ba27979a63d62ac297",
+    "addons/Spoken_Bosses/Spoken_Bosses.toc": "9feb80957089049746d5d75135b792de036b3b910fed49f3a0420d01742abc27",
+    "addons/Spoken_Bosses/UI/Bosses.lua": "be1def6579404617f8643b196116383bcc061d023121193194b23e2c48d01a49",
+    "addons/Spoken_Quests/DataModules.lua": "39f0e807503f11f98b6d9c79204212cb1c905fc796258174200bb792f309305e",
+    "addons/Spoken_Quests/Enums.lua": "f699f4020e87b172d062a1d6eafc02da40affc8817aabd81b1d5c074a149ced2",
+    "addons/Spoken_Quests/FuzzySearch.lua": "f5ab5e2da2d45925a2d929e7761e8647ae5af9e207df9186818149238513803f",
+    "addons/Spoken_Quests/Language.lua": "3cd7a7827c8e1e6c8705bb821a4da087fb74506c4fa897d5d0d35fe816c69314",
+    "addons/Spoken_Quests/Player.lua": "070960f65c42f37dacde04eee3594fc4d357c7490b1f4dc324ca8fc8f5f060fd",
+    "addons/Spoken_Quests/Spoken_Quests.toc": "a9fd9e5e73f7d9b7585f9c9f7fa1f905e3f56b0324e38419203f78064a854f60",
+    "addons/Spoken_Quests/UI/QuestsTab.lua": "bc21e38ca5469e1869c19a4d4d2940d08cdbf61551884d3a46ff7a194309e641",
+    "addons/Spoken_Quests/Utils.lua": "90fc996bae324dcd7c24648a15c6a648fb854d45caa7db33cf1e713ab71f3e55",
+    "addons/Spoken_Readables/Audio.lua": "4cb6542f515df02f8bb2ab395ce7d2e03dbd5667365405eb0bcca29d13ac7e99",
+    "addons/Spoken_Readables/Checksum.lua": "82200418e70616fb5d093c0d5479410ddcde23c3c5d2fe1b5842f481e82e92d0",
+    "addons/Spoken_Readables/Core.lua": "769327f698331f340ee0c09134732435808a6814f92c13be67ae8d584827fb89",
+    "addons/Spoken_Readables/Language.lua": "a23d66f5733c5016d8401be45c578fdcf259a0e062a16f3d2e520497f2c6909a",
+    "addons/Spoken_Readables/Playlist.lua": "82ff751a8949f186212b37695f6b530049a83ce9e4489708c1c1b18e9456a750",
+    "addons/Spoken_Readables/Reader.lua": "ddd644387d6fc1999ce7ebbe7b1e1430f5f806d7e9ebd278028da7328c364167",
+    "addons/Spoken_Readables/Spoken_Readables.toc": "412b52fbaafaaedd819a6bc9e074039995966e4d6cbe7ef4ee8360fcac34bd2b",
+    "addons/Spoken_Readables/UI/Readables.lua": "ae79128ccebb0183bd1e92a9942547422d3dc707883aee89ca38aaec26f2a8c9"
+  }
+}
