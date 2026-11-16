@@ -1,5 +1,7 @@
 """Synthetic-only tests for configurable source policy and batch coverage."""
 import json
+from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 import sys
 import tempfile
@@ -10,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 from adapters.translation_sources import (
     SourcePolicy, load_source_policy, TranslationRequest, EffectiveClassicUAField,
     ClassicUAProvider, AlternativeSourceStub, OwnTranslatorMock, CandidateState,
+    TranslationCandidate,
     resolve_translation, resolve_spoken_batch,
 )
 
@@ -166,14 +169,67 @@ class TranslationSourceTests(unittest.TestCase):
         self.assertEqual(result.total, 0)
         self.assertEqual(result.metadata()["approved_translations"], 0)
 
-    def test_single_request_policy_includes_mock_draft_but_no_pack_selection(self):
+    def test_single_request_skips_mock_then_selects_classicua_and_stops(self):
         r = resolve_translation(self.records[0],
                                 SourcePolicy(("own_translator", "classicua", "original_english")),
                                 self.providers)
         self.assertEqual([c.provider for c in r.candidates], ["own_translator", "classicua"])
-        self.assertEqual(r.selected_source, "original_english")
+        self.assertEqual(r.selected_source, "classicua")
+        self.assertFalse(r.english_fallback_required)
+        self.assertEqual(r.candidate.provider, "classicua")
+        self.assertEqual(r.attempted_providers, ("own_translator", "classicua"))
         self.assertTrue(all(not c.publishable for c in r.candidates))
         self.assertEqual(r.candidates[0].state, CandidateState.MOCK_ONLY)
+
+    def test_single_request_classicua_first_never_invokes_later_english_or_mock(self):
+        r = resolve_translation(self.records[0],
+                                SourcePolicy(("classicua", "own_translator", "original_english")),
+                                self.providers)
+        self.assertEqual(r.selected_source, "classicua")
+        self.assertEqual(r.attempted_providers, ("classicua",))
+        self.assertFalse(self.mock.calls)
+
+    def test_single_request_missing_translation_selects_english_only_when_configured(self):
+        r = resolve_translation(self.records[1],
+                                SourcePolicy(("classicua", "original_english")),
+                                self.providers)
+        self.assertEqual(r.selected_source, "original_english")
+        self.assertTrue(r.english_fallback_required)
+        self.assertIsNone(r.candidate)
+        without_english = resolve_translation(
+            self.records[1], SourcePolicy(("classicua",)), self.providers)
+        self.assertIsNone(without_english.selected_source)
+        self.assertIsNone(without_english.candidate)
+
+    def test_single_request_mock_only_never_selects_mock_as_translation(self):
+        r = resolve_translation(self.records[0],
+                                SourcePolicy(("own_translator",)), self.providers)
+        self.assertIsNone(r.selected_source)
+        self.assertIsNone(r.candidate)
+        self.assertFalse(r.needs_review)
+        self.assertEqual(r.candidates[0].state, CandidateState.MOCK_ONLY)
+
+    def test_candidate_rejects_arbitrary_or_stale_text_digest(self):
+        valid = self.classic.target.lookup(self.records[0])
+        self.assertEqual(valid.field_sha256, sha256(valid.text_uk.encode("utf-8")).hexdigest())
+        with self.assertRaisesRegex(ValueError, "field_digest_mismatch"):
+            replace(valid, field_sha256="0" * 64)
+        with self.assertRaisesRegex(ValueError, "field_digest_mismatch"):
+            replace(valid, text_uk="Інший вигаданий текст")
+        with self.assertRaisesRegex(ValueError, "translation_candidate_requires_provenance"):
+            replace(valid, text_uk=None)
+
+    def test_bad_provider_digest_cannot_enter_single_or_batch_reports(self):
+        class CorruptProvider:
+            def lookup(self, request):
+                return TranslationCandidate("Вигаданий текст", "another", "synthetic",
+                                            "synthetic-revision", "a" * 64, "f" * 64,
+                                            "pending", CandidateState.NEEDS_REVIEW)
+
+        with self.assertRaisesRegex(ValueError, "field_digest_mismatch"):
+            resolve_translation(self.records[1], SourcePolicy(("another",)), {"another": CorruptProvider()})
+        with self.assertRaisesRegex(ValueError, "field_digest_mismatch"):
+            resolve_spoken_batch(self.records, SourcePolicy(("another",)), {"another": CorruptProvider()}, self.ids)
 
     def test_no_hidden_default_when_no_source(self):
         r = resolve_translation(self.records[1], SourcePolicy(()), self.providers)

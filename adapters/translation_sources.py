@@ -104,10 +104,16 @@ class TranslationCandidate:
     ai_marked: bool = False
 
     def __post_init__(self):
-        if not self.text_uk or not self.provider or not self.source_ref or not self.source_revision:
+        if (type(self.text_uk) is not str or not self.text_uk
+                or type(self.provider) is not str or not self.provider
+                or type(self.source_ref) is not str or not self.source_ref
+                or type(self.source_revision) is not str or not self.source_revision):
             raise ValueError("translation_candidate_requires_provenance")
-        if not HEX64.fullmatch(self.source_file_sha256) or not HEX64.fullmatch(self.field_sha256):
+        if (type(self.source_file_sha256) is not str or not HEX64.fullmatch(self.source_file_sha256)
+                or type(self.field_sha256) is not str or not HEX64.fullmatch(self.field_sha256)):
             raise ValueError("translation_candidate_requires_revision_and_sha")
+        if sha256(self.text_uk.encode("utf-8")).hexdigest() != self.field_sha256:
+            raise ValueError("translation_candidate_field_digest_mismatch")
         if self.rights_status not in ("reviewed", "pending") or not isinstance(self.state, CandidateState):
             raise ValueError("invalid_candidate_review_state")
 
@@ -163,8 +169,9 @@ class SourceResolution:
 
     @property
     def candidate(self):
-        return next((c for c in self.candidates if c.state != CandidateState.MOCK_ONLY),
-                    self.candidates[0] if self.candidates else None)
+        # Only an actual translation candidate may be selected. Mock drafts are
+        # retained for diagnostics, but must never masquerade as translated text.
+        return next((c for c in self.candidates if c.state == CandidateState.NEEDS_REVIEW), None)
 
     @property
     def needs_review(self):
@@ -188,7 +195,11 @@ class SourceResolution:
 
 def resolve_translation(request: TranslationRequest, policy: SourcePolicy,
                         registry: Mapping[str, TranslationProvider]) -> SourceResolution:
-    """Legacy single-record draft inventory; use resolve_spoken_batch for priority fills."""
+    """Resolve one record by first-real-candidate priority, as in resolve_spoken_batch.
+
+    A MOCK_ONLY response may be recorded for diagnostics but never consumes the
+    record. Neither a found candidate nor an English fallback is approved content.
+    """
     if not policy.sources:
         if request.client_locale is None:
             raise ValueError("client_locale_required_for_empty_source_policy")
@@ -207,6 +218,8 @@ def resolve_translation(request: TranslationRequest, policy: SourcePolicy,
         if not isinstance(item, TranslationCandidate) or item.provider != name or item.publishable:
             raise ValueError("translation_provider_result_invalid:" + name)
         candidates.append(item)
+        if item.state == CandidateState.NEEDS_REVIEW:
+            return SourceResolution(tuple(candidates), name, request.original_sha256, tuple(attempted))
     return SourceResolution(tuple(candidates), None, request.original_sha256, tuple(attempted))
 
 

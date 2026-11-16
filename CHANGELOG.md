@@ -19,6 +19,7 @@ or GitHub Release has been published.
 
 ### Fixed
 
+- Align single-record translation source priority with the batch resolver (first real candidate wins), verify translation candidate field SHA-256 against UTF-8 text, and correct Markdown code fences in source-chain documentation.
 - Bind Stage 3 source evidence to independently audited ClassicUA revision/file/field provenance; reject forged or unverifiable persisted evidence while retaining reviewed canonical IDs across translation-only updates.
 
 ## [0.0.1] - 2026-11-16
