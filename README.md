@@ -27,3 +27,19 @@ python3 -m unittest discover -s tests -v
 The metadata-only report is written to ignored `build/classicua-audit.json`; no translation bodies are serialized. Its detailed provenance makes the local report about 52 MB. The 36 new tests use synthetic fixtures and need no ClassicUA installation. The standard suite now has 52 tests, including all 16 Stage 1 tests. CI already discovers them and never downloads the ClassicUA corpus.
 
 See [Stage 2A implementation](docs/STAGE_2A_IMPLEMENTATION.md) and [test results/source inventory](docs/STAGE_2A_TESTING.md). Source redistribution and TTS permissions remain unresolved. No production access, generation, translated pack publication or Stage 3 mapping is included.
+
+## Versioning
+
+The authoritative [VERSION](VERSION) file defines the project version, initially **0.0.1**. Use the CLI to read the current value; no configuration duplicates it.
+
+```sh
+python3 tools/version.py show
+python3 tools/version.py check
+python3 tools/version.py bump patch --dry-run
+python3 tools/version.py bump patch
+python3 -m unittest discover -s tests -v
+```
+
+PATCH fixes bugs; MINOR adds features and may carry explicitly marked BREAKING changes during 0.x. The first stable MAJOR requires explicit approval (`--approve-stable`); after 1.0.0, public-interface breaks increment MAJOR. Bumps change only VERSION. Prepare the matching new dated [changelog](CHANGELOG.md) section manually before `check` and commit; historical sections are preserved.
+
+The diagnostic addon stays at **0.1.0**, independently of the project version. Annotated project Git tags use `v<project-version>`. A GitHub Release is a separate optional publication attached to a tag. Committing, tagging, pushing and publishing are explicit reviewed operations; the CLI and CI do none automatically. See [VERSIONING.md](docs/VERSIONING.md) for the full policy and release preparation steps.

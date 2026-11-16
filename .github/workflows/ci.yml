@@ -30,6 +30,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Validate project version and changelog
+        run: python3 tools/version.py check
+
+      - name: Validate project version tag
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        env:
+          VERSION_TAG: ${{ github.ref_name }}
+        run: python3 tools/version.py check --tag "$VERSION_TAG"
+
       - name: Read pinned Spoken revision
         id: spoken
         run: python3 -c 'import json; print("revision=" + json.load(open("sources.lock.json"))["spoken"]["revision"])' >> "$GITHUB_OUTPUT"
