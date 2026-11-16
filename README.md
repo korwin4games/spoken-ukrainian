@@ -6,39 +6,70 @@
 
 > **Development status:** Ukrainian language registration and an original text-only **Places diagnostic pack** have been implemented and manually tested in Forever. The ClassicUA source adapter is implemented. Full Ukrainian quest, dialogue, book, location and boss-story packs **have not yet been released**.
 
-## How Spoken Ukrainian will work
+## Architecture and translation flow
 
-```text
-ClassicUA — version-pinned Ukrainian translations and terminology
-    |
-    v
-ClassicUA adapter — parse, apply classic → sod → forever overrides    [done]
-    |
-    v
-Canonical ID inventory + reviewed mapping tooling                    [implemented]
-Real identity joins + translation/grammar review                     [review pending]
-    |
-    v
-Validated Ukrainian content + optional approved AI TTS narration      [planned]
-    |
-    v
-Versioned Ukrainian Spoken Community Packs                            [planned]
-    |
-    v
-Spoken Player + modules in WoW Forever
+Spoken Ukrainian prepares Ukrainian content **offline** for the **unmodified Spoken Player**. Discovering a translation does **not** approve its canonical Spoken identity, text quality, content rights or runtime compatibility.
+
+### Four approved modules
+
+| Official module | Planned Ukrainian content |
+| --- | --- |
+| `Spoken_Quests` | Quests **and Gossip** (one module, not two) |
+| `Spoken_Places` | Zone/subzone lore (formerly Spoken Zones) |
+| `Spoken_Readables` | Books, letters, notes, plaques (formerly Spoken Books) |
+| `Spoken_Bosses` | Dungeon and raid boss stories |
+
+These are **official module targets**, not a player fork. Four independently installable Ukrainian content packs are planned. ClassicUA does **not** supply authored Places/Bosses stories. See the [approved product and fallback policy](docs/APPROVED_MODULES_AND_FALLBACK.md).
+
+### Translation sources and priorities
+
+The default offline provider order is configured in [`config/translation_sources.json`](config/translation_sources.json):
+
+```json
+{
+  "schema_version": 1,
+  "sources": ["classicua", "another", "own_translator", "original_english"]
+}
 ```
 
-**Approved four module targets:** `Spoken_Quests` (**Quests + Gossip**), `Spoken_Places` (Zones/Subzones), `Spoken_Readables` (Books/Letters/Notes) and `Spoken_Bosses` (boss stories). Gossip is within Quests, not a fifth module. The original Spoken Player is unchanged. **Translation sources are ordered by [`config/translation_sources.json`](config/translation_sources.json):** ClassicUA → Another (stub) → Own Translator (mock) → Original English by default. Providers may be reordered or removed. Empty `[]` / `{}` selects the real WoW client locale without invoking translators. Indexed Spoken objects are processed in sequential passes; each next provider sees only the records for which previous providers found no real candidate. See [policy and reporting](docs/TRANSLATION_SOURCE_CHAIN.md), [editable draw.io diagram](docs/diagrams/translation-pipeline.drawio) and [SVG preview](docs/diagrams/translation-pipeline.svg). These are offline product/tooling rules, **not a claim of live client fallback or any approved translated packs**. ClassicUA supplies existing game-text translations and terminology, but not authored Places or Bosses stories.
+| Source | Current state | Role |
+| --- | --- | --- |
+| `classicua` | Implemented adapter | Read audited effective ClassicUA translation fields; mappings still need review |
+| `another` | Offline stub | Future independently licensed source; currently finds nothing |
+| `own_translator` | Non-publishable mock | Does **not** count as a translation or consume a record |
+| `original_english` | Explicit fallback | Select original English for still-unresolved records; never count as Ukrainian |
 
-The WoW client locale can remain `enUS`. `ukUA` is registered as a **Spoken content language**, not a new Blizzard client locale. Text-only Ukrainian lore already works for Places. Other modules currently have client-language and/or audio restrictions in the pinned Spoken runtime; supporting independent Ukrainian text there requires further tests and possibly upstream changes. See the [compatibility matrix](docs/COMPATIBILITY_MATRIX.md).
+You can **reorder or remove** any entry. `["own_translator", "classicua", "original_english"]` changes priority (the translator is still a mock); `["original_english"]` selects English only. **`{"schema_version":1,"sources":[]}` or `{}` means the genuine WoW client language**, with no provider calls; an actual `deDE` client is not forced to English. The offline caller must supply the client locale. Omitting `original_english` does not silently reinsert it. A missing or invalid config file is an error.
 
-The intended player experience is to install Spoken and the corresponding Ukrainian Community Packs. Players should not need ClassicUA installed merely to use a completed pack. This is the **future design**, not a feature of the diagnostic build. Distribution may use Spoken's Community Pack Manager after a pack is approved.
+### Sequential processing and coverage
 
-### Keeping translations up to date
+1. Start from a list of **verified canonical Spoken IDs** and original English text/identity evidence. The caller currently supplies this list.
+2. Each configured source receives **only records still without a real Ukrainian candidate** from earlier sources. Record source, canonical ID, field SHA-256 and `candidate_pending_review` for discoveries.
+3. Mocks do not resolve records. Explicit English and empty-config client language are separate statuses, **not Ukrainian translations**.
+4. Produce a **metadata-only report** with per-source new candidates, remaining records, and the total. Never export translation bodies.
+5. Independently review matching evidence, text/grammar/AI, attribution/rights and runtime behavior **before any pack**.
 
-ClassicUA remains the upstream translation source rather than a one-time copy. Future updates will pin and audit a newer ClassicUA revision, compare **effective** translated records (after all overrides), reuse reviewed mappings to canonical Spoken identities, flag changed text and outdated audio for review, and rebuild only the affected packs after approval.
+**Synthetic example, not actual translation coverage:**
 
-**Stage 3 offline tooling** now inventories pinned public Spoken identities, validates persistent independently reviewed joins, and compares two explicitly pinned local ClassicUA snapshots. **Zero real joins are approved; full mapping acceptance awaits independent identity review.** See the [implementation and exact coverage](docs/STAGE_3_IMPLEMENTATION.md) and [tests](docs/STAGE_3_TESTING.md). Audio generation, translated packs and release automation remain later work. Ordinary builds never update source pins.
+| Source | New Ukrainian candidates | Remaining for next source |
+| --- | ---: | ---: |
+| ClassicUA | 2 | 2 |
+| Another (stub) | 0 | 2 |
+| Own Translator (mock) | 0 | 2 |
+| Original English | 0 (2 English originals) | 0 |
+| **Total: 4 records** | **2 pending review** | **2 English-only** |
+
+The report distinguishes candidate counts from `approved_translations` (**currently zero**), English/client selection and unresolved records. This is an **offline prototype**, not yet integrated with `tools/stage3_report.py` or the final Community Pack builder. **No real source↔Spoken joins are approved.**
+
+![Source-resolution architecture](docs/diagrams/translation-pipeline.svg)
+
+[Editable draw.io diagram](docs/diagrams/translation-pipeline.drawio) · [Source chain and accounting specification](docs/TRANSLATION_SOURCE_CHAIN.md) · [Stage 3 identity mapping evidence](docs/STAGE_3_IMPLEMENTATION.md)
+
+### Compatibility and source updates
+
+`ukUA` is a Spoken **content language**, not a Blizzard client locale. Text-only Ukrainian Places diagnostic lore works, but current pinned Spoken has unresolved Quests/Gossip captions, Readables and Bosses display/audio restrictions. **Configurable offline sources do not implement in-game fallback** or fix these limitations. See [Stage 2B](docs/STAGE_2B_COMPATIBILITY.md).
+
+Completed Ukrainian packs should eventually work without requiring the ClassicUA addon at runtime. ClassicUA will remain a **pinned input**, re-audited on approved updates; effective text changes can trigger content/audio review without automatically changing canonical IDs. Pack generation, TTS and publication remain later separately authorized stages.
 
 ## ClassicUA and attribution
 
@@ -59,6 +90,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 2A — restricted ClassicUA Lua parser, override resolver and metadata-only audit | Implemented |
 | Stage 2B — runtime compatibility of independent Ukrainian text | Offline characterization implemented; [results](docs/STAGE_2B_COMPATIBILITY.md), [manual Forever acceptance pending](docs/STAGE_2B_TESTING.md) |
 | Stage 3 — canonical ClassicUA → Spoken ID mapping and update-ready comparison | Offline inventory, review schema and local effective comparison implemented; **0 approved real joins, independent review pending** ([coverage](docs/STAGE_3_IMPLEMENTATION.md)) |
+| Configurable source priority and sequential coverage (PR #8) | Implemented as an offline synthetic-tested prototype; **no approved real content** |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
@@ -102,6 +134,7 @@ The root [VERSION](VERSION) is the **project** version (initial baseline `0.0.1`
 
 - [Implementation roadmap](docs/IMPLEMENTATION_PLAN.md) · [Source integration](docs/SOURCE_INTEGRATION.md) · [Compatibility matrix](docs/COMPATIBILITY_MATRIX.md)
 - [Stage 3 mapping/update specification](docs/STAGE_3_SPECIFICATION.md) · [Permission record](docs/CLASSICUA_PERMISSION.md) · [Attribution](THIRD_PARTY.md)
+- [Translation source architecture](docs/TRANSLATION_SOURCE_CHAIN.md) · [Editable diagram](docs/diagrams/translation-pipeline.drawio) · [Approved four-module policy](docs/APPROVED_MODULES_AND_FALLBACK.md)
 - [Spoken Community Packs guide](https://github.com/rusty-key/spoken-wow/blob/master/community/README.md)
 
 Stage 0 documents preserve the **historical state at the time they were written**, including an earlier unresolved-permission note. The subsequent permission is documented separately rather than rewriting their pinned historical contents.

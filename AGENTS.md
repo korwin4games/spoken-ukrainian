@@ -12,6 +12,9 @@ Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. S
 - `sources.lock.json`: pinned source commits and hashes.
 - `docs/STAGE_3_SPECIFICATION.md`: canonical ID mapping, future ClassicUA updates, review invalidation and source diff requirements.
 - `docs/ARCHITECTURE_UNMODIFIED_SPOKEN.md`: binding no-fork/no-patch architecture and fallback choices A/B/C.
+- `docs/APPROVED_MODULES_AND_FALLBACK.md`: exactly four approved official module targets and the separately tested text/audio fallback policy.
+- `docs/TRANSLATION_SOURCE_CHAIN.md`, `config/translation_sources.json`: offline provider ordering, remaining-record processing, mock rules and coverage reporting.
+- `docs/STAGE_3_IMPLEMENTATION.md`: current **zero approved real joins**, evidence gates and effective-diff behavior.
 Read only what the task needs; do not use old planning notes as proof of current behavior.
 
 ## Hard boundaries
@@ -21,6 +24,9 @@ Read only what the task needs; do not use old planning notes as proof of current
 - Keep `build/` and `dist/` ignored, and preserve Stage 1 diagnostic archive determinism.
 - Use canonical Spoken identities, never guessed mappings from translated names. Do not treat ClassicUA item IDs as Spoken page IDs or numeric Gossip hashes as Spoken moment IDs.
 - Honor the explicit order and membership of `config/translation_sources.json` (see `docs/TRANSLATION_SOURCE_CHAIN.md`), including English-only or no English. Empty `sources: []` or `{}` means actual WoW client `GetLocale()` with **no source calls**; never spoof it. Given an indexed canonical Spoken object list, process providers in sequential passes, passing only not-yet-translated objects to each next provider. Track provider and provisional status for each ID; report per-source found/remaining/total and differentiate candidates from **approved** translations. `another` is stub-only and `own_translator` mock-only; neither may silently approve mappings, text, rights, audio or publication. Never generate an override from an unresolved record.
+- The translation provider pipeline (`adapters/translation_sources.py`) is an **offline, caller-fed prototype**, not connected to the Stage 3 report CLI or a production pack builder. Preserve its single-record/batch first-real-candidate semantics; require matching UTF-8 content fingerprint and provenance. Any candidate remains pending independent identity/content/rights review. Rejected candidates' retry with lower-priority sources is **future design**, not implemented behavior.
+- An explicit `original_english` is an offline source selection, **not** proof of per-record English text fallback in a live Spoken module. In particular, Places has no per-record fallback in the pinned baseline. Empty provider policy means real client locale and no provider calls, not English.
+- Use exactly four module targets: `Spoken_Quests` (**includes Gossip**), `Spoken_Places`, `Spoken_Readables` and `Spoken_Bosses`. Do not create a fifth Gossip module or treat historic Zones/Books labels as current modules.
 - Do not spoof `GetLocale() == "ukUA"`, create fake audio, monkey-patch player internals or claim independent text display without verified module support.
 
 ## Integration policy — unmodified Spoken Player
@@ -36,7 +42,7 @@ Read only what the task needs; do not use old planning notes as proof of current
 - See `docs/STAGE_3_SPECIFICATION.md` before implementing ID crosswalks, update detection, diff reports or pack rebuilds. Do not implement a source updater just because this policy exists.
 - Pin both repositories by commit and relevant file hashes in `sources.lock.json`; never build from a silently advancing branch or automatically update the lock during a normal build.
 - Compare **effective resolved records** after actual ClassicUA load/override semantics, not raw git line changes. Ignore source edits that cannot affect effective output; distinguish added, modified, removed, unchanged and ambiguous records.
-- Preserve stable source-to-Spoken crosswalk decisions across source revisions when identity evidence is still valid. A changed text/source hash **invalidates translation/grammar/audio review** and requires impact analysis; it must not silently rename a canonical Spoken ID or automatically discard a still-valid mapping.
+- Preserve stable source-to-Spoken crosswalk decisions across revisions when identity evidence stays valid. A changed **effective text** resets dependent content/grammar review and flags affected audio as stale; a **source-file-only SHA/line-number change** does not automatically invalidate unchanged effective content or mapping. Identity-context changes require mapping review. Never re-mint a Spoken ID from a translation change.
 - Keep reviewed mapping decisions and minimal provenance in Git, not translated text. Reports and temporary normalized content belong only in ignored local build output; never commit source translation bodies, raw diffs, audio or derived packs without explicit permission.
 - Detect downstream impact separately for text, templates, matching/identity, AI-review flags and existing voice takes. If recording text changes, mark dependent audio stale until it is reviewed or regenerated under authorized TTS rights.
 - Future update checks may propose a PR with hashes, counts, changed IDs and risks; **never automatically merge, release, publish packs or make paid TTS calls**. Follow the ClassicUA permission scope/attribution in `docs/CLASSICUA_PERMISSION.md` and each Spoken runtime display contract.
@@ -50,6 +56,12 @@ Read only what the task needs; do not use old planning notes as proof of current
 - For a requested bump, first inspect Git state, version and changelog. Use `python3 tools/version.py bump patch|minor|major --dry-run` to preview, then the supported bump command. The CLI updates **only** `VERSION`: prepare the matching new dated changelog section separately, preserve history, and run `python3 tools/version.py check`. A check failure between the bump and changelog edit is expected; do not bypass validation.
 - CI validates version/changelog consistency. If verifying a project tag, use `python3 tools/version.py check --tag vX.Y.Z`. Never create, move, push tags, merge release PRs, publish GitHub Releases or publish Community Packs without explicit authorization and required content permissions.
 - Annotated Git project tags use `v<project-version>`; tag creation, Git pushes and GitHub Releases are separate decisions from incrementing the version.
+
+## Documentation parity and reporting
+- Keep `README.md` and `README.uk.md` aligned on architecture, module count, default/empty provider policy, verified stage status, synthetic examples and links to the editable draw.io/SVG diagrams. Translate prose, not source identifiers or shell commands.
+- Distinguish **source candidates**, **reviewed canonical joins**, **approved Ukrainian text**, **audio availability** and **runtime display support** as separate counts/gates. Every table must label its denominator; never call synthetic examples or Stage 3 source candidate counts real coverage.
+- Document known limits (0 approved real joins, Another stub, Own Translator mock, client-locale supplied by caller, no production pipeline wiring) until independently verified evidence changes them.
+- Documentation-only changes: check Markdown fences, image/relative link paths and bilingual parity; the standard CI remains the source of build/test confirmation.
 
 ## Changes and verification
 1. Inspect `git status`, branch and task scope; do not discard existing changes.
@@ -68,6 +80,8 @@ Read only what the task needs; do not use old planning notes as proof of current
 ## Repo-local Codex skills
 Use these workflows when the task matches their descriptions:
 - `.agents/skills/classicua-adapter/SKILL.md` — parser, overrides, grammar, source audits.
+- `.agents/skills/canonical-mapping-review/SKILL.md` — independent Stage 3 source-to-Spoken identity evidence and review invalidation.
+- `.agents/skills/translation-source-pipeline/SKILL.md` — provider priorities, offline batch resolution, metadata-only coverage and mock/English/client-language rules.
 - `.agents/skills/code-reviewer/SKILL.md` — risk-first review of changes and PRs.
 - `.agents/skills/spoken-runtime-contracts/SKILL.md` — language, text-only and audio runtime contracts.
 

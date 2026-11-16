@@ -17,6 +17,11 @@ description: Investigate and test Spoken's ukUA Community Pack registration, Que
 - Bosses can have text-only core stories, but pack story selection for a non-client language on `enUS` has a locale gate; Bosses community distribution is not listed in the Manager's currently documented sections.
 - `ukUA` is non-client; never spoof `GetLocale()`, monkey-patch the player, create fake/silent sound entries or change canonical IDs.
 
+## Approved module and provider boundaries
+- Four official module targets only: `Spoken_Quests` (quests **and** Gossip), `Spoken_Places` (zones/subzones), `Spoken_Readables` (books/notes), `Spoken_Bosses` (boss lore). Keep module identity distinct from separate Ukrainian Community Pack distribution.
+- `config/translation_sources.json` controls **offline translation candidate discovery**, not a WoW setting, voice choice or in-game text fallback. Empty `sources: []` / `{}` means the real client locale with no provider calls; explicit `original_english` means English source selection, not guaranteed per-item fallback inside Places.
+- ClassicUA, alternative provider and translator mock candidate counts are not validated canonical joins or proof of in-game text display.
+
 ## Non-negotiable integration approach
 - Strategy A: existing public Spoken Community Pack interfaces with unmodified Spoken. Strategy B: optional coexistence with ClassicUA for native game UI only; do not confuse that with Spoken captions or Compendium.
 - Never fork, patch, vendor, monkey-patch or repackage Spoken, override private internals, spoof `GetLocale()` or invent silent/fake audio.
