@@ -20,7 +20,8 @@ venv/
 /.aws/
 /.ssh/
 /.codex/
-/.agents/
+/.agents/*
+!/.agents/skills/
 /.idea/
 /.vscode/
 *.pem
