@@ -60,7 +60,11 @@ class TranslationRequest:
     client_locale: str | None = None
 
     def __post_init__(self):
-        if type(self.source_identity) is not str or not self.source_identity or not self.original_english:
+        # A canonical Spoken target can be indexed before anyone proves which
+        # ClassicUA source unit it corresponds to. None is *not* a source match.
+        if ((self.source_identity is not None
+             and (type(self.source_identity) is not str or not self.source_identity))
+                or type(self.original_english) is not str or not self.original_english):
             raise ValueError("source_identity_and_english_text_required")
         if self.client_locale is not None and (
                 type(self.client_locale) is not str or not CLIENT_LOCALE.fullmatch(self.client_locale)):
