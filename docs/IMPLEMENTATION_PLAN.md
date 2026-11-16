@@ -40,10 +40,6 @@ Read permitted pinned source snapshots; resolve actual TOC/XML order and merge s
 
 Translation edits remain upstream or with the separately identified lore author. Immutable snapshots and ignored derived output are build inputs, not another editable translation database. Hand-kept manifests store only crosswalk decisions, exclusions and review attestations tied to source hashes. Changed source hashes invalidate review. Do not modify upstream generated Lua or obtain a replacement corpus from production APIs.
 
-## Current execution priority update (2026-11-16)
-
-The original table below remains the **dependency/gate architecture**, not a fixed implementation queue. The user changed the **near-term feature order** to **(1) Compendium UI, (2) Places lore, (3) Readables Books and Notes, (4) Bosses stories**. Quests and Gossip review tools and already completed groundwork remain available, but cease to be the first-wave bottleneck. See [active prioritized roadmap](PRODUCT_PRIORITIES_2026_11.md) for distinct supported surfaces, English-original indexing, story rights and upstream selection blockers. Compendium is the core shared window, **not a fifth content module**. Keep the Player unchanged and preserve all compatibility/permission gates. This priority update does not change the configured translation provider order.
-
 ## Dependency-aware roadmap
 
 | Stage | Dependencies | Deliverables and acceptance criteria |

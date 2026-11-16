@@ -7,6 +7,7 @@ Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. S
 - `README.md`: supported commands and current implementation.
 - `docs/IMPLEMENTATION_PLAN.md`: architecture, stages and gates.
 - `docs/PRODUCT_PRIORITIES_2026_11.md`: current explicitly updated execution order: Compendium UI, Places, Readables (Books and Notes), Bosses; defer Quests/Gossip.
+- Keep `docs/IMPLEMENTATION_PLAN.md` unchanged: it is a hash-pinned Stage 0 contract. Current feature ordering belongs in the separate priorities document.
 - `docs/SOURCE_INTEGRATION.md`, `docs/COMPATIBILITY_MATRIX.md`: source semantics and runtime limitations.
 - `docs/LEGAL_AND_ATTRIBUTION.md` (historical Stage 0), `docs/CLASSICUA_PERMISSION.md` (subsequent approval), `THIRD_PARTY.md`: third-party rights.
 - `docs/STAGE_1_*.md` and `docs/STAGE_2A_*.md`: implemented behavior and tests.
