@@ -18,6 +18,8 @@ or GitHub Release has been published.
 
 ### Fixed
 
+- Bind Stage 3 source evidence to independently audited ClassicUA revision/file/field provenance; reject forged or unverifiable persisted evidence while retaining reviewed canonical IDs across translation-only updates.
+
 ## [0.0.1] - 2026-11-16
 
 ### Added

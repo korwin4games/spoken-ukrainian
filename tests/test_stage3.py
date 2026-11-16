@@ -8,7 +8,9 @@ import subprocess
 import tempfile
 import unittest
 
-from test_crosswalk import Fixture
+from test_crosswalk import Fixture as BaseFixture
+from adapters.classicua.evidence import SourceInventory, from_audit, source_reference
+
 from lua_runtime import run_lua
 from adapters.crosswalk import (VerifiedTarget, approve_mapping, VerifiedJoin, digest,
                                 effective_units, compare_effective, metadata_json)
@@ -19,6 +21,11 @@ from adapters.spoken.evidence import JoinProof, approve_review, proof_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path(os.environ.get('SPOKEN_SOURCE', ROOT.parent / 'spoken-wow'))
+
+
+class Fixture(BaseFixture):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, revision="1" * 40, **kwargs)
 
 
 def synthetic_inventory(family='quest', identity='q:42:accept', contexts=None):
@@ -35,105 +42,109 @@ def reviewed():
     u = f.units()['quest:horde:42:accept']
     facts = {k: v for k, v in inv.contexts['q:42:accept'][0].items() if k != 'generatable'}
     proof = JoinProof(u.context_sha256, target_context(inv, 'q:42:accept'), facts,
-                      'invented-identity-reference', 'b' * 64, 'invented-public-reference',
+                      source_reference(u), u.source_file_sha256, 'invented-public-reference',
                       'a' * 64, 'Invented evidence reviewer')
     u = replace(u, identity_evidence_sha256=proof_digest(proof))
-    r = approve_review(u, 'q:42:accept', inv, proof, 'Invented mapping reviewer')
-    return inv, u, r, proof
+    r = approve_review(u, 'q:42:accept', inv, proof, 'Invented mapping reviewer', source_inventory=f.inventory())
+    return inv, u, r, proof, f.inventory()
 
 
 class ReviewTests(unittest.TestCase):
     def test_schema_round_trip_unknown_fields_duplicates_and_versions(self):
-        inv, u, r, _ = reviewed()
+        inv, u, r, _, source = reviewed()
         data = review_file([r])
-        self.assertEqual(load_reviews(json.loads(json.dumps(data))), [r])
+        self.assertEqual(load_reviews(json.loads(json.dumps(data)), source_inventories={source.revision: source}), [r])
         for bad in [data | {'text': 'SECRET'}, data | {'schema_version': 2},
                     data | {'decisions': data['decisions'] * 2}]:
             with self.assertRaises(ValueError):
-                load_reviews(bad)
+                load_reviews(bad, source_inventories={source.revision: source})
         self.assertNotIn('invented wording', metadata_json(data))
 
     def test_mapping_survives_revision_and_file_only_drift(self):
-        inv, u, r, _ = reviewed()
+        inv, u, r, _, source = reviewed()
         d = replace(r.decision, content_status='approved', grammar_status='approved', ai_status='approved')
         r = replace(r, decision=d)
         newer = replace(u, source_revision='c' * 40, source_file_sha256='d' * 64)
-        row = assess_review(r, {u.source_id: newer}, inv)
+        row = assess_review(r, {u.source_id: newer}, inv, source_inventories={source.revision: source})
         self.assertEqual(row['mapping_status'], 'approved')
         self.assertEqual(row['content_status'], 'approved')
         self.assertEqual(row['target_id'], 'q:42:accept')
 
     def test_wording_invalidates_reviews_audio_not_identity(self):
-        inv, u, r, _ = reviewed()
-        row = assess_review(r, {u.source_id: replace(u, effective_sha256='f' * 64)}, inv)
+        inv, u, r, _, source = reviewed()
+        row = assess_review(r, {u.source_id: replace(u, effective_sha256='f' * 64)}, inv, source_inventories={source.revision: source})
         self.assertEqual(row['mapping_status'], 'approved')
         self.assertEqual(row['content_status'], 'pending')
         self.assertEqual(row['grammar_status'], 'pending')
         self.assertEqual(row['audio'], 'stale_if_present')
 
     def test_origin_ai_template_identity_and_removal(self):
-        inv, u, r, _ = reviewed()
+        inv, u, r, _, source = reviewed()
         for changes, key, expected in [({'origin_layer': 'forever'}, 'audio', 'stale_if_present'),
                 ({'ai': True}, 'ai_status', 'pending'),
                 ({'grammar_sha256': 'd' * 64}, 'audio', 'stale_if_present'),
                 ({'context_sha256': 'e' * 64}, 'mapping_status', 'invalidated')]:
             with self.subTest(changes=changes):
-                self.assertEqual(assess_review(r, {u.source_id: replace(u, **changes)}, inv)[key], expected)
-        self.assertEqual(assess_review(r, {}, inv)['reasons'], ['source_removed'])
+                self.assertEqual(assess_review(r, {u.source_id: replace(u, **changes)}, inv, source_inventories={source.revision: source})[key], expected)
+        self.assertEqual(assess_review(r, {}, inv, source_inventories={source.revision: source})['reasons'], ['source_removed'])
 
     def test_target_revision_voice_speaker_alias_invalidates(self):
-        inv, u, r, _ = reviewed()
+        inv, u, r, _, source = reviewed()
         for key in ['voice', 'npc_id', 'wording_sha256']:
             c = dict(inv.contexts[u.source_id.replace('quest:horde:', 'q:')][0])
             c[key] = 'changed'
             changed = replace(inv, contexts={'q:42:accept': [c]})
-            self.assertEqual(assess_review(r, {u.source_id: u}, changed)['mapping_status'], 'invalidated')
+            self.assertEqual(assess_review(r, {u.source_id: u}, changed, source_inventories={source.revision: source})['mapping_status'], 'invalidated')
         changed = replace(inv, aliases={'q:42:accept': ['q:42:accept:w1']})
-        self.assertEqual(assess_review(r, {u.source_id: u}, changed)['mapping_status'], 'invalidated')
+        self.assertEqual(assess_review(r, {u.source_id: u}, changed, source_inventories={source.revision: source})['mapping_status'], 'invalidated')
         t = replace(inv.targets['q:42:accept'], spoken_revision='b' * 40)
-        self.assertEqual(assess_review(r, {u.source_id: u}, replace(inv, targets={'q:42:accept':t}))['mapping_status'], 'invalidated')
+        self.assertEqual(assess_review(r, {u.source_id: u}, replace(inv, targets={'q:42:accept':t}), source_inventories={source.revision: source})['mapping_status'], 'invalidated')
 
     def test_independent_proof_cannot_combine_voices_or_self_review(self):
-        inv, u, _, p = reviewed()
+        inv, u, _, p, source = reviewed()
         for proof, reviewer in [(p, p.evidence_reviewer),
                 (replace(p, facts=p.facts | {'voice':'unverified-voice'}), 'Mapping reviewer'),
                 (replace(p, facts={}), 'Mapping reviewer')]:
             with self.assertRaises(ValueError):
-                approve_review(u, 'q:42:accept', inv, proof, reviewer)
+                approve_review(u, 'q:42:accept', inv, proof, reviewer, source_inventory=source)
 
     def test_gossip_options_and_multiple_voices_need_exact_greeting_proof(self):
         identity = 'g:' + 'a' * 32
         contexts = [{'npc_id': 7, 'npc_type': 'creature', 'voice': v, 'wording_sha256': digest('invented'),
                      'source':'gossip','player_gender':None} for v in ['voice-one', 'voice-two']]
         inv = synthetic_inventory('gossip', identity, contexts)
-        u = next(iter(Fixture().add('gossip','classic','{[7]={[123]="Invented greeting"}}').units().values()))
-        p = JoinProof(u.context_sha256,target_context(inv,identity),contexts[0], 'invented-greeting-reference',
-                      'b'*64,'invented-public-reference','a'*64,'Evidence reviewer')
+        f = Fixture().add('gossip','classic','{[7]={[123]="Invented greeting"}}')
+        source = f.inventory()
+        u = next(iter(f.units().values()))
+        p = JoinProof(u.context_sha256,target_context(inv,identity),contexts[0], source_reference(u),
+                      u.source_file_sha256,'invented-public-reference','a'*64,'Evidence reviewer')
         with self.assertRaisesRegex(ValueError,'gossip_option'):
-            approve_review(u,identity,inv,p,'Mapping reviewer')
+            approve_review(u,identity,inv,p,'Mapping reviewer', source_inventory=source)
         p = replace(p,greeting=True)
         u = replace(u,identity_evidence_sha256=proof_digest(p))
-        self.assertEqual(approve_review(u,identity,inv,p,'Mapping reviewer').decision.target_id,identity)
+        self.assertEqual(approve_review(u,identity,inv,p,'Mapping reviewer', source_inventory=source).decision.target_id,identity)
 
     def test_readable_owner_chain_not_title_or_ordinal(self):
         c={'book':11,'number':2,'chain':[100,102], 'owners':[['item',91]],'checksum':123,'wording_sha256':digest('invented')}
         inv=synthetic_inventory('readable','b:102',[c])
-        u=next(iter(Fixture().add('item_text','classic','{[91]={[2]="Invented page"}}').units().values()))
-        p=JoinProof(u.context_sha256,target_context(inv,'b:102'),c,'invented-chain-reference','b'*64,
+        f=Fixture().add('item_text','classic','{[91]={[2]="Invented page"}}')
+        source=f.inventory()
+        u=next(iter(f.units().values()))
+        p=JoinProof(u.context_sha256,target_context(inv,'b:102'),c,source_reference(u),u.source_file_sha256,
                     'invented-public-reference','a'*64,'Evidence reviewer')
         u=replace(u,identity_evidence_sha256=proof_digest(p))
-        r=approve_review(u,'b:102',inv,p,'Mapping reviewer')
+        r=approve_review(u,'b:102',inv,p,'Mapping reviewer', source_inventory=source)
         for field,value in [('chain',[100,101,102]),('owners',[['item',92]]),('book',12)]:
             changed=replace(inv,contexts={'b:102':[c|{field:value}]})
-            self.assertEqual(assess_review(r,{u.source_id:u},changed)['mapping_status'],'invalidated')
+            self.assertEqual(assess_review(r,{u.source_id:u},changed, source_inventories={source.revision: source})['mapping_status'],'invalidated')
 
     def test_candidates_coverage_denominators_determinism(self):
-        inv,u,r,_=reviewed()
+        inv,u,r,_,source=reviewed()
         units={u.source_id:u}
-        a=coverage_report(units,inv,[r])
+        a=coverage_report(units,inv,[r], source_inventories={source.revision: source})
         self.assertEqual(a['coverage']['quest']['confirmed_unique_canonical_intersections'],1)
         self.assertEqual(a['coverage']['places']['resolved_source_units'],0)
-        self.assertEqual(metadata_json(a),metadata_json(coverage_report(dict(reversed(list(units.items()))),inv,[r])))
+        self.assertEqual(metadata_json(a),metadata_json(coverage_report(dict(reversed(list(units.items()))),inv,[r], source_inventories={source.revision: source})))
         self.assertEqual(candidates(units,replace(inv,targets={}))[0]['reason'],'target_unavailable')
         variant=replace(inv.targets['q:42:accept'],canonical_id='q:42:accept:w1~invented-voice')
         inv=replace(inv,targets=inv.targets|{variant.canonical_id:variant})
@@ -248,13 +259,32 @@ class OfflineWorkflowTests(unittest.TestCase):
                 revision=subprocess.check_output(['git','-C',str(path),'rev-parse','HEAD']).decode().strip()
                 hashes={k:hashlib.sha256(v.encode()).hexdigest() for k,v in files.items()}
                 manifest={'revision':revision,'files':hashes,'review_by':'Invented reviewer '+str(number)}
-                dataset=reviewed_source(path,manifest)
-                snapshots.append((dataset,manifest))
+                dataset, report=reviewed_source(path,manifest,return_report=True)
+                source=from_audit(dataset, report)
+                snapshots.append((dataset,manifest,source))
                 with self.assertRaises(ValueError):GitSource(path)
                 with self.assertRaises(ValueError):reviewed_source(path,manifest|{'review_by':''})
             self.assertNotEqual(snapshots[0][1]['revision'],snapshots[1][1]['revision'])
             self.assertTrue(all(r['change']=='unchanged' for r in compare_effective(
                 effective_units(snapshots[0][0]),effective_units(snapshots[1][0]))))
+            # Persist and validate a review using actual audited invented Git blobs.
+            inv=synthetic_inventory()
+            source=snapshots[0][2]
+            u=source.units['quest:horde:42:accept']
+            facts={k:v for k,v in inv.contexts['q:42:accept'][0].items() if k!='generatable'}
+            proof=JoinProof(u.context_sha256,target_context(inv,'q:42:accept'),facts,
+                            source_reference(u),u.source_file_sha256,'invented-public-reference',
+                            'a'*64,'Invented evidence reviewer')
+            u=replace(u,identity_evidence_sha256=proof_digest(proof))
+            r=approve_review(u,'q:42:accept',inv,proof,'Invented mapping reviewer',source_inventory=source)
+            sources={source.revision:source}
+            r=load_reviews(json.loads(json.dumps(review_file([r]))),source_inventories=sources)[0]
+            current=replace(snapshots[1][2].units[u.source_id],identity_evidence_sha256=proof_digest(proof))
+            row=assess_review(r,{current.source_id:current},inv,source_inventories=sources)
+            self.assertEqual((row['mapping_status'],row['audio']),('approved','unchanged'))
+            with self.assertRaises(ValueError):
+                load_reviews(review_file([r]),source_inventories={snapshots[1][2].revision:snapshots[1][2]})
+
 
     def test_cli_output_boundary_and_sanitized_failures(self):
         import sys
@@ -266,12 +296,12 @@ class OfflineWorkflowTests(unittest.TestCase):
             self.assertFalse(Path(dest).exists())
 
     def test_tampered_stored_proof_is_rejected(self):
-        inv,u,r,p=reviewed()
+        inv,u,r,p,source=reviewed()
         evidence=r.evidence|{'facts':p.facts|{'npc_id':999}}
         tampered=replace(r,evidence=evidence)
-        self.assertEqual(assess_review(tampered,{u.source_id:u},inv)['reasons'],['stored_join_proof_invalid'])
+        self.assertEqual(assess_review(tampered,{u.source_id:u},inv, source_inventories={source.revision: source})['reasons'],['stored_join_proof_invalid'])
         altered = replace(r, decision=replace(r.decision, join_evidence_sha256='0'*64))
-        self.assertEqual(assess_review(altered,{u.source_id:u},inv)['reasons'],['stored_join_proof_invalid'])
+        self.assertEqual(assess_review(altered,{u.source_id:u},inv, source_inventories={source.revision: source})['reasons'],['stored_join_proof_invalid'])
 
     def test_canonical_syntax_rejects_guessed_ids(self):
         for identity,family in [('g:12345','gossip'),('g:invented-name','gossip'),
@@ -294,3 +324,171 @@ class OfflineWorkflowTests(unittest.TestCase):
         script=source+"\nconst entries=[{mapID:42,key:'invented key'},{mapID:42,key:'invented-key'}]; const files=assignFiles(entries); if(files.size!==2 || new Set(files.values()).size!==2 || !files.has('s:42:invented key')) process.exit(1);"
         result=subprocess.run(['node','--input-type=module','-e',script],capture_output=True)
         self.assertEqual(result.returncode,0)
+
+
+class SourceProvenanceTests(unittest.TestCase):
+    def setUp(self):
+        self.inv, self.unit, self.review, self.proof, self.source = reviewed()
+        self.sources = {self.source.revision: self.source}
+
+    def approve(self, proof=None, unit=None, source=None):
+        proof = proof or self.proof
+        unit = replace(unit or self.unit, identity_evidence_sha256=proof_digest(proof))
+        return approve_review(unit, 'q:42:accept', self.inv, proof, 'Invented mapping reviewer',
+                              source_inventory=source or self.source)
+
+    def test_correct_blob_and_exact_field_reference_allow_approval(self):
+        expected = hashlib.sha256('{[42]={nil,"invented wording"}}'.encode()).hexdigest()
+        self.assertEqual(self.proof.source_blob_sha256, expected)
+        self.assertEqual(self.approve().decision.source_file_sha256, expected)
+
+    def test_arbitrary_well_formed_sha_is_rejected_even_when_proof_digest_matches(self):
+        with self.assertRaisesRegex(ValueError, 'source_blob_digest_mismatch'):
+            self.approve(replace(self.proof, source_blob_sha256='b' * 64))
+
+    def test_other_file_digest_is_rejected(self):
+        f = Fixture().add('quest_both', 'classic', '{[42]={nil,"invented wording"}}')
+        f.add('quest_alliance', 'classic', '{[43]={nil,"Different invented field"}}')
+        source = f.inventory()
+        other_sha = source.files['classic/quest_alliance.lua']
+        with self.assertRaisesRegex(ValueError, 'source_blob_digest_mismatch'):
+            self.approve(replace(self.proof, source_blob_sha256=other_sha), source=source)
+
+    def test_incorrect_file_revision_and_external_source_references_rejected(self):
+        for reference in [self.proof.source_reference.replace('quest_both.lua', 'quest_horde.lua'),
+                          self.proof.source_reference.replace('1' * 40, '2' * 40),
+                          'https://example.invalid/unverified-evidence']:
+            with self.subTest(reference=reference), self.assertRaisesRegex(ValueError, 'source_reference_mismatch'):
+                self.approve(replace(self.proof, source_reference=reference))
+
+    def test_other_field_in_same_blob_cannot_supply_source_proof(self):
+        f = Fixture().add('quest_both', 'classic', '{[42]={nil,"invented wording",nil,"Invented progress"}}')
+        source = f.inventory()
+        unit = source.units[self.unit.source_id]
+        other = source.units['quest:horde:42:progress']
+        proof = replace(self.proof, source_blob_sha256=unit.source_file_sha256,
+                        source_reference=source_reference(other))
+        self.assertEqual(unit.source_file_sha256, other.source_file_sha256)
+        with self.assertRaisesRegex(ValueError, 'source_reference_mismatch'):
+            self.approve(proof, unit, source)
+
+    def test_unit_must_match_independently_supplied_source_inventory(self):
+        for changes in [{'source_file_sha256': 'b' * 64}, {'effective_sha256': 'b' * 64},
+                        {'origin_file': 'classic/quest_horde.lua'}, {'context_sha256': 'b' * 64}]:
+            with self.subTest(changes=changes), self.assertRaisesRegex(ValueError, 'source_unit_provenance_mismatch'):
+                self.approve(unit=replace(self.unit, **changes))
+
+    def test_missing_inventory_or_reference_cannot_approve(self):
+        with self.assertRaisesRegex(ValueError, 'validated_source_inventory_required'):
+            approve_review(self.unit, 'q:42:accept', self.inv, self.proof, 'Invented mapping reviewer')
+        with self.assertRaisesRegex(ValueError, 'invalid_join_proof_metadata'):
+            replace(self.proof, source_reference='')
+        with self.assertRaisesRegex(ValueError, 'invalid_join_proof_digest'):
+            replace(self.proof, source_blob_sha256='')
+
+    def test_valid_provenance_does_not_replace_contextual_join_or_independent_review(self):
+        for facts in [{}, self.proof.facts | {'npc_id': 999}, self.proof.facts | {'voice': 'wrong-voice'}]:
+            with self.subTest(facts=facts), self.assertRaises(ValueError):
+                self.approve(replace(self.proof, facts=facts))
+        with self.assertRaisesRegex(ValueError, 'independent_reference_review_required'):
+            approve_review(self.unit, 'q:42:accept', self.inv, self.proof,
+                           self.proof.evidence_reviewer, source_inventory=self.source)
+
+    def test_low_level_mapping_and_retention_cannot_bypass_source_inventory(self):
+        join = VerifiedJoin(self.unit.source_id, 'q:42:accept', self.unit.identity_evidence_sha256,
+                            self.proof.target_blob_sha256, self.proof.source_reference, proof_digest(self.proof))
+        with self.assertRaisesRegex(ValueError, 'validated_source_inventory_required'):
+            approve_mapping(self.unit, 'q:42:accept', self.inv.targets,
+                            {(self.unit.source_id, 'q:42:accept'): join}, 'Invented mapping reviewer')
+        with self.assertRaisesRegex(ValueError, 'historical_source_inventory_required'):
+            retain_review(self.review.decision, self.unit, self.inv, self.review.evidence)
+        # Even with valid source provenance, retention cannot bypass join context.
+        proof=replace(self.proof,facts=self.proof.facts | {'npc_id':999})
+        sha=proof_digest(proof)
+        decision=replace(self.review.decision,source_evidence_sha256=sha,join_evidence_sha256=sha)
+        with self.assertRaisesRegex(ValueError,'speaker_voice_owner_chain_or_wording_mismatch'):
+            retain_review(decision,replace(self.unit,identity_evidence_sha256=sha),self.inv,
+                          dict(self.review.evidence, facts=proof.facts),source_inventory=self.source)
+
+
+    def test_persisted_provenance_corruption_rejected_against_historical_input(self):
+        data = review_file([self.review])
+        corruptions = [('decision', 'source_file_sha256', 'b' * 64),
+                       ('decision', 'source_revision', 'b' * 40),
+                       ('decision', 'text_sha256', 'b' * 64),
+                       ('evidence', 'source_reference', source_reference(self.unit).replace(':42:', ':43:')),
+                       ('evidence', 'source_blob_sha256', 'b' * 64)]
+        for section, key, value in corruptions:
+            bad = json.loads(json.dumps(data))
+            bad['decisions'][0][section][key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                load_reviews(bad, source_inventories=self.sources)
+        # Internally self-consistent forged baseline metadata is still not trusted.
+        forged_proof = replace(self.proof, source_blob_sha256='b'*64)
+        forged_sha = proof_digest(forged_proof)
+        bad = replace(self.review, decision=replace(self.review.decision, source_file_sha256='b'*64,
+                      source_evidence_sha256=forged_sha, join_evidence_sha256=forged_sha),
+                      evidence=self.review.evidence | {'source_blob_sha256': 'b'*64})
+        with self.assertRaisesRegex(ValueError, 'stored_source_baseline_mismatch'):
+            load_reviews(review_file([bad]), source_inventories=self.sources)
+
+    def test_incomplete_or_unavailable_history_never_becomes_approved(self):
+        with self.assertRaisesRegex(ValueError, 'historical_source_inventory_required'):
+            load_reviews(review_file([self.review]))
+        data = review_file([self.review])
+        del data['decisions'][0]['origin_file']
+        with self.assertRaises(ValueError):
+            load_reviews(data, source_inventories=self.sources)
+        row = assess_review(self.review, {self.unit.source_id: self.unit}, self.inv)
+        self.assertEqual((row['mapping_status'], row['content_status'], row['audio']),
+                         ('rejected', 'pending', 'not_applicable'))
+
+    def test_historical_proof_is_not_reapproved_against_new_translation_blob(self):
+        f = Fixture().add('quest_both', 'classic', '{[42]={nil,"Changed invented translation"}}')
+        current = replace(f.units()[self.unit.source_id], source_revision='2'*40,
+                          identity_evidence_sha256=self.unit.identity_evidence_sha256)
+        reviewed = replace(self.review, decision=replace(self.review.decision,
+                            content_status='approved', grammar_status='approved', ai_status='approved'))
+        loaded = load_reviews(json.loads(json.dumps(review_file([reviewed]))), source_inventories=self.sources)[0]
+        row = assess_review(loaded, {current.source_id: current}, self.inv, source_inventories=self.sources)
+        self.assertEqual(row['mapping_status'], 'approved')
+        self.assertEqual(row['target_id'], 'q:42:accept')
+        self.assertEqual((row['content_status'], row['grammar_status'], row['ai_status']), ('pending',)*3)
+        self.assertEqual(row['audio'], 'stale_if_present')
+        # The same old proof is forbidden for a NEW approval against this new blob.
+        newer = SourceInventory(current.source_revision, {current.origin_file: current.source_file_sha256},
+                                {current.source_id: current})
+        with self.assertRaisesRegex(ValueError, 'source_reference_mismatch'):
+            self.approve(unit=current, source=newer)
+
+    def test_file_only_and_line_only_drift_keep_identity_and_content_review(self):
+        reviewed = replace(self.review, decision=replace(self.review.decision,
+                           content_status='approved', grammar_status='approved', ai_status='approved'))
+        for body in ['\n\n{[42]={nil,"invented wording"}}',
+                     '{[42]={nil,"invented wording"}} -- unrelated invented comment']:
+            f = Fixture().add('quest_both', 'classic', body)
+            current = replace(f.units()[self.unit.source_id], source_revision='2'*40,
+                              identity_evidence_sha256=self.unit.identity_evidence_sha256)
+            row = assess_review(reviewed, {current.source_id: current}, self.inv, source_inventories=self.sources)
+            self.assertEqual((row['mapping_status'], row['content_status'], row['grammar_status'], row['audio']),
+                             ('approved', 'approved', 'approved', 'unchanged'))
+
+    def test_changed_source_identity_and_context_invalidate_mapping(self):
+        for changes, audio in [({'source_id': 'quest:horde:43:accept'}, 'revalidate'),
+                               ({'context_sha256': 'b'*64}, 'stale_if_present')]:
+            current = replace(self.unit, **changes)
+            row = assess_review(self.review, {self.unit.source_id: current}, self.inv,
+                                source_inventories=self.sources)
+            self.assertEqual((row['mapping_status'], row['content_status'], row['audio']),
+                             ('invalidated', 'pending', audio))
+
+    def test_semantic_reports_deterministic_without_translation_body_leaks(self):
+        a = coverage_report({self.unit.source_id: self.unit}, self.inv, [self.review],
+                            source_inventories=self.sources)
+        same = SourceInventory(self.source.revision, dict(reversed(list(self.source.files.items()))),
+                               dict(reversed(list(self.source.units.items()))))
+        b = coverage_report({self.unit.source_id: self.unit}, self.inv, [self.review],
+                            source_inventories={same.revision: same})
+        self.assertEqual(metadata_json(a), metadata_json(b))
+        self.assertNotIn('invented wording', metadata_json(a))
+        self.assertNotIn('invented wording', metadata_json(review_file([self.review])))

@@ -8,17 +8,19 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from adapters.classicua.source import audit_checkout
+from adapters.classicua.evidence import from_audit
 from adapters.crosswalk import effective_units, metadata_json
 from adapters.mapping import coverage_report, extraction_exclusions, load_reviews
 from adapters.spoken import PublicSource, build_index
 
 
-def reviewed_source(path, manifest):
+def reviewed_source(path, manifest, *, return_report=False):
     """Candidate revisions must have a separately supplied reviewed full file manifest."""
     if (set(manifest) != {'revision', 'files', 'review_by'}
             or type(manifest['review_by']) is not str or not manifest['review_by'].strip()):
         raise ValueError('independent_source_manifest_review_required')
-    return audit_checkout(path, manifest['files'], manifest['revision'])[0]
+    audited = audit_checkout(path, manifest['files'], manifest['revision'])
+    return audited if return_report else audited[0]
 
 
 def main():
@@ -46,20 +48,22 @@ def main():
             raise ValueError('spoken_reference_revision_mismatch')
         inventory = build_index(PublicSource(args.spoken, manifest))
         baseline, audit = audit_checkout(args.classicua, lock['classicua']['files'])
-        reviews = load_reviews(json.loads(args.reviews.read_text())) if args.reviews else []
-        # Reviewed evidence is a separate attestation; never derive it from translated bodies.
-        evidence = {r.decision.source_id: r.decision.source_evidence_sha256 for r in reviews}
-        old = None
+        source_inventory = from_audit(baseline, audit)
+        source_inventories = {source_inventory.revision: source_inventory}
         dataset = baseline
         if bool(args.candidate) != bool(args.candidate_manifest):
             raise ValueError('candidate_checkout_and_reviewed_manifest_required_together')
         if args.candidate:
             candidate_manifest = json.loads(args.candidate_manifest.read_text())
-            dataset = reviewed_source(args.candidate, candidate_manifest)
-            # External source-evidence digests are not carried into a different identity context.
-            old = effective_units(baseline, evidence)
+            dataset, candidate_audit = reviewed_source(args.candidate, candidate_manifest, return_report=True)
+            candidate_inventory = from_audit(dataset, candidate_audit)
+            source_inventories[candidate_inventory.revision] = candidate_inventory
+        reviews = load_reviews(json.loads(args.reviews.read_text()),
+                               source_inventories=source_inventories) if args.reviews else []
+        evidence = {r.decision.source_id: r.decision.source_evidence_sha256 for r in reviews}
+        old = effective_units(baseline, evidence) if args.candidate else None
         units = effective_units(dataset, evidence)
-        report = coverage_report(units, inventory, reviews, old)
+        report = coverage_report(units, inventory, reviews, old, source_inventories=source_inventories)
         report['source_raw_declarations'] = sum(r['declarations'] for r in audit['raw_declarations'])
         if args.candidate:
             report['source_raw_declarations'] = None  # Baseline is not candidate coverage.

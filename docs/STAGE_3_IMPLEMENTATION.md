@@ -180,3 +180,79 @@ Exact required validation output and test scope are in
 [STAGE_3_TESTING.md](STAGE_3_TESTING.md). Local final review found no additional
 actionable defect after the fixes covered by the tests. Residual limits are the
 missing independent real joins, pending content review and pending client tests.
+
+
+## P2 correction — source evidence provenance
+
+The PR #7 review identified that `JoinProof.source_blob_sha256` previously had
+only a syntax check and `source_reference` was not bound to the ClassicUA field.
+An arbitrary valid-looking digest could therefore pass new mapping approval.
+This correction changes the validation gate; it creates **no real approvals**.
+
+`adapters/classicua/evidence.py` builds a read-only `SourceInventory` from the
+**dataset/report pair returned by a successful `audit_checkout()`**. Stage 2A
+already reads immutable Git blobs at an explicit full revision, validates the
+entire relevant file-hash manifest, and resolves actual load/override semantics.
+The new module does not change parsing, override resolution, source pins or Lua
+execution policy. Production callers must use `from_audit(dataset, report)`;
+review JSON is never used to construct a trusted inventory. Synthetic tests
+supply inventories derived from independently hashed invented fixture bytes.
+
+For a **new approval**, `approve_review(..., source_inventory=source)` requires:
+
+- An exact source artifact/field reference in the form
+  `classicua:<40-hex-revision>:<effective-file>#<effective-source-id>`.
+  Source IDs identify the resolved faction/event or hashed record/field path;
+  line numbers and translated names are not evidence locators.
+- A source blob SHA-256 equal to the independently audited file SHA-256, and an
+  effective unit matching the inventory's revision, source ID/family/category,
+  origin file/layer, field hash, context hash, grammar hash and AI marker.
+  A different field in the **same correctly hashed file** is still rejected.
+- The existing exact contextual source-to-target facts, verified target reference
+  and digest, proof digest binding, and distinct evidence/mapping reviewers.
+
+The foundational `approve_mapping()` now also requires a validated source
+inventory and exact field reference. `retain_review()` rechecks the saved source
+baseline before returning it, closing these lower-level bypasses.
+
+Alternate source artifacts are **unsupported and rejected**. A future alternate
+artifact route would need an independently validated evidence manifest and an
+explicit binding to the effective unit; a reviewer-supplied reference/hash is
+not such a manifest. This fix introduces no network or private API dependency.
+
+For a **stored review**, `load_reviews(..., source_inventories={revision: source})`
+and `assess_review(..., source_inventories=...)` independently locate the audited
+**historical** effective unit at `decision.source_revision`. They verify all
+persisted baseline metadata and proof hashes/references against that historical
+inventory. They never reconstruct trusted provenance from the persisted hashes,
+and never compare an old proof's blob hash to the candidate's new source file.
+The full contextual proof is rerun on the historical baseline when the target
+context is unchanged; the new unit is compared separately for identity/content
+impact. The CLI builds these inventories for its audited baseline and optional
+candidate before loading reviews. The API can accept additional independently
+audited historical inventories; the CLI rejects reviews for unavailable older
+baselines rather than fetching them or silently trusting their metadata.
+
+Schema version **1 is retained**: its existing decision/review fields already
+store the reviewed source revision, file digest, effective text/context/grammar
+hashes, AI marker, file/layer and complete proof. No new serialized field or schema
+migration is necessary. Validation is deliberately stricter: old arbitrary refs,
+missing baselines and inconsistent provenance are rejected, never auto-filled or
+silently grandfathered. Other schema versions remain unsupported. Only the
+explicitly invented example is regenerated; no historical real evidence or
+reviewer identity is invented.
+
+| Change | Identity/content behavior | Audio impact |
+| --- | --- | --- |
+| Translated wording only | Retain canonical ID; content, grammar and AI review pending | `stale_if_present` |
+| Source-file hash or line drift with identical effective unit | Retain canonical ID and prior review | `unchanged` |
+| Source ID removed/changed or canonical target unavailable | Invalidate identity and require review | `revalidate` |
+| Speaker/voice/owner/page-chain/alias/target context changes | Invalidate identity and dependent review | `stale_if_present` |
+| Forged, inconsistent or unavailable historical proof | Reject input; direct assessment reports `rejected`, pending review | `not_applicable` |
+
+The automatic check establishes **provenance and internal consistency**, not that
+Ukrainian text and an English canonical moment mean the same thing. Exact matching
+facts still require independently inspected public evidence and human review.
+All real-join counts remain zero; Stage 2B runtime/rights/manual gates are unchanged.
+See [P2 validation](STAGE_3_TESTING.md#p2-source-provenance-regression-validation)
+for the new local results. Existing 127-test results above remain historical.

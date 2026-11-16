@@ -4,7 +4,7 @@ Attestations are explicit human inputs, never inferred from ID syntax or titles.
 This validates their consistency, not the truth of a human's external evidence.
 """
 from collections import Counter
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 import re
 
 from adapters.crosswalk import (FULL_SHA, MappingDecision, TARGET_PATTERNS,
@@ -41,7 +41,7 @@ def review_file(records):
     return {'schema_version': 1, 'decisions': [asdict(r) for r in sorted(records, key=lambda r: r.decision.source_id)]}
 
 
-def load_reviews(data):
+def load_reviews(data, *, source_inventories=None):
     if set(data) != {'schema_version', 'decisions'} or data['schema_version'] != 1:
         raise ValueError('unsupported_review_schema')
     result = []
@@ -61,6 +61,7 @@ def load_reviews(data):
                 raise ValueError('incomplete_identity_facts')
             if r.decision.source_id in seen:
                 raise ValueError('duplicate_source_review')
+            validate_review_source(r, source_inventories)
             seen.add(r.decision.source_id)
             result.append(r)
     except (TypeError, KeyError):
@@ -72,14 +73,52 @@ def target_context(inventory, identity):
     return digest([inventory.contexts[identity], inventory.aliases.get(identity, [])])
 
 
-def retain_review(decision, unit, inventory, evidence):
+def retain_review(decision, unit, inventory, evidence, *, source_inventory=None):
     """Persist the reviewed baseline, including content-independent identity context."""
-    return ReviewedMapping(decision, unit.context_sha256,
+    review = ReviewedMapping(decision, unit.context_sha256,
                            target_context(inventory, decision.target_id), unit.grammar_sha256,
                            unit.ai, unit.origin_file, unit.origin_layer, evidence)
+    validate_review_source(review, {unit.source_revision: source_inventory})
+    from adapters.spoken.evidence import JoinProof, validate_review_proof
+    validate_review_proof(unit, decision.target_id, inventory, JoinProof(**evidence),
+                          decision.review_by, source_inventory=source_inventory)
+    return review
 
 
-def assess_review(review, units, inventory):
+def validate_review_source(review, source_inventories):
+    """Revalidate persisted baseline against independently audited historical input.
+
+    Never reconstruct trusted provenance from a review's own hashes, nor compare
+    historical blob hashes to the candidate revision's new source files.
+    """
+    from adapters.classicua.evidence import SourceInventory, validate_source_proof
+    from adapters.spoken.evidence import JoinProof, proof_digest
+    d = review.decision
+    source = (source_inventories or {}).get(d.source_revision)
+    if not isinstance(source, SourceInventory) or source.revision != d.source_revision:
+        raise ValueError('historical_source_inventory_required')
+    baseline = source.units.get(d.source_id)
+    if baseline is None:
+        raise ValueError('reviewed_source_unit_unavailable')
+    if ((d.source_file_sha256, d.text_sha256, review.source_context_sha256,
+         review.grammar_sha256, review.ai, review.origin_file, review.origin_layer)
+            != (baseline.source_file_sha256, baseline.effective_sha256, baseline.context_sha256,
+                baseline.grammar_sha256, baseline.ai, baseline.origin_file, baseline.origin_layer)):
+        raise ValueError('stored_source_baseline_mismatch')
+    proof = JoinProof(**review.evidence)
+    validate_source_proof(baseline, proof, source)
+    if (proof.source_context_sha256 != review.source_context_sha256
+            or proof.target_context_sha256 != review.target_context_sha256
+            or proof.target_blob_sha256 != d.target_evidence_sha256
+            or proof_digest(proof) != d.source_evidence_sha256
+            or d.join_evidence_sha256 != d.source_evidence_sha256
+            or d.join_evidence_ref != proof.source_reference
+            or proof.evidence_reviewer.strip() == d.review_by.strip()):
+        raise ValueError('stored_join_attestation_mismatch')
+    return replace(baseline, identity_evidence_sha256=d.source_evidence_sha256), source
+
+
+def assess_review(review, units, inventory, *, source_inventories=None):
     d = review.decision
     u = units.get(d.source_id)
     t = inventory.targets.get(d.target_id)
@@ -88,6 +127,8 @@ def assess_review(review, units, inventory):
         reasons.append('source_removed')
     if t is None:
         reasons.append('target_unavailable')
+    if u is not None and u.source_id != d.source_id:
+        reasons.append('source_identity_changed')
     if u and t:
         if u.family != t.family:
             reasons.append('cross_family_join')
@@ -102,29 +143,34 @@ def assess_review(review, units, inventory):
         if (t.spoken_revision != d.target_revision or t.evidence_sha256 != d.target_evidence_sha256
                 or target_context(inventory, t.canonical_id) != review.target_context_sha256):
             reasons.append('target_identity_context_changed')
-    if u and t and not reasons:
-        # Persisted JSON must pass the same contextual proof gate as a new approval.
-        from adapters.spoken.evidence import JoinProof, approve_review
-        try:
-            proof = JoinProof(**review.evidence)
-            if (d.join_evidence_sha256 != d.source_evidence_sha256
-                    or d.join_evidence_ref != proof.source_reference):
-                raise ValueError('stored_join_attestation_mismatch')
-            approve_review(u, d.target_id, inventory, proof, d.review_by)
-        except (ValueError, TypeError, KeyError, AttributeError):
-            reasons.append('stored_join_proof_invalid')
+    # Validate historical evidence even if the current unit/target changed or vanished.
+    from adapters.spoken.evidence import JoinProof, approve_review
+    try:
+        baseline, source = validate_review_source(review, source_inventories)
+        if t and not reasons:
+            approve_review(baseline, d.target_id, inventory, JoinProof(**review.evidence),
+                           d.review_by, source_inventory=source)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        reasons.append('stored_join_proof_invalid')
     content = bool(u and u.effective_sha256 != d.text_sha256)
     grammar = bool(u and u.grammar_sha256 != review.grammar_sha256)
     origin = bool(u and (u.origin_file, u.origin_layer) != (review.origin_file, review.origin_layer))
     # Origin is content provenance; unrelated file-only drift retains prior reviews.
     ai = bool(u and u.ai != review.ai)
+    if 'stored_join_proof_invalid' in reasons:
+        mapping_status, audio = 'rejected', 'not_applicable'
+    else:
+        mapping_status = 'invalidated' if reasons else 'approved'
+        if any(reason in reasons for reason in ('source_identity_changed', 'source_removed', 'target_unavailable')):
+            audio = 'revalidate'
+        else:
+            audio = 'stale_if_present' if content or grammar or origin or reasons else 'unchanged'
     return {'source_id': d.source_id, 'target_id': d.target_id,
-            'mapping_status': 'invalidated' if reasons else 'approved', 'reasons': sorted(reasons),
+            'mapping_status': mapping_status, 'reasons': sorted(reasons),
             'content_status': 'pending' if content or origin or reasons else d.content_status,
             'grammar_status': 'pending' if content or grammar or origin or reasons else d.grammar_status,
             'ai_status': 'pending' if ai or content or reasons else d.ai_status,
-            'audio': 'stale_if_present' if content or grammar or origin or reasons else 'not_assessed',
-            'origin_changed': origin}
+            'audio': audio, 'origin_changed': origin}
 
 
 def candidates(units, inventory):
@@ -165,8 +211,8 @@ RUNTIME = {'quest': 'blocked_independent_ukUA_captions_on_enUS',
            'bosses': 'blocked_ukUA_story_selection_on_enUS'}
 
 
-def coverage_report(units, inventory, reviews=(), old_units=None):
-    assessed = [assess_review(r, units, inventory) for r in reviews]
+def coverage_report(units, inventory, reviews=(), old_units=None, *, source_inventories=None):
+    assessed = [assess_review(r, units, inventory, source_inventories=source_inventories) for r in reviews]
     approved = {r['source_id']: r for r in assessed if r['mapping_status'] == 'approved'}
     rows = candidates(units, inventory)
     for row in rows:

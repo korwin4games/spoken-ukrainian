@@ -11,29 +11,38 @@ sys.path.insert(0, str(ROOT))
 
 from adapters.classicua.lua import parse_value
 from adapters.classicua.model import Dataset, Origin
+from adapters.classicua.evidence import source_reference
 from adapters.crosswalk import (VerifiedJoin, VerifiedTarget, approve_mapping, compare_effective,
                                 digest, effective_units, metadata_json, metadata_report)
 
 
 class Fixture:
-    def __init__(self, file_hash_override=None):
+    def __init__(self, file_hash_override=None, revision="synthetic-revision"):
+        self.revision = revision
+        self.bodies = {}
         self.file_hash_override = file_hash_override
         self.dataset = Dataset(self.origin)
         self.active_layer = {}
         self.serial = 0
 
     def origin(self, node, key):
-        return Origin("synthetic", "synthetic-revision", node.file, node.line,
+        return Origin("synthetic", self.revision, node.file, node.line,
                       node.column, self.active_layer[node.file],
-                      self.file_hash_override or hashlib.sha256(node.file.encode()).hexdigest(), key)
+                      self.file_hash_override or hashlib.sha256(self.bodies[node.file].encode()).hexdigest(), key)
 
     def add(self, category, layer, body, file=None):
         self.serial += 1
         file = file or f"{layer}/{category}.lua"
+        self.bodies[file] = body
         self.active_layer[file] = layer
         self.dataset.apply(category, layer, parse_value(body, file),
                            "gossip" if category == "gossip" else "merge")
         return self
+
+    def inventory(self):
+        from adapters.classicua.evidence import SourceInventory
+        return SourceInventory(self.revision, {p: hashlib.sha256(b.encode()).hexdigest()
+                                              for p, b in self.bodies.items()}, self.units())
 
     def units(self, evidence=None):
         return effective_units(self.dataset, evidence)
@@ -150,13 +159,13 @@ class CrosswalkTests(unittest.TestCase):
                 {"q:42:accept": VerifiedTarget("q:42:accept", "quest", "pin", "path", "a" * 64)}, {}, "Reviewer")
 
     def test_explicit_review_requires_evidence_and_separate_review_status(self):
-        f = Fixture().add("quest_both", "classic", '{[42]={nil,"same"}}')
+        f = Fixture(revision="1" * 40).add("quest_both", "classic", '{[42]={nil,"same"}}')
         unit = f.units({"quest:horde:42:accept": "b" * 64})["quest:horde:42:accept"]
         target = VerifiedTarget("q:42:accept", "quest", "synthetic-pin", "synthetic-public-reference", "a" * 64)
         join = VerifiedJoin(unit.source_id, target.canonical_id, "b" * 64, "a" * 64,
-                            "synthetic-permalink-to-explicit-match", "c" * 64)
+                            source_reference(unit), "c" * 64)
         decision = approve_mapping(unit, "q:42:accept", {"q:42:accept": target},
-                                   {(unit.source_id, target.canonical_id): join}, "Synthetic Reviewer")
+                                   {(unit.source_id, target.canonical_id): join}, "Synthetic Reviewer", source_inventory=f.inventory())
         self.assertEqual(decision.target_id, "q:42:accept")
         self.assertEqual(decision.join_evidence_sha256, "c" * 64)
         self.assertEqual((decision.mapping_status, decision.content_status, decision.grammar_status, decision.ai_status),

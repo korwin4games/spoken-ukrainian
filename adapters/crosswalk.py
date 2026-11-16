@@ -192,19 +192,21 @@ class MappingDecision:
                 raise ValueError("Invalid SHA-256 mapping review input")
         if not self.source_revision or not self.target_revision or not self.join_evidence_ref:
             raise ValueError("Pinned provenance and join evidence reference required")
-        if not self.review_by or self.mapping_status != "approved":
+        if type(self.review_by) is not str or not self.review_by.strip() or self.mapping_status != "approved":
             raise ValueError("Mapping requires an explicit review attestation")
         for value in (self.content_status, self.grammar_status, self.ai_status):
             if value not in ("pending", "approved", "rejected"):
                 raise ValueError("Review states must be independent and explicit")
 
 
-def approve_mapping(unit, target_id, verified_targets, verified_joins, reviewer):
+def approve_mapping(unit, target_id, verified_targets, verified_joins, reviewer, *, source_inventory=None):
     """Approve only a reviewer-evidenced join to a pinned canonical inventory.
 
     Neither a source key, a canonical target's existence nor a similar title is
     sufficient. The independently inspected join reference is a human review
     gate: this function validates provenance consistency, not external truth.
+    The source_inventory must come from an independent Stage 2A audit; source
+    metadata supplied by a review is never a substitute for this inventory.
     """
     target = verified_targets.get(target_id)
     if target is None or not isinstance(target, VerifiedTarget):
@@ -226,6 +228,10 @@ def approve_mapping(unit, target_id, verified_targets, verified_joins, reviewer)
         raise ValueError("Stale or inconsistent source-target join evidence")
     if not reviewer or not reviewer.strip():
         raise ValueError("Reviewer is required")
+    from adapters.classicua.evidence import source_reference, validate_source_unit
+    validate_source_unit(unit, source_inventory)
+    if join.join_evidence_ref != source_reference(unit):
+        raise ValueError("source_reference_mismatch")
     return MappingDecision(unit.source_id, target.canonical_id,
                            unit.identity_evidence_sha256, target.evidence_sha256,
                            join.join_evidence_sha256, unit.effective_sha256,

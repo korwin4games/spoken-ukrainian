@@ -2,6 +2,7 @@
 from dataclasses import asdict, dataclass
 from adapters.crosswalk import FULL_SHA, VerifiedJoin, approve_mapping, digest
 from adapters.mapping import retain_review, target_context
+from adapters.classicua.evidence import validate_source_proof
 
 REQUIRED = {
     'quest': {'npc_id', 'npc_type', 'voice', 'faction', 'wording_sha256', 'source', 'quest_id', 'player_gender'},
@@ -35,7 +36,7 @@ class JoinProof:
             raise ValueError('invalid_join_proof_metadata')
 
 
-def approve_review(unit, target_id, inventory, proof, reviewer):
+def validate_review_proof(unit, target_id, inventory, proof, reviewer, *, source_inventory=None):
     """An independent reviewer must inspect the explicit source-to-target context.
 
     Reference hashes alone are not proof: required facts must match one whole
@@ -51,6 +52,7 @@ def approve_review(unit, target_id, inventory, proof, reviewer):
             or proof.target_blob_sha256 != target.evidence_sha256
             or not FULL_SHA.fullmatch(proof.source_blob_sha256)):
         raise ValueError('independent_reference_review_required')
+    validate_source_proof(unit, proof, source_inventory)
     if unit.context_sha256 != proof.source_context_sha256:
         raise ValueError('source_context_mismatch')
     if target_context(inventory, target_id) != proof.target_context_sha256:
@@ -75,11 +77,18 @@ def approve_review(unit, target_id, inventory, proof, reviewer):
                        proof.evidence_reviewer, proof.greeting])
     if unit.identity_evidence_sha256 != join_sha:
         raise ValueError('source_evidence_not_bound_to_join_proof')
+    return target, join_sha
+
+
+def approve_review(unit, target_id, inventory, proof, reviewer, *, source_inventory=None):
+    """Approve only audited source provenance plus an independently attested join."""
+    target, join_sha = validate_review_proof(unit, target_id, inventory, proof, reviewer,
+                                           source_inventory=source_inventory)
     join = VerifiedJoin(unit.source_id, target_id, join_sha, target.evidence_sha256,
                         proof.source_reference, join_sha)
     decision = approve_mapping(unit, target_id, inventory.targets,
-                               {(unit.source_id, target_id): join}, reviewer)
-    return retain_review(decision, unit, inventory, asdict(proof))
+                               {(unit.source_id, target_id): join}, reviewer, source_inventory=source_inventory)
+    return retain_review(decision, unit, inventory, asdict(proof), source_inventory=source_inventory)
 
 
 def proof_digest(proof):
