@@ -153,7 +153,8 @@ class ReviewUITests(unittest.TestCase):
         with urlopen(base + "/app.js", timeout=5) as reply:
             js = reply.read().decode("utf-8")
             self.assertIn("textContent", js)
-            self.assertNotIn("innerHTML", js)
+            self.assertNotIn(".innerHTML", js)
+            self.assertNotIn("insertAdjacentHTML(", js)
             self.assertIn("target_options[0]?.target_id", js)
         with urlopen(base + "/api/bootstrap", timeout=5) as reply:
             info = json.load(reply)
