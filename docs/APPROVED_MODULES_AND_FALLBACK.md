@@ -6,7 +6,7 @@ This decision supplements [the immutable-Player architecture](ARCHITECTURE_UNMOD
 
 ## Current translation focus (2026-11-16)
 
-The approved module identities below remain unchanged. The **execution order**, however, now prioritizes **Compendium UI labels**, then **Places**, **Readables (Books and Notes)** and **Bosses**. **Quests/Gossip are deferred**. Compendium is a shared core window, not a fifth Community Pack; user-interface labels and each module's prose are different localization surfaces. See [active feature priorities](PRODUCT_PRIORITIES_2026_11.md). This does not alter the approved per-record language/audio fallback policy or grant any missing runtime capability.
+The approved module identities below remain unchanged. The **execution order** now prioritizes **Places**, **Readables (Books and Notes)** and **Bosses**, then **Compendium UI labels** (titles, tabs, buttons, filters, search and messages), and lastly **Quests/Gossip**. Compendium is a shared core window, not a fifth Community Pack; user-interface labels and each module's prose are different localization surfaces. See [active feature priorities](PRODUCT_PRIORITIES_2026_11.md) and [Places source audit](PLACES_SOURCE_AUDIT.md). This does not alter the approved per-record language/audio fallback policy or grant any missing runtime capability.
 
 ## Exactly four official module targets
 

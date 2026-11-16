@@ -1,16 +1,16 @@
-# Near-term priority: Compendium → Places → Readables → Bosses
+# Near-term priority: Places → Readables → Bosses → Compendium UI → Quests
 
-**Decision: 2026-11-16.** The user prioritizes **Ukrainian text** in Azeroth's Compendium, Places, Books and Notes, and Bosses, in that order. Quest/Gossip identity reviews are deferred. This changes execution order only: no new official module, no new language-client claim, no source pin changes, no audio, no release authorization.
+**Decision: 2026-11-16.** The user prioritizes **Places**, **Books and Notes**, **Bosses**, then **Azeroth's Compendium interface strings** (titles, tabs, buttons, filters, search, messages). **Quests/Gossip** remain after those stages. Compendium content from Places/Readables/Bosses can be translated earlier; only the shared window *chrome* is postponed. This changes execution order only: no new official module, no new language-client claim, no source pin changes, no audio, no release authorization.
 
 ## Scope and exact ordering
 
 | Priority | User-facing scope | Upstream ownership | First output |
 | --- | --- | --- | --- |
-| **P0** | **Azeroth's Compendium** | Shared core `Spoken` UI (`addons/Spoken/UI/Compendium.lua`) with core/module locales | Ukrainian UI-string inventory, reviewed labels/buttons/filters/search/messages, testable upstream language-selection route |
-| **P1** | **Places** | `Spoken_Places` zone/subzone lore and its Compendium view | Verified public English-lore intake plus small rights-cleared Ukrainian Places text-only pilot |
-| **P2** | **Books and Notes** | `Spoken_Readables` books, letters, notes, plaques and Compendium Readables tab | Verified books/page-order/owners, Ukrainian page pilot, and upstream-safe text-only/browser contract |
-| **P3** | **Bosses** | `Spoken_Bosses` boss lore and Compendium boss pages | Verified boss-story originals/rights, Ukrainian story pilot, tested story-text selection |
-| **Deferred** | **Quests and Gossip** | `Spoken_Quests` | Preserve Stage 3/4B/4C and local Quest Review UI; do not block first-wave work on these |
+| **P0** | **Places** | `Spoken_Places` zone/subzone lore and its Compendium view | Verify English lore originals; audit UA VoiceOver translations; pilot a cleared text-only Places pack |
+| **P1** | **Books and Notes** | `Spoken_Readables` books, letters, notes, plaques and Compendium Readables tab | Verify complete page/owner chains; audit ClassicUA and UA VoiceOver content; pilot reviewed Ukrainian page translations |
+| **P2** | **Bosses** | `Spoken_Bosses` boss lore and Compendium boss pages | Verify source stories, translations/rights and supported story-language selection |
+| **P3** | **Compendium interface** | Shared core `Spoken` UI (`addons/Spoken/UI/Compendium.lua`) with core/module locales | Translate reviewed UI labels/tabs/buttons/filters/search/messages after content priorities; get an upstream-supported UI-language selection route |
+| **P4** | **Quests and Gossip** | `Spoken_Quests` | Preserve Stage 3/4B/4C and local Quest Review UI; tackle after content and Compendium chrome |
 
 **Compendium is NOT a fifth Community Pack**. It is a shared window showing material supplied by the four existing official modules. Two different jobs must be separated: translating the **Compendium chrome** (labels, buttons and controls), and translating **content displayed in Compendium** (Places/Readables/Bosses, later Quests). The four approved module targets remain `Spoken_Quests` (including Gossip), `Spoken_Places`, `Spoken_Readables` and `Spoken_Bosses`.
 
@@ -32,11 +32,11 @@ See [Stage 2B tests](STAGE_2B_COMPATIBILITY.md), [approved module scope](APPROVE
 
 ## Next implementation milestones
 
-1. **Compendium chrome and capability audit (P0).** Enumerate stable source keys and references from core and module locale files. Prepare Ukrainian UI labels, terminology and format/placeholder tests for independent language review. Confirm a supported non-client UI-language route or file an explicit upstream enhancement. **Acceptance:** reviewed string-key catalogue + truthful runtime feasibility status, not a claim the enUS UI is already Ukrainian.
-2. **Places (P1, first realistically deployable text).** Expand the pinned English-original index for real `enUS` Zones/Subzones with hashes and canonical map/subzone IDs; retain source provenance/licence. Translate and review a small, coherently covered group of places. Test the existing Places text-only community contract and safe English behavior for uncovered stories in Forever. **Acceptance:** one real, cleared Ukrainian lore pilot visible in game without fake audio or hidden untranslated entries.
-3. **Readables (P2).** Verify book/title/page/owner chains and independently review Ukrainian text. Resolve missing-file audio safety and independent text display with upstream. **Acceptance:** at least one translated multi-page book/note browsable in a supported Compendium with correct language/fallback and no nil-file exception.
-4. **Bosses (P3).** Build an independently verifiable canonical boss-story source index with rights/attribution, review Ukrainian lore, and obtain a supported story selection route. **Acceptance:** a cleared boss story shown in Ukrainian on an ordinary client with safe English/silence behavior.
-5. **Return to Quest/Gossip mapping**, after priority 0–3 has a clear path; do not discard prior work.
+1. **Places (P0 — start now).** Confirm that ClassicUA's \`entries/zone.lua\` is a *name glossary*, not lore. Audit [UA VoiceOver: Books & Lore](PLACES_SOURCE_AUDIT.md) as a potentially **far more complete existing Ukrainian lore source**, while keeping its claimed ~900 stories distinct from actual audited canonical matches. Verify each source's rights and source/story identity, then add a read-only pinned English \`Zones.lua\`/\`Subzones.lua\` original index. Test a small rights-cleared text-only Ukrainian Places pack, especially untranslated-entry English fallback. **Acceptance:** an independently reviewed and genuinely supported first Places slice in Forever, without copied unreviewed third-party text.
+2. **Readables (P1).** ClassicUA already provides translated item and object page texts, while UA VoiceOver claims 1000+ voiced translated pages. Inspect the actual sources, use stable page ID/owner/page-chain evidence, and avoid merging different versions of a document. Resolve missing-file audio safety and independent Compendium text language with upstream. **Acceptance:** a reviewed multi-page Ukrainian book or note displayed safely under supported UI contracts.
+3. **Bosses (P2).** Independently verify pinned boss-story originals and authorship, obtain or prepare cleared Ukrainian stories, validate canonical map/key identity, and resolve the pinned client's selected-language story rendering with upstream. **Acceptance:** one reviewed Ukrainian boss story actually displayed on the normal client with a safe English/silence path.
+4. **Compendium *interface chrome* (P3).** Inventory stable localized UI keys and prepare Ukrainian titles, tabs, buttons, filters, search and messages; preserve placeholders. Confirm general-purpose upstream opt-in UI language selection for an ordinary English-client account or explicitly document its unavailability. **Acceptance:** an independently reviewed catalogue and, once supported, visibly Ukrainian controls; do not misrepresent \`ukUA\` content packs as changing client-locale UI.
+5. **Quests/Gossip (P4).** Resume already-developed Stage 3 mapping, Stage 4B reviewers and Stage 4C candidate binding. Existing PR #14 remains available independently, but is no longer a blocker for Places/Readables/Bosses.
 
 ## Non-goals and safeguards
 

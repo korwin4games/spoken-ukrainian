@@ -12,9 +12,9 @@ Spoken Ukrainian готує український контент **офлайн
 
 ### Нові пріоритети реалізації (листопад 2026)
 
-**Спочатку:** (P0) переклад **інтерфейсу Azeroth's Compendium**, (P1) історій **Places**, (P2) **Books and Notes** (`Spoken_Readables`), (P3) історій **Bosses**. **Quests/Gossip відкладено**; наявні інструменти перевірки й напрацювання зберігаються.
+**Спочатку:** (P0) історії **Places**, (P1) **Books and Notes** (`Spoken_Readables`), (P2) історії **Bosses**, (P3) елементи **інтерфейсу Compendium** (заголовки, вкладки, кнопки, фільтри, пошук і повідомлення), (P4) **Quests/Gossip**. Попередні інструменти перевірки зберігаємо.
 
-Compendium — це спільне вікно `Spoken`, **не окремий п'ятий модуль**. Переклад його кнопок/вкладок і текстів усередині — різні завдання. На звичайному `enUS` клієнті сам пакет `ukUA` не перекладає інтерфейс Compendium; Places уже має перевірений діагностичний текстовий шлях, а Readables і Bosses потребують сумісного вибору мови тексту. Див. [нову черговість та технічні обмеження](docs/PRODUCT_PRIORITIES_2026_11.md).
+Compendium — спільне вікно `Spoken`, **не п'ятий модуль**. Після перекладу контенту Places, Readables і Bosses окремо повернемося до його елементів керування. ClassicUA містить **назви локацій**, але не готові повні оповіді Places. Аддон [UA VoiceOver: Books & Lore](https://www.curseforge.com/wow/addons/ua-voiceover-books-lore) заявляє близько 900 українських історій і понад 1000 озвучених сторінок — це **перспективне, але ще не перевірене джерело**. Див. [roadmap](docs/PRODUCT_PRIORITIES_2026_11.md) та [аудит Places](docs/PLACES_SOURCE_AUDIT.md).
 
 ### Чотири затверджені модулі
 
@@ -100,7 +100,7 @@ Compendium — це спільне вікно `Spoken`, **не окремий п
 | Stage 4A — реальний індекс Spoken → звіт за джерелами | Реалізовано читання перевірених англійських текстів із закріплених джерел і офлайн-CLI; **0 схвалених зіставлень, немає українських пакетів** ([деталі](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Stage 4B — Workbench перевірки Quest mapping | Черга з перевірених джерел, відхилення/відкладення, Stage 3 JoinProof від двох reviewer; **0 реальних схвалених відповідностей** ([процедура](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
 | Stage 4C — основа перевіреної прив'язки Quest | Лише синтетичні тести перевірки ефективних полів ClassicUA; **0 реальних mapping і схвалених текстів**, без CLI ([контракт](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md)) |
-| **Поточний пріоритет** | **Compendium UI → Places → Readables (книги/нотатки) → Bosses; Quests/Gossip відкладено** ([roadmap](docs/PRODUCT_PRIORITIES_2026_11.md)) |
+| **Поточний пріоритет** | **Places → Readables (книги/нотатки) → Bosses → Compendium UI → Quests/Gossip** ([roadmap](docs/PRODUCT_PRIORITIES_2026_11.md)) |
 | Українські текстові й аудіопакети, оновлювач і публічні релізи | Ще не випущено |
 
 ## Збирання та тестування

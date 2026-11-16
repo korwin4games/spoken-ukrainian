@@ -6,7 +6,8 @@ Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. S
 ## Read relevant context
 - `README.md`: supported commands and current implementation.
 - `docs/IMPLEMENTATION_PLAN.md`: architecture, stages and gates.
-- `docs/PRODUCT_PRIORITIES_2026_11.md`: current explicitly updated execution order: Compendium UI, Places, Readables (Books and Notes), Bosses; defer Quests/Gossip.
+- `docs/PRODUCT_PRIORITIES_2026_11.md`: current explicitly updated execution order: Places, Readables (Books and Notes), Bosses, Compendium UI, Quests/Gossip.
+- `docs/PLACES_SOURCE_AUDIT.md`: source assessment for ClassicUA location terminology vs UA VoiceOver publisher-reported Ukrainian lore; never import unaudited bodies or audio.
 - Keep `docs/IMPLEMENTATION_PLAN.md` unchanged: it is a hash-pinned Stage 0 contract. Current feature ordering belongs in the separate priorities document.
 - `docs/SOURCE_INTEGRATION.md`, `docs/COMPATIBILITY_MATRIX.md`: source semantics and runtime limitations.
 - `docs/LEGAL_AND_ATTRIBUTION.md` (historical Stage 0), `docs/CLASSICUA_PERMISSION.md` (subsequent approval), `THIRD_PARTY.md`: third-party rights.
@@ -23,7 +24,7 @@ Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. S
 Read only what the task needs; do not use old planning notes as proof of current behavior.
 
 ## Active product priorities
-- Near-term user-facing Ukrainian text priority is **P0 Compendium UI chrome**, **P1 Places lore**, **P2 Readables books/notes**, **P3 Bosses stories**. Quests/Gossip mapping and local reviewer UI are deferred, not deleted. Treat Compendium as a shared core UI, **not** an added fifth Community Pack.
+- Near-term Ukrainian content priority is **P0 Places lore**, **P1 Readables books/notes**, **P2 Bosses stories**, then **P3 Compendium UI chrome**, then **P4 Quests/Gossip**. Quest mapping and local reviewer UI are deferred, not deleted. See `docs/PLACES_SOURCE_AUDIT.md` for verified ClassicUA-name-only vs UA VoiceOver candidate-source constraints. Treat Compendium as a shared core UI, **not** an added fifth Community Pack.
 - Runtime blockers are distinct: core UI labels follow actual `GetLocale()`; Places has no safe per-record English story fallback; Readables text-only records need safe no-audio handling and Compendium text selection; Bosses need an explicit story language resolver and content rights. Work only on supported/rights-cleared slices and report blockers truthfully.
 - This feature order is **not** `config/translation_sources.json` provider order. Do not reorder providers or change the four agreed official modules to implement feature priority.
 
