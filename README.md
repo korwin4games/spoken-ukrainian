@@ -93,6 +93,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Configurable source priority and sequential coverage (PR #8) | Offline resolver, policy and candidate metadata reporting implemented; **no approved real content** |
 | Stage 4A — real pinned Spoken inventory → source coverage dry-run | Implemented read-only public English text index and offline coverage CLI for verified originals; **0 real source joins, no Ukrainian packs** ([details](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Stage 4B — Quest mapping review workbench | Pinned source/target evidence queue, reject/defer, explicit Stage 3 two-reviewer approval gate; **0 real reviewed joins** ([procedure](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
+| Stage 4C — reviewed Quest candidate binding foundation | Synthetic-only audited effective ClassicUA field verification; **0 real identity joins or approved texts**, no CLI integration ([contract](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
@@ -140,6 +141,10 @@ python3 tools/stage4b_workbench.py \
 ```
 
 Outputs: ignored `build/stage4b-review-queue.json` and a **filterable, spreadsheet-safe** `build/stage4b-review-worksheet.csv` (one row per target/voice variant). The pinned CI attaches both as a short-lived metadata-only artifact. A reviewer can explicitly **reject or defer** individual source/target pairs. **Approval** requires a separate human-supplied Stage 3 `JoinProof` and two distinct reviewers, validated by the existing mapping gate; it never approves Ukrainian wording automatically. No real approvals are committed. See the [Stage 4B guide](docs/STAGE_4B_REVIEW_WORKBENCH.md).
+
+### Reviewed Quest candidate bridge (Stage 4C foundation)
+
+`adapters/reviewed_bridge.py` adds **synthetic-tested**, offline binding of independently approved Stage 3 Quest identity mappings to exact audited ClassicUA effective fields. It rechecks the stored evidence, original/source fingerprints and configured source priority; a found Ukrainian field is still **pending content review**, not an approved translation. The normal Stage 4A command **does not activate this bridge**, and **no real human-approved joins exist yet**. See [Stage 4C contract](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md).
 
 ### Audit a pinned ClassicUA checkout (Stage 2A)
 
