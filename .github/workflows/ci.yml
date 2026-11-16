@@ -106,3 +106,27 @@ jobs:
             spoken-ukrainian/build/stage4b-review-worksheet.csv
           if-no-files-found: error
           retention-days: 7
+
+      - name: Smoke-test local review UI against both real pinned inventories
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from tools.review_ui_server import build_state
+          source = Path(os.environ["CLASSICUA_SOURCE"])
+          spoken = Path(os.environ["SPOKEN_SOURCE"])
+          decisions = Path("build/ui-ci-decisions.json")
+          state = build_state(source, spoken, decisions)
+          page = state.page("horde", 0, 12)
+          assert page["scope"] == "local_review_only_no_approval"
+          assert page["items"] and len(page["items"]) <= 12
+          assert page["summary"]["human_stage3_approved_joins"] == 0
+          assert page["summary"]["new_identity_approvals_created"] == 0
+          assert page["summary"]["translation_content_approvals_created"] == 0
+          assert all(isinstance(item["ukrainian_text"], str)
+                     and item["ukrainian_text"] for item in page["items"])
+          assert all(option["english_original"] is None or option["english_verified"]
+                     for item in page["items"] for option in item["target_options"])
+          assert not decisions.exists()
+          print("Local review UI pinned-source smoke: OK; rows:", len(page["items"]))
+          PY
