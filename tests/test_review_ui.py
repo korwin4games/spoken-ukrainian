@@ -145,6 +145,16 @@ class ReviewUITests(unittest.TestCase):
         thread.start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join()))
         base = f"http://127.0.0.1:{port}"
+        with urlopen(base + "/", timeout=5) as reply:
+            html = reply.read().decode("utf-8")
+            self.assertIn("Quest Mapping Review", html)
+            self.assertIn("id=\"target-ref\"", html)
+            self.assertEqual(reply.headers.get("X-Frame-Options"), "DENY")
+        with urlopen(base + "/app.js", timeout=5) as reply:
+            js = reply.read().decode("utf-8")
+            self.assertIn("textContent", js)
+            self.assertNotIn("innerHTML", js)
+            self.assertIn("target_options[0]?.target_id", js)
         with urlopen(base + "/api/bootstrap", timeout=5) as reply:
             info = json.load(reply)
             self.assertEqual(info["csrf_token"], "token")

@@ -17,6 +17,8 @@ const ui = {
   sourceHash: document.getElementById("source-hash"),
   targetId: document.getElementById("target-id"),
   targetHash: document.getElementById("target-hash"),
+  targetRef: document.getElementById("target-ref"),
+  targetBlob: document.getElementById("target-blob"),
   options: document.getElementById("target-options"),
   facts: document.getElementById("facts"),
   reviewer: document.getElementById("reviewer"),
@@ -95,7 +97,8 @@ function renderDetail() {
     setText(ui.questMeta, "З черги ліворуч");
     setText(ui.uaText, "Немає вибраного кандидата.");
     setText(ui.enText, "Немає вибраного кандидата.");
-    [ui.sourceRef, ui.sourceHash, ui.targetId, ui.targetHash].forEach(function(x) {
+    [ui.sourceRef, ui.sourceHash, ui.targetId, ui.targetHash,
+      ui.targetRef, ui.targetBlob].forEach(function(x) {
       setText(x, "—");
     });
     ui.options.replaceChildren();
@@ -112,6 +115,8 @@ function renderDetail() {
   setText(ui.sourceHash, item.field_sha256);
   setText(ui.targetId, option.target_id);
   setText(ui.targetHash, option.target_context_sha256);
+  setText(ui.targetRef, option.target_reference);
+  setText(ui.targetBlob, option.target_blob_sha256);
   setText(ui.enText, option.english_verified
     ? option.english_original : "Оригінальний English-текст не підтверджений або неоднозначний.");
   ui.enText.classList.toggle("unverified", !option.english_verified);
@@ -166,6 +171,14 @@ function render() {
   })) {
     state.selectedSourceId = state.report.items[0]?.source_id || null;
     state.selectedTargetId = state.report.items[0]?.target_options[0]?.target_id || null;
+  }
+  // A rejected target vanishes while its source may still have alternatives.
+  // Do not leave the details panel blank when another valid voice exists.
+  const current = selectCurrent();
+  if (current && !current.target_options.some(function(o) {
+    return o.target_id === state.selectedTargetId;
+  })) {
+    state.selectedTargetId = current.target_options[0]?.target_id || null;
   }
   renderQueue();
   renderDetail();
