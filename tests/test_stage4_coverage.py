@@ -141,6 +141,17 @@ class Stage4CoverageTests(unittest.TestCase):
         self.assertEqual(seen, [None] * 3)
         self.assertEqual(r.metadata()["translation_candidates_pending_review"], 0)
 
+    def test_unbound_spoken_id_cannot_use_classicua_none_key(self):
+        from adapters.translation_sources import EffectiveClassicUAField
+        field = EffectiveClassicUAField("Вигаданий переклад", "fake.lua",
+                                        "1" * 40, "a" * 64)
+        provider = ClassicUAProvider({None: field})
+        req = TranslationRequest(None, "Invented English", "q:41:accept")
+        self.assertIsNone(provider.lookup(req))
+        r = resolve_spoken_batch((req,), SourcePolicy(("classicua",)),
+                                 {"classicua": provider}, self.inventory.targets)
+        self.assertEqual(r.metadata()["translation_candidates_pending_review"], 0)
+
     def test_original_context_mismatch_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "public_original_context_mismatch"):
             index_verified_originals(self.reader, inventory_for(bad_context=True))

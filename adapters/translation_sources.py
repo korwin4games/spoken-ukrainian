@@ -141,6 +141,11 @@ class ClassicUAProvider:
         self.effective_fields = effective_fields
 
     def lookup(self, request):
+        # An indexed Spoken target alone is not an independently reviewed
+        # ClassicUA source-to-target join. Never look up an unbound identity,
+        # even if a malformed provider registry happens to contain a None key.
+        if request.source_identity is None:
+            return None
         field = self.effective_fields.get(request.source_identity)
         if field is None or not field.text:
             return None

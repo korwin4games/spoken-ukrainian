@@ -73,3 +73,20 @@ The Stage 3 source inventory contains tens of thousands of ClassicUA **unmapped 
 Synthetic tests: `tests/test_stage4_coverage.py` check all canonical rows counted exactly once, original-context matching, ambiguous wording exclusion, source identity `None`, configurable English/empty policies, mock behavior, metadata-only outputs and no fake ClassicUA mapping. Run the full test suite and deterministic diagnostic build through the existing CI.
 
 These tests do **not** constitute a full real-world input/output count or real Forever game acceptance. No upstream source revisions or `VERSION` are changed.
+
+## First real pinned CI observation
+
+GitHub Actions on the pinned Spoken revision `3c896874e27ec9e07d51a3578c0b9fa8545c9ac7` (2026-11-16, Stage 4A run): **19,639** canonical IDs in total; **18,277** had exactly one verified public English original suitable for this offline lookup, and **1,362** did not.
+
+| Family | Target IDs | Verified English originals | Without verified originals |
+| --- | ---: | ---: | ---: |
+| Quests | 12,594 | 12,498 | 96 |
+| Gossip | 4,641 | 4,641 | 0 |
+| Readables | 1,160 | 1,138 | 22 |
+| Places | 947 | 0 | 947 |
+| Bosses | 297 | 0 | 297 |
+| **Total** | **19,639** | **18,277** | **1,362** |
+
+With default policy, all eligible 18,277 entries selected **explicit Original English** and **0 Ukrainian candidates** were identified, as designed in the absence of approved canonical source joins. These are **verified-original indexing statistics**, not Ukrainian translation coverage. Source-only audit counts and the canonical ID denominator are intentionally different. For future source revisions, rerun the command rather than assuming these frozen counts remain current.
+
+See [first real Stage 4A CI](https://github.com/korwin4games/spoken-ukrainian/actions/runs/43918214762) for the actual pinned-checkout run.
