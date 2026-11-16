@@ -169,7 +169,7 @@ class WorkbenchTests(unittest.TestCase):
                      {"schema_version": 1, "decisions": {}}):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 validate_decisions(data, hints, self.source, self.inv)
-        d = record_decision(empty_decisions(), hints,
+        d = record_decision(empty_decisions(), hints, self.source, self.inv,
                             source_id="quest:horde:42:accept", target_id="q:42:accept",
                             decision="rejected", reviewer="Invented reviewer", reason="other")
         self.assertNotIn("Invented English", json.dumps(d))
