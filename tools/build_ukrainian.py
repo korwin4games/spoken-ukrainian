@@ -601,4 +601,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Executed CLIs use the persistent SQLite store by default. Test/library
+    # direct calls retain their explicit isolated JSON fixture backend.
+    import os
+    from adapters.sqlite_translation_store import enable_sqlite, DB_ENV
+    with enable_sqlite(os.environ.get(DB_ENV)):
+        raise SystemExit(main())

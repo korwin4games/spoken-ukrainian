@@ -6,6 +6,7 @@ a user-controlled translator may fill the batch JSON. None of this is audio,
 native Spoken caption approval, or public release.
 """
 import argparse
+import os
 from collections import defaultdict
 from copy import deepcopy
 from hashlib import sha256
@@ -304,9 +305,18 @@ def create_batches(groups, spoken_rev, classicua_rev, directory, batch_size):
     # Existing files are reused only when their pinned source content and
     # contexts still match exactly; edited Ukrainian text is preserved.
     for offset in range(0, len(groups), batch_size):
+        # Prefill drafts from previously approved, unambiguous translations
+        # stored in SQLite. The reused value is NOT approved for new contexts:
+        # it still requires explicit propose + human review + import.
+        from adapters.sqlite_translation_store import DB_ENV, memory_suggestions
+        db_path = os.environ.get(DB_ENV)
+        suggestions = memory_suggestions(db_path, "gossip",
+                            [g["english_sha256"] for g in groups[offset:offset + batch_size]]) \
+                      if db_path else {}
         rows = [{"group_id": g["group_id"], "english_sha256": g["english_sha256"],
                  "context_sha256": g["context_sha256"], "english_original": g["english"],
-                 "occurrence_count": g["occurrence_count"], "ukrainian_text": ""}
+                 "occurrence_count": g["occurrence_count"],
+                 "ukrainian_text": suggestions.get(g["english_sha256"], "")}
                 for g in groups[offset:offset + batch_size]]
         bundle = {"schema_version": 1, "spoken_revision": spoken_rev,
                   "classicua_revision": classicua_rev, "entries": rows}
@@ -430,4 +440,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Executed CLIs use the persistent SQLite store by default. Test/library
+    # direct calls retain their explicit isolated JSON fixture backend.
+    import os
+    from adapters.sqlite_translation_store import enable_sqlite, DB_ENV
+    with enable_sqlite(os.environ.get(DB_ENV)):
+        raise SystemExit(main())

@@ -39,6 +39,13 @@ Read only what the task needs; do not use old planning notes as proof of current
 
 - The historical Places diagnostic `addons/SpokenCommunity_ukrainian-diagnostic` remains unchanged and maintains its source-lock hashes. No Release, CurseForge distribution, or installer modification is authorized.
 
+### SQLite translation persistence
+
+- Executable Quest/Gossip CLIs use a durable local SQLite file outside `build/` by default, configured through `SPOKEN_TRANSLATION_DB` or `XDG_DATA_HOME`. See `docs/SQLITE_TRANSLATION_STORE.md`.
+- Keep the five existing strict ledger validators, provenance, version hashes and approvals intact; do not manufacture review decisions. Initial legacy JSON migration is **read-only** for the source files, transactional for SQLite, and fails closed on malformed/stale evidence. SQLite becomes authoritative once migrated. Never silently overwrite a database, export private bodies into Git, or delete prior review ledgers.
+- SQLite's `translation_memory` index provides historical English-hash reuse only as **unapproved drafts** for newly changed NPC/context bindings. Approved content never transfers its approval to a changed context. Retain separate explicit import and human attestations.
+- Backup with `uv run --locked python tools/translation_db.py backup` and test concurrent-change detection and restoration. No new Python third-party database dependencies, Docker services, network servers, or changes to official Spoken/ClassicUA are needed.
+
 ### Mandatory uv Python workflow
 
 - Use **uv** for all Python commands: `uv sync --locked`, followed by `uv run --locked python tools/…` / `uv run --locked python -m unittest discover -s tests -v`. Keep `.python-version` set to 3.12 and `uv.lock` committed in sync with `pyproject.toml`. Avoid `pip install` and bare `python3` in instructions or CI. The test suite currently has no third-party Python packages; `liblua5.4` is a system C library and remains a runner prerequisite.
