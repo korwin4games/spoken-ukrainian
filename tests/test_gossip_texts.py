@@ -44,8 +44,8 @@ class GossipTextsTests(unittest.TestCase):
         self.assertNotIn("unknown-pattern", generated.decode())
         entries = builder.template_entries(
             builder.render_quest_lua({}, "a" * 40), generated)
-        self.assertIn("Spoken_Gossip_UA/Translations.lua", entries)
-        self.assertIn("Spoken_Gossip_UA/Spoken_Gossip_UA.toc", entries)
+        self.assertIn("Spoken_Quests_UA/GossipTranslations.lua", entries)
+        self.assertIn("Spoken_Quests_UA/GossipFrame.lua", entries)
         script = r'''
 _G = _G or _ENV
 local shifted, classicua = false, false
@@ -119,8 +119,8 @@ SpokenUkrainian = {ExpandQuestText = function(self, text)
     return (text:gsub("{ім'я}", "Тест"))
 end}
 '''
-        for path in ("Spoken_Gossip_UA/Translations.lua",
-                     "Spoken_Gossip_UA/GossipFrame.lua"):
+        for path in ("Spoken_Quests_UA/GossipTranslations.lua",
+                     "Spoken_Quests_UA/GossipFrame.lua"):
             script += "\n" + entries[path].decode("utf-8") + "\n"
         script += r'''
 assert(#frames == 1)

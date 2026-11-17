@@ -81,7 +81,7 @@ jobs:
       - name: Run tests
         run: uv run --locked python -m unittest discover -s tests -v
 
-      - name: Build local-test Spoken Ukrainian Quest and Gossip modules (mandatory 1:1 auto-import)
+      - name: Build local-test Spoken Ukrainian Quest module including Gossip (mandatory 1:1 auto-import)
         run: |
           uv run --locked python tools/build_ukrainian.py \
             --classicua "$CLASSICUA_SOURCE" \
@@ -97,10 +97,10 @@ jobs:
               assert "Spoken_Quests_UA/Translations.lua" in names
               assert "Spoken_Quests_UA/Module.lua" in names
               assert "Spoken_Quests_UA/GossipQuestTitles.lua" in names
-              assert "Spoken_Gossip_UA/Spoken_Gossip_UA.toc" in names
-              assert "Spoken_Gossip_UA/GossipFrame.lua" in names
-              assert "Spoken_Gossip_UA/Translations.lua" in names
-              assert "SpokenUkrainian.GossipTexts = {" in z.read("Spoken_Gossip_UA/Translations.lua").decode("utf-8")
+              assert "Spoken_Quests_UA/GossipFrame.lua" in names
+              assert "Spoken_Quests_UA/GossipTranslations.lua" in names
+              assert not any(name.startswith("Spoken_Gossip_UA/") for name in names)
+              assert "SpokenUkrainian.GossipTexts = {" in z.read("Spoken_Quests_UA/GossipTranslations.lua").decode("utf-8")
               corpus = z.read("Spoken_Quests_UA/Translations.lua").decode("utf-8")
               assert "SpokenUkrainian.GossipQuestTitles = {" in corpus
               assert "[97279] = \"Загублена зброя\"" in corpus
@@ -131,8 +131,9 @@ jobs:
           assert (base / "Spoken_Ukrainian/Spoken_Ukrainian.toc").is_file()
           assert (base / "Spoken_Quests_UA/Translations.lua").is_file()
           assert (base / "Spoken_Quests_UA/NativeQuestFrame.lua").is_file()
-          assert (base / "Spoken_Gossip_UA/GossipFrame.lua").is_file()
-          assert (base / "Spoken_Gossip_UA/Translations.lua").is_file()
+          assert (base / "Spoken_Quests_UA/GossipFrame.lua").is_file()
+          assert (base / "Spoken_Quests_UA/GossipTranslations.lua").is_file()
+           assert not (base / "Spoken_Gossip_UA").exists()
           print("Local test ZIP installed; official Spoken preserved.")
           PY
 

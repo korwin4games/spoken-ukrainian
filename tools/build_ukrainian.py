@@ -29,11 +29,10 @@ from adapters.import_summary import format_import_table, unique_one_to_one_hint_
 
 DIST = ROOT / "dist"
 ARCHIVE = DIST / "Spoken_Ukrainian_Quest_Local_Test.zip"
-ADDON_FOLDERS = ("Spoken_Ukrainian", "Spoken_Quests_UA", "Spoken_Gossip_UA")
+ADDON_FOLDERS = ("Spoken_Ukrainian", "Spoken_Quests_UA")
 TEMPLATE_FILES = {
     "Spoken_Ukrainian": ("Spoken_Ukrainian.toc", "Core.lua"),
-    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"),
-    "Spoken_Gossip_UA": ("Spoken_Gossip_UA.toc", "GossipFrame.lua"),
+    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua", "GossipFrame.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
 QUEST_SOURCE = re.compile(r"quest:(horde|alliance):([1-9][0-9]*):(accept|progress|complete)\Z")
@@ -431,7 +430,6 @@ def template_entries(preview_lua, gossip_lua=None):
             entries[folder + "/" + name] = path.read_bytes()
     base_toc = entries["Spoken_Ukrainian/Spoken_Ukrainian.toc"].decode("utf-8")
     quest_toc = entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"].decode("utf-8")
-    gossip_toc = entries["Spoken_Gossip_UA/Spoken_Gossip_UA.toc"].decode("utf-8")
     for required in (
             "## Title: Spoken Ukrainian\n",
             "## Dependencies: Spoken\n",
@@ -444,16 +442,10 @@ def template_entries(preview_lua, gossip_lua=None):
             "## LoadOnDemand: 1\n",
             "## X-SpokenQuests-DataModule-Version: 1\n",
             "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\n"):
+            "Translations.lua\nGossipTranslations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\nGossipFrame.lua\n"):
         if required not in quest_toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
-    for required in (
-            "## Title: Spoken Ukrainian: Gossip\n",
-            "## Dependencies: Spoken, Spoken_Quests, Spoken_Ukrainian\n",
-            "Translations.lua\nGossipFrame.lua\n"):
-        if required not in gossip_toc:
-            raise ValueError("missing_gossip_ukrainian_toc_contract")
-    if not all(symbol in entries["Spoken_Gossip_UA/GossipFrame.lua"].decode("utf-8")
+    if not all(symbol in entries["Spoken_Quests_UA/GossipFrame.lua"].decode("utf-8")
                for symbol in ("GossipGreetingTextMixin", "GossipOptionButtonMixin",
                               "QuestFrameGreetingPanel_OnShow", "IsShiftKeyDown", "EnglishHash")):
         raise ValueError("missing_gossip_native_translation_contract")
@@ -474,7 +466,7 @@ def template_entries(preview_lua, gossip_lua=None):
             and "QUEST_DETAIL" in module):
         raise ValueError("missing_quest_pack_registration")
     entries["Spoken_Quests_UA/Translations.lua"] = preview_lua
-    entries["Spoken_Gossip_UA/Translations.lua"] = (
+    entries["Spoken_Quests_UA/GossipTranslations.lua"] = (
         render_gossip_lua({"byNpc": {}, "common": {}}) if gossip_lua is None else gossip_lua)
     return entries
 

@@ -39,9 +39,8 @@ class BuildUkrainianTests(unittest.TestCase):
             "Spoken_Quests_UA/NativeQuestFrame.lua",
             "Spoken_Quests_UA/GossipQuestTitles.lua",
             "Spoken_Quests_UA/Translations.lua",
-            "Spoken_Gossip_UA/Spoken_Gossip_UA.toc",
-            "Spoken_Gossip_UA/GossipFrame.lua",
-            "Spoken_Gossip_UA/Translations.lua",
+            "Spoken_Quests_UA/GossipFrame.lua",
+            "Spoken_Quests_UA/GossipTranslations.lua",
         })
         self.assertIn(b"Spoken_Ukrainian, ", entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"]
                       .replace(b"Spoken_Ukrainian\n", b"Spoken_Ukrainian, "))
@@ -225,7 +224,7 @@ class BuildUkrainianTests(unittest.TestCase):
         def fake_zip(entries):
             order.append("zip")
             self.assertIn("Spoken_Quests_UA/Translations.lua", entries)
-            self.assertIn("Spoken_Gossip_UA/Translations.lua", entries)
+            self.assertIn("Spoken_Quests_UA/GossipTranslations.lua", entries)
             return Path("dist/test.zip"), "b" * 64
         with patch.object(builder, "validate_source_paths"), patch.object(
                 builder, "build_state", return_value=state), patch.object(
