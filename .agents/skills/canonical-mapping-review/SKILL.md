@@ -46,7 +46,7 @@ description: Work on Stage 3 source-to-canonical-Spoken ID crosswalks, independe
 ## Test and report
 
 1. Add small **synthetic** fixtures for positive and negative provenance, cross-family/variant ambiguity, rejected joins, update diff stability, and saved-review corruption.
-2. Run the relevant `tests/test_crosswalk.py` and `tests/test_stage3.py`, then full `python3 -m unittest discover -s tests -v` where prerequisites are installed.
+2. Run the relevant `tests/test_crosswalk.py` and `tests/test_stage3.py`, then full `uv run --locked python -m unittest discover -s tests -v` where prerequisites are installed.
 3. Report the distinct denominators: source candidates, target inventory, real independently reviewed intersections, unknown/missing, approval states and blocked runtime surfaces. Use zero where no approvals exist; never substitute target-count for coverage.
 4. Record exact pinned revisions, files changed, CI/local test evidence and remaining independent human review or module compatibility blockers.
 
