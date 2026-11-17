@@ -52,6 +52,8 @@ The default offline provider order is configured in [`config/translation_sources
 
 You can **reorder or remove** source objects. For example, putting `own_translator` before `classicua` changes priority (the translator is still a mock); leaving only `original_english` selects English only. **`{"schema_version":2,"sources":[]}` or `{}` means the genuine WoW client language**, with no provider calls; an actual `deDE` client is not forced to English. The offline caller must supply the client locale. Older schema v1 name arrays remain supported, with all save flags disabled. Omitting `original_english` does not silently reinsert it. A missing or invalid config file is an error.
 
+**Naming and in-game validation:** PR #17 provides **Quest Translation Import · Spoken_Quests (offline)**, **not** an installable AddOn. The official `Spoken_Quests` module is unchanged; the *proposed future* Ukrainian Quest pack is `SpokenCommunity_ukUA_Quests` (not created). The only existing playable Ukrainian diagnostic is `SpokenCommunity_ukrainian-diagnostic` for **Places**, not Quests. Offline imports are not visible in WoW. See [exact game acceptance procedure and blockers](docs/QUEST_IMPORT_NAMING_AND_GAME_TEST.md).
+
 **Bulk ClassicUA 1:1 import:** the local Review UI has an **Auto-import 1:1 · ClassicUA** button. It refreshes current candidates, applies only eligible one-to-one machine content approvals, and imports current eligible versions to an **inert private local snapshot**. A source breakdown table shows total canonical Spoken identities (all modules), unreviewed 1:1 candidate pairs, independently approved mappings, actual imported translations per provider, untranslated records and coverage percentage. The same table is printed by:
 
 ```sh
