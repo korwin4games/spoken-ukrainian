@@ -182,9 +182,32 @@ class BuildUkrainianTests(unittest.TestCase):
         self.assertEqual(report["auto_imported_targets"], 0)
         self.assertEqual(report["candidate_reasons"], ["target_unavailable"])
 
+    def test_unknown_faction_count_reports_metadata_not_review_approval(self):
+        state = Mock()
+        state.inventory.contexts = {
+            "q:42:accept": [{"faction": "unknown"}],
+            "q:42:complete": [{"faction": "horde"}],
+            "q:43:accept": [{"faction": "unknown"}],
+        }
+        state.machine_imports.file.data = {"imports": [
+            {"target_id": "q:42:accept", "version_id": "a"},
+            {"target_id": "q:42:complete", "version_id": "b"},
+        ]}
+        state.translations.file.data = {"imports": [
+            {"target_id": "q:43:accept", "version_id": "c"},
+        ]}
+        self.assertEqual(
+            builder.unknown_faction_import_counts(state),
+            {"machine_provisional": 1, "human_reviewed": 1})
+        state.machine_imports.file.data["imports"].append(
+            {"target_id": "q:42:accept", "version_id": "a"})
+        with self.assertRaisesRegex(ValueError, "duplicate_quest_faction_import_target"):
+            builder.unknown_faction_import_counts(state)
+
     def test_import_always_runs_before_zip_write(self):
         state = Mock()
         state.inventory.revision = "a" * 40
+        state.inventory.contexts = {}
         state.translation_action.return_value = {"report": {
             "total_spoken_records": 19639, "machine_one_to_one_imported": 1,
             "human_reviewed_imported_total": 0}}
