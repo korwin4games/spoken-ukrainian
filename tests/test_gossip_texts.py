@@ -98,6 +98,7 @@ GossipOptionButtonMixin = {
 local hooks = {}
 function hooksecurefunc(target, functionName, callback)
     if type(target) == "string" then
+        callback = functionName -- string-target hooksecurefunc(name, callback)
         assert(type(_G[target]) == "function")
         local original = _G[target]
         _G[target] = function(...)
