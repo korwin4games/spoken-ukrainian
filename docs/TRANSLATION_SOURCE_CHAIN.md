@@ -53,8 +53,12 @@ Every object appears **once** in the final result; its metadata includes canonic
 
 ### Local review persistence
 
-The Quest Review UI now uses the existing resolver over independently reviewed
-Quest bindings, then keeps source selection separate from local content approval.
+The Quest Review UI uses a separate all-candidates discovery function over
+independently reviewed Quest bindings. Unlike runtime/Stage 4A first-match
+resolution, review discovery enumerates **all real providers** up to the
+explicit English fallback boundary, so a pending higher-priority candidate
+cannot hide an approved lower-priority one. Source priority still determines
+which *eligible approved* translation is selected for inert import.
 The optional schema-v1 `store_locally` map controls retention per enabled provider
 (default true); for example `"store_locally":{"classicua":false}` permits only
 in-memory review of that provider. Stub/mock behavior and Stage 4A reporting do
