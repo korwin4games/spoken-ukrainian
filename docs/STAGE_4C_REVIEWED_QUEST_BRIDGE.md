@@ -40,6 +40,15 @@ Run:
 python3 -m unittest discover -s tests -v
 ```
 
+## Local Quest review consumer
+
+The [local Review UI](STAGE_4B_LOCAL_REVIEW_UI.md) now calls
+`approved_quest_bindings` only for explicit independently proven Stage 3 joins.
+The bridge still returns candidates, never content approval. A separate
+[private approval ledger](TRANSLATION_APPROVALS.md) supports human text review,
+version history and explicit inert import. The Stage 4A CLI and production pack
+pipeline remain unconnected, and **no real approved joins/texts have been supplied**.
+
 ## Next gate
 
 1. Collect real Quest source+target evidence for a small, human-reviewed sample using `docs/STAGE_4B_REVIEW_WORKBENCH.md` and a second independent reviewer. Do not invent names or proofs.

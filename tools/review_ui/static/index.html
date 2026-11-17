@@ -19,6 +19,7 @@
       <div class="local-tag"><span class="status-dot"></span>Локальний інструмент · 127.0.0.1</div>
     </header>
 
+    <h2>Mapping Review</h2>
     <section class="intro">
       <div><h2>Зіставлення ClassicUA ↔ Spoken</h2>
         <p>Два тексти поруч, незалежні джерела доказів і ручні рішення. Збіг ID — лише кандидат, не схвалена відповідність.</p>
@@ -106,11 +107,47 @@
             <button type="button" id="defer" class="primary" disabled>Відкласти</button>
             <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
           </div>
-          <div class="approval-note">Для позитивного identity approval потрібні окремий <code>JoinProof</code> та <b>два незалежні reviewer</b> через Stage 3 CLI. Цей UI не записує approvals і не схвалює українські тексти.</div>
+          <details class="approval-note"><summary>Approve mapping — незалежний Stage 3 JoinProof</summary>
+            <p>Підготуйте повний approve-request JSON із другим незалежним reviewer за процедурою Stage 4B. UI перевіряє надані докази; він не створює attestations. Схвалення mapping не схвалює переклад.</p>
+            <label for="mapping-proof">Повний approve-request JSON</label>
+            <textarea id="mapping-proof" rows="10" spellcheck="false"></textarea>
+            <button type="button" id="mapping-approve" class="primary">Approve mapping із JoinProof</button>
+          </details>
         </section>
       </section>
     </main>
-    <footer>Тексти доступні лише в оперативній пам'яті та локальному браузері. У файли рішень записуються тільки метадані. Не відкривайте цей UI через публічний proxy.</footer>
+    <section class="review translation-section" aria-label="Translation Review">
+      <div class="review-heading"><h2>Translation Review</h2>
+        <div class="actions"><button id="translation-refresh" class="secondary" type="button">Зберегти поточних кандидатів / оновити</button>
+          <button id="translation-import" class="primary" type="button">Явно імпортувати схвалені</button></div></div>
+      <p class="approval-note">Mapping approval → pending → окрема перевірка тексту, граматики, AI та прав → approved → явний inert import.
+        Імпорт не активує переклади у WoW. Редагування не перезаписує джерело. Історія текстів зберігається тільки в ігнорованому build/.</p>
+      <p id="translation-feedback" class="feedback" role="status"></p>
+      <p id="translation-candidates" class="approval-note"></p>
+      <label for="translation-versions">Версії та історія (source / target / status / imported)</label>
+      <select id="translation-versions"><option value="">Немає збережених версій</option></select>
+      <div class="comparison">
+        <article class="language-card"><h3>English original</h3><pre id="translation-english" class="story-text"></pre></article>
+        <article class="language-card"><h3>Український переклад / ручне редагування</h3>
+          <textarea id="translation-text" rows="10"></textarea>
+          <button id="translation-edit" type="button" class="secondary">Зберегти нову ручну версію</button></article>
+      </div>
+      <div id="translation-previews" aria-label="Поточні кандидати джерел"></div>
+      <details><summary>Provenance, reviewer та історія рішень</summary><pre id="translation-provenance"></pre></details>
+      <div class="decision-inputs"><label>Content reviewer<input id="translation-reviewer" maxlength="120" autocomplete="off"></label></div>
+      <fieldset><legend>Особисто перевірено для цієї версії</legend>
+        <label><input type="checkbox" id="check-text"> Точність українського тексту</label>
+        <label><input type="checkbox" id="check-grammar"> Граматику й шаблони</label>
+        <label><input type="checkbox" id="check-ai"> AI-позначки й обмеження</label>
+        <label><input type="checkbox" id="check-rights"> Права та attribution для всіх provenance</label>
+      </fieldset>
+      <div class="actions">
+        <button id="translation-approved" type="button" class="primary">Approve translation</button>
+        <button id="translation-rejected" type="button" class="danger">Reject translation</button>
+        <button id="translation-deferred" type="button" class="secondary">Defer translation</button>
+      </div>
+    </section>
+    <footer>Локальні тексти й рішення зберігаються тільки в ігнорованому build/. Не відкривайте цей UI через публічний proxy.</footer>
   </div>
 </body>
 </html>

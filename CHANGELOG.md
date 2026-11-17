@@ -7,6 +7,12 @@ or GitHub Release has been published.
 
 ## [Unreleased]
 
+### Local review workflow
+
+- Extend PR #14 with separate Quest Mapping/Translation Review, explicit independently attested Stage 3 mapping approval, local text editing/version history, four-part content approval and deterministic explicit inert import. No real approvals, packs, runtime activation, TTS or source pin changes.
+- Add a strict private schema-v1 translation ledger under ignored `build/`, atomic/fsynced writes, concurrent-writer detection, provider provenance and optional `store_locally` policy. Reuse approval only for equivalent original/text/context; preserve edits and reject stale/conflicting imports.
+- Document reviewer workflow, source updates, schema compatibility, local recovery and exact UI/import/test commands in both READMEs and architecture guides; extend synthetic workflow and HTTP security tests.
+
 ### Added
 
 - Add a loopback-only Stage 4B.2 Quest review browser UI with audited ClassicUA vs verified Spoken English text side by side, variant metadata, evidence-bound reject/defer actions, local HTTP security checks and synthetic tests. No automatic identity/content approvals, published translated content, TTS or addon changes.

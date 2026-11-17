@@ -51,6 +51,18 @@ Changing the config requires rerunning the offline build/preparation workflow wh
 
 Every object appears **once** in the final result; its metadata includes canonical Spoken ID, assigned source (if any), status and non-text SHA-256. The report separates `total`, `translation_candidates_pending_review`, `approved_translations`, `untranslated_no_source`, `original_english_fallback`, `client_language` and per-source counts including `remaining_for_next_source`. Mock output is excluded from translated counts. Until reviewed, the report's `approved_translations` is **0**, irrespective of candidate volume. Raw translated and original text never appear in the report.
 
+### Local review persistence
+
+The Quest Review UI now uses the existing resolver over independently reviewed
+Quest bindings, then keeps source selection separate from local content approval.
+The optional schema-v1 `store_locally` map controls retention per enabled provider
+(default true); for example `"store_locally":{"classicua":false}` permits only
+in-memory review of that provider. Stub/mock behavior and Stage 4A reporting do
+not change. Editing, equivalent-version approval reuse and deterministic inert
+import live in a separate private approval ledger; unapproved candidates cannot
+replace eligible approved content. See [approval architecture](TRANSLATION_APPROVALS.md)
+for eligibility, complete schema, source-update limits and recovery.
+
 ### Independent real-world constraints
 
 The approved four official module targets are `Spoken_Quests` (Quests + Gossip), `Spoken_Places` (Zones + Subzones), `Spoken_Readables` (Books / Notes), `Spoken_Bosses` (boss stories). Community Pack packaging and voice fallback are separate concerns. Official pinned Spoken has **no per-record Places English lore fallback**, and independent Ukrainian subtitles/Compendium or audio-free Readables remain blocked as documented in [Stage 2B](STAGE_2B_COMPATIBILITY.md). Never spoof `GetLocale()`, invent source-to-target joins, fake audio files, silently change the player or claim that offline provider coverage proves in-game translation.

@@ -20,24 +20,38 @@ CLIENT_LOCALE = re.compile(r"[a-z]{2}[A-Z]{2}\Z")
 @dataclass(frozen=True)
 class SourcePolicy:
     sources: tuple[str, ...]
+    store_locally: tuple[tuple[str, bool], ...] = ()
 
     def __post_init__(self):
         if type(self.sources) is not tuple or any(type(x) is not str or x not in SOURCES for x in self.sources):
             raise ValueError("unknown_translation_source")
         if len(set(self.sources)) != len(self.sources):
             raise ValueError("duplicate_translation_source")
+        if (type(self.store_locally) is not tuple
+                or any(type(p) is not tuple or len(p) != 2
+                       or type(p[0]) is not str or p[0] not in self.sources
+                       or type(p[1]) is not bool for p in self.store_locally)
+                or len(dict(self.store_locally)) != len(self.store_locally)):
+            raise ValueError("invalid_provider_storage_policy")
+
+    def stores(self, provider):
+        return dict(self.store_locally).get(provider, True)
 
     @classmethod
     def from_mapping(cls, value):
         if type(value) is dict and value == {}:
             return cls(())
-        if type(value) is not dict or set(value) != {"schema_version", "sources"}:
+        if (type(value) is not dict or not {"schema_version", "sources"} <= set(value)
+                or set(value) - {"schema_version", "sources", "store_locally"}):
             raise ValueError("invalid_translation_source_config_schema")
         if type(value["schema_version"]) is not int or value["schema_version"] != 1:
             raise ValueError("unsupported_translation_source_config_version")
         if type(value["sources"]) is not list:
             raise ValueError("translation_sources_must_be_array")
-        return cls(tuple(value["sources"]))
+        storage = value.get("store_locally", {})
+        if type(storage) is not dict:
+            raise ValueError("invalid_provider_storage_policy")
+        return cls(tuple(value["sources"]), tuple(sorted(storage.items())))
 
 
 def load_source_policy(path):

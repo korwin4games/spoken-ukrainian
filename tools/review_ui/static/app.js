@@ -1,7 +1,7 @@
 "use strict";
 
 // Every dynamic value is assigned with textContent, never innerHTML.
-// English/Ukrainian texts are displayed in memory and not cached or exported.
+// Translation versions persist only through explicit local review actions.
 const ui = {
   faction: document.getElementById("faction"),
   limit: document.getElementById("limit"),
@@ -160,7 +160,7 @@ function render() {
   const summary = state.report.summary;
   setText(ui.stats, "У черзі: " + summary.queued_source_units.toLocaleString("uk-UA") +
     " · AI виключено: " + summary.ai_marked_excluded_from_queue.toLocaleString("uk-UA") +
-    " · Identity approvals створено: 0");
+    " · Схвалено identity: " + summary.human_stage3_approved_joins);
   setText(ui.queueCount, summary.page_count + " цього разу");
   setText(ui.pageLabel, (state.offset + 1) + "–" +
     (state.offset + summary.page_count) + " з " + summary.queued_source_units);
@@ -279,3 +279,125 @@ ui.defer.addEventListener("click", function() { sendDecision("deferred"); });
     setText(ui.queue, "Не вдалося підключитися до локального Review UI.");
   }
 })();
+
+// Mapping proof input is never populated from candidate hints or invented IDs.
+async function reviewPost(route, payload) {
+  const response = await fetch(route, {method: "POST", headers: {
+    "Content-Type": "application/json", "X-Review-Token": state.csrf,
+  }, body: JSON.stringify(payload)});
+  if (!response.ok) throw new Error("evidence_or_storage_conflict");
+  return response.json();
+}
+document.getElementById("mapping-approve").addEventListener("click", async function() {
+  try {
+    const request = JSON.parse(document.getElementById("mapping-proof").value);
+    const item = selectCurrent(), option = selectedOption();
+    if (!item || !option || request.source_id !== item.source_id || request.target_id !== option.target_id) {
+      throw new Error("selected_pair_required");
+    }
+    await reviewPost("/api/mapping/approve", request);
+    await loadPage();
+    setText(ui.feedback, "Mapping схвалено через Stage 3. Переклад ще не схвалено.");
+    await loadTranslations();
+  } catch (_) {
+    setText(ui.feedback, "Mapping не збережено. Перевірте повний JoinProof, незалежність reviewer, пару та докази.");
+  }
+});
+const translations = {rows: [], selected: null, busy: false};
+const t = id => document.getElementById("translation-" + id);
+function renderTranslation() {
+  const row = translations.rows.find(r => r.id === t("versions").value);
+  translations.selected = row || null;
+  t("text").value = row ? row.text : "";
+  setText(t("english"), row?.english_original || "Перевірений поточний оригінал недоступний.");
+  setText(t("provenance"), row ? JSON.stringify({
+    source_id: row.source_id, target_id: row.target_id, version_id: row.id,
+    status: row.status, imported: row.imported, editor: row.editor,
+    original_sha256: row.original_sha256, text_sha256: row.text_sha256,
+    base_sha256: row.base_sha256, provenance: row.provenance, decisions: row.decisions,
+  }, null, 2) : "");
+  ["text", "grammar", "ai", "rights"].forEach(k => {
+    document.getElementById("check-" + k).checked = false;
+  });
+  updateTranslationButtons();
+}
+function updateTranslationButtons() {
+  const row = translations.selected;
+  ["edit", "approved", "rejected", "deferred"].forEach(k => {
+    t(k).disabled = translations.busy || !row || !row.current;
+  });
+}
+async function loadTranslations() {
+  const response = await fetch("/api/translations", {cache: "no-store"});
+  if (!response.ok) throw new Error("translation_evidence");
+  const data = await response.json();
+  const previous = t("versions").value;
+  translations.rows = data.versions;
+  t("versions").replaceChildren();
+  data.versions.sort((a, b) => a.target_id.localeCompare(b.target_id) || b.number - a.number);
+  data.versions.forEach(row => {
+    const option = make("option", "", row.source_id + " → " + row.target_id + " / " +
+      "#" + row.number + " / " + row.kind + " / " + row.id.slice(0, 10) + " / " + row.status + " / " +
+      (row.imported ? "imported (inert)" : "not imported"));
+    option.value = row.id;
+    t("versions").appendChild(option);
+  });
+  if (data.versions.some(row => row.id === previous)) t("versions").value = previous;
+  setText(t("candidates"), "Джерела: " + data.source_policy.join(" → ") +
+    ". Поточних кандидатів після mapping review: " + data.current_candidates.length +
+    ". Збережених версій: " + data.versions.length + ". " +
+    (data.import_conflict ? "Конфлікт схвалених версій: імпорт заблоковано. " : "") +
+    data.current_candidates.map(row => row.target_id + ": " +
+      (row.stored_locally ? "локальне зберігання дозволене" : "store_locally=false; лише RAM")).join("; "));
+  const preview = t("previews");
+  preview.replaceChildren();
+  data.current_candidates.forEach(row => {
+    const detail = make("details");
+    detail.appendChild(make("summary", "", row.source_id + " → " + row.target_id +
+      (row.stored_locally ? " / кандидат" : " / RAM only")));
+    detail.appendChild(make("pre", "", row.english_original));
+    detail.appendChild(make("pre", "", row.text));
+    detail.appendChild(make("pre", "", JSON.stringify(row.provenance, null, 2)));
+    preview.appendChild(detail);
+  });
+  renderTranslation();
+}
+async function translationAction(action, payload) {
+  if (translations.busy) return;
+  translations.busy = true;
+  updateTranslationButtons();
+  try {
+    const result = await reviewPost("/api/translations/" + action, payload);
+    await loadTranslations();
+    if (result.version_id) { t("versions").value = result.version_id; renderTranslation(); }
+    setText(t("feedback"), action === "import"
+      ? "Явний inert import: " + result.imported + "; changed=" + result.changed + ". Активації немає."
+      : "Збережено локально: " + action + ". Імпорт — окрема дія.");
+  } catch (_) {
+    setText(t("feedback"), "Не збережено. Потрібні актуальні докази, reviewer та повні перевірки; перевірте конфлікт локального файлу.");
+  } finally { translations.busy = false; updateTranslationButtons(); }
+}
+t("versions").addEventListener("change", renderTranslation);
+t("refresh").addEventListener("click", () => translationAction("refresh", {}));
+t("import").addEventListener("click", () => translationAction("import", {}));
+t("edit").addEventListener("click", () => {
+  if (translations.selected) translationAction("edit", {identity: translations.selected.id,
+    text: t("text").value, reviewer: t("reviewer").value.trim()});
+});
+["approved", "rejected", "deferred"].forEach(decision => {
+  t(decision).addEventListener("click", () => {
+    const row = translations.selected;
+    if (!row) return;
+    if (t("text").value !== row.text) {
+      setText(t("feedback"), "Спочатку збережіть відредагований текст як нову версію.");
+      return;
+    }
+    const checks = {};
+    ["text", "grammar", "ai", "rights"].forEach(k => {
+      checks[k] = document.getElementById("check-" + k).checked;
+    });
+    translationAction("decide", {identity: row.id, decision,
+      reviewer: t("reviewer").value.trim(), checks});
+  });
+});
+loadTranslations().catch(() => setText(t("feedback"), "Не вдалося перевірити translation evidence."));

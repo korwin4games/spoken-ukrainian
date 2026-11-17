@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Serve a *local-only* Quest review UI. Not a public or multi-user service.
 
-Needs clean exact pinned ClassicUA + Spoken checkouts. Source dialogue stays in
-RAM and same-origin localhost responses; never in generated JSON/CSV/log files.
-Only reject/defer writes are implemented, not identity/content approvals.
+Needs clean exact pinned ClassicUA + Spoken checkouts. Reviewed translations
+persist only in private ignored build storage. No pack activation or publication.
 """
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,15 +19,18 @@ sys.path.insert(0, str(ROOT))
 from adapters.classicua.source import audit_checkout
 from adapters.classicua.evidence import from_audit
 from adapters.mapping import load_reviews
+from adapters.local_review_store import strict_json
+from adapters.translation_sources import load_source_policy
 from adapters.review_ui import LocalReviewState, guarded_decisions_path
 from adapters.spoken import PublicSource, build_index
 from adapters.spoken.text_index import index_verified_originals
 
 STATIC = ROOT / "tools/review_ui/static"
-MAX_REQUEST_BYTES = 2048
+MAX_REQUEST_BYTES = 262144
 
 
-def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None):
+def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
+                local_reviews_path=None, translations_path=None, policy_path=None):
     """Load exact audited checkouts with no network traffic."""
     lock = json.loads((ROOT / "sources.lock.json").read_text(encoding="utf-8"))
     manifest = json.loads((ROOT / "tests/stage3_sources.json").read_text(encoding="utf-8"))
@@ -46,8 +48,21 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None):
                      source_inventories={source.revision: source})
         if reviews_path else ()
     )
-    return LocalReviewState(dataset, source, inventory, original_index,
-                            decisions_path, ROOT / "build", tuple(reviews))
+    state = LocalReviewState(dataset, source, inventory, original_index,
+                            decisions_path, ROOT / "build", tuple(reviews),
+                            local_reviews_path, translations_path,
+                            load_source_policy(policy_path or ROOT / "config/translation_sources.json"),
+                            reviews_path)
+    # HTTP writes must not trust a snapshot after someone edits an input
+    # checkout/proof. Re-audit the exact pins without changing any local files.
+    def revalidate():
+        fresh = build_state(classicua_path, spoken_path, decisions_path, reviews_path,
+                            local_reviews_path, translations_path, policy_path)
+        if fresh.policy != state.policy:
+            raise ValueError("source_policy_changed_restart_required")
+        fresh.translation_observations()
+    state.revalidate_inputs = revalidate
+    return state
 
 
 def create_handler(state, token, port):
@@ -65,7 +80,12 @@ def create_handler(state, token, port):
             # URL params or error bodies may leak review context; no access logs.
             pass
 
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(10)
+
         def _reply(self, status, content, mime="application/json; charset=utf-8"):
+            self.close_connection = True
             self.send_response(status)
             self.send_header("Content-Type", mime)
             self.send_header("Content-Length", str(len(content)))
@@ -86,7 +106,7 @@ def create_handler(state, token, port):
                                            ).encode("utf-8"))
 
         def _trusted_host(self):
-            return self.headers.get("Host") == allowed_host
+            return self.headers.get_all("Host") == [allowed_host]
 
         def do_GET(self):
             if not self._trusted_host():
@@ -100,7 +120,14 @@ def create_handler(state, token, port):
             if parts.path == "/api/bootstrap" and not parts.query:
                 self._json(200, {"csrf_token": token, "factions": ["horde", "alliance"],
                                  "approved_identity_by_this_ui": False,
-                                 "text_policy": "local_ephemeral_only"})
+                                 "text_policy": "private_ignored_local_storage",
+                                 "mapping_proof_required": True})
+                return
+            if parts.path == "/api/translations" and not parts.query:
+                try:
+                    self._json(200, state.translation_page())
+                except (ValueError, TypeError, KeyError):
+                    self._json(400, {"error": "translation_evidence_revalidation_failed"})
                 return
             if parts.path != "/api/queue":
                 self._json(404, {"error": "not_found"})
@@ -128,14 +155,24 @@ def create_handler(state, token, port):
             if not self._trusted_host() or self.headers.get("Origin") != allowed_origin:
                 self._json(403, {"error": "local_origin_required"})
                 return
-            if urlsplit(self.path).path != "/api/decisions" or "?" in self.path:
+            route = urlsplit(self.path).path
+            routes = {"/api/decisions", "/api/mapping/approve", "/api/translations/refresh",
+                      "/api/translations/edit", "/api/translations/decide", "/api/translations/import"}
+            if route not in routes or "?" in self.path:
                 self._json(404, {"error": "not_found"})
                 return
-            if (not hmac.compare_digest(
-                    self.headers.get("X-Review-Token", ""), token)
+            supplied_token = self.headers.get("X-Review-Token", "")
+            if (not supplied_token.isascii() or not hmac.compare_digest(supplied_token, token)
+                    or len(self.headers.get_all("Content-Type", [])) != 1
                     or self.headers.get("Content-Type", "").split(";")[0].strip()
                     != "application/json"):
                 self._json(403, {"error": "review_token_or_content_type_required"})
+                return
+            if (self.headers.get("Transfer-Encoding") is not None
+                    or len(self.headers.get_all("Content-Length", [])) != 1
+                    or len(self.headers.get_all("Origin", [])) != 1
+                    or len(self.headers.get_all("X-Review-Token", [])) != 1):
+                self._json(400, {"error": "ambiguous_request_headers"})
                 return
             declared = self.headers.get("Content-Length", "")
             if not declared.isascii() or not declared.isdecimal():
@@ -146,13 +183,19 @@ def create_handler(state, token, port):
                 self._json(413, {"error": "review_request_too_large"})
                 return
             try:
-                payload = json.loads(self.rfile.read(length))
-                if type(payload) is not dict or set(payload) != {
-                        "source_id", "target_id", "decision", "reason", "reviewer"}:
-                    raise ValueError("invalid_decision_request")
-                result = state.decide(**payload)
+                payload = strict_json(self.rfile.read(length))
+                if type(payload) is not dict:
+                    raise ValueError("invalid_review_request")
+                if route == "/api/decisions":
+                    if set(payload) != {"source_id", "target_id", "decision", "reason", "reviewer"}:
+                        raise ValueError("invalid_decision_request")
+                    result = state.decide(**payload)
+                elif route == "/api/mapping/approve":
+                    result = state.approve_mapping(payload)
+                else:
+                    result = state.translation_action(route.rsplit("/", 1)[1], payload)
                 self._json(200, result)
-            except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+            except (ValueError, TypeError, KeyError, UnicodeError, OSError):
                 self._json(400, {"error": "invalid_or_duplicate_review_decision"})
 
     return LocalHandler
@@ -165,17 +208,31 @@ def main(argv=None):
     parser.add_argument("--decisions", type=Path,
                         default=ROOT / "build/stage4b-decisions.json")
     parser.add_argument("--reviews", type=Path, help="Optional existing Stage 3 reviews")
+    parser.add_argument("--local-reviews", type=Path, default=ROOT / "build/stage3-ui-reviews.json")
+    parser.add_argument("--translations", type=Path, default=ROOT / "build/translation-reviews.json")
+    parser.add_argument("--policy", type=Path, default=ROOT / "config/translation_sources.json")
+    parser.add_argument("--import-approved", action="store_true",
+                        help="Revalidate and explicitly import an inert local snapshot, then exit")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args(argv)
     if not 1024 <= args.port <= 65535:
         parser.error("--port must be between 1024 and 65535")
     try:
-        decisions = guarded_decisions_path(args.decisions, ROOT / "build")
-        if (any(decisions.is_relative_to(path.resolve())
-                for path in (args.classicua, args.spoken))
-                or args.reviews is not None and decisions == args.reviews.resolve()):
-            raise ValueError("decisions_path_conflicts_with_input")
-        state = build_state(args.classicua, args.spoken, decisions, args.reviews)
+        outputs = [guarded_decisions_path(p, ROOT / "build") for p in
+                   (args.decisions, args.local_reviews, args.translations)]
+        inputs = [ROOT / "sources.lock.json", args.policy]
+        if args.reviews is not None:
+            inputs.append(args.reviews)
+        if (len(set(outputs)) != len(outputs)
+                or any(out.is_relative_to(path.resolve()) for out in outputs
+                       for path in (args.classicua, args.spoken))
+                or any(out == path.resolve() for out in outputs for path in inputs)):
+            raise ValueError("review_storage_conflicts_with_input")
+        state = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
+                            outputs[1], outputs[2], args.policy)
+        if args.import_approved:
+            print(json.dumps(state.translation_action("import", {}), sort_keys=True))
+            return 0
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
@@ -184,7 +241,7 @@ def main(argv=None):
         print("review_ui_pinned_sources_or_local_bind_failed", file=sys.stderr)
         return 1
     print(f"Quest review UI: http://127.0.0.1:{args.port}/", flush=True)
-    print("Local-only. Reject/Defer writes audited metadata; no approval button.", flush=True)
+    print("Local-only. Mapping requires independent JoinProof; translation approval and import are separate.", flush=True)
     try:
         with server:
             server.serve_forever()

@@ -1,47 +1,117 @@
 # Stage 4B.2 — локальний Quest Review UI
 
-**Статус:** MVP локального UI для **ручної** перевірки Quest source→target mapping. Код зберігається в **цьому ж репозиторії**, використовує наявні адаптери ClassicUA/Spoken, інвентаризацію Stage 3 та правила Stage 4B. Цей сервер **не** призначений для публічного розгортання чи багатокористувацької роботи.
+Локальний інтерфейс має окремі **Mapping Review** та **Translation Review**.
+Потрібні Python 3.12+, Linux/POSIX, Git, Lua 5.4 shared library та чисті checkout
+ClassicUA і Spoken на точних ревізіях із `sources.lock.json`. Залежностей pip,
+зовнішніх API чи WoW для роботи UI не потрібно. **Реальних схвалених joins і
+перекладів у цьому PR немає.**
 
-## Передумови
+## Запуск
 
-- Python 3.12 або новіший, Git і спільна бібліотека Lua 5.4 (як для Stage 2A).
-- Два **чисті** локальні checkout: [Spoken](https://github.com/rusty-key/spoken-wow) та [ClassicUA](https://github.com/greenya/ClassicUA).
-- Обидва checkout мають відповідати **точним повним commit SHA** з [sources.lock.json](../sources.lock.json). Для Spoken додатково перевіряється публічний файл-маніфест [tests/stage3_sources.json](../tests/stage3_sources.json).
-- Жодні pip-пакети, зовнішні API, облікові записи чи встановлений клієнт WoW для перегляду UI не потрібні.
+Із кореня репозиторію:
 
-У корені \`spoken-ukrainian\`:
-
-\`\`\`sh
+```sh
 python3 tools/review_ui_server.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow
-\`\`\`
+```
 
-Відкрийте **http://127.0.0.1:8765/** на тому самому комп'ютері. Завершення — \`Ctrl+C\`. Якщо порт зайнятий, додайте \`--port 8766\`. Сервер прив'язується **лише до 127.0.0.1**; аргументів для доступу із LAN/Інтернету немає.
+Відкрийте **http://127.0.0.1:8765/** на цьому комп'ютері. `Ctrl+C` завершує
+роботу; `--port 8766` змінює порт. Прив'язка — лише `127.0.0.1`.
+`--policy config/translation_sources.json` обирає політику джерел. Для наявних
+незалежних Stage 3 proofs додайте `--reviews build/my-stage3-reviews.json`;
+цей вхідний файл UI не перезаписує.
 
-## Робота reviewer
+## Процедура reviewer
 
-1. Виберіть **Horde** або **Alliance**, кількість записів (12/20/40), сторінку та конкретний \`source_id\`. Черга збудована за **Quest ID + event**; це *кандидати*, а не mappings.
-2. Ліва панель показує **ефективний український текст ClassicUA** після правила \`classic → sod → forever\` і faction/shared fallback. Перед показом перевіряються фактичний UTF-8 SHA-256 поля та ревізія/файл/шар походження з аудиту.
-3. Права панель показує **один підтверджений англійський оригінал Spoken** із закріпленого корпусу. Відображення можливе лише за збігу SHA-256 тексту з canonical target context. Якщо оригіналу немає або є неоднозначність, UI явно показує це і нічого не підставляє.
-4. Перемикайте **окремі target/voice-варіанти**. Порівняйте реальний Quest moment, NPC/speaker, event, faction, gender, voice, оригінальний English-зміст та український текст; оцініть, чи це **одна** репліка, а не просто той самий числовий Quest ID.
-5. Для негативного/невизначеного рішення введіть *справжній reviewer ID*, виберіть обґрунтовану причину й натисніть **Відхилити** або **Відкласти**. Запис зберігається тільки в \`build/stage4b-decisions.json\` (можна змінити через \`--decisions\` на інший файл **всередині** ігнорованого \`build/\`). Відхилений варіант прибирається з черги, відкладений — залишається видимим.
-6. Для **позитивної** відповідності UI **не має кнопки Approve**. Потрібно окремо з другим незалежним реальним reviewer підготувати \`JoinProof\` з **одним цілісним контекстом**, потім використати CLI \`tools/stage4b_workbench.py --approve-request ... --reviews ...\` за [процедурою Stage 4B](STAGE_4B_REVIEW_WORKBENCH.md).
+1. У **Mapping Review** оберіть faction, сторінку, source та окремий target/voice.
+   Числовий Quest ID/event — лише підказка. Порівняйте фактичні UA/EN тексти,
+   NPC, speaker, voice, gender, faction та hashes. Непідтверджений English явно
+   позначено недоступним, заміни іншим варіантом немає.
+2. Для негативного рішення вкажіть reviewer і причину, натисніть Reject/Defer.
+   Зберігаються лише метадані schema v2. Відхилена пара не може бути схвалена;
+   deferred можна схвалити лише з повним незалежним proof.
+3. Для **Approve mapping** підготуйте повний approve-request JSON за
+   [Stage 4B процедурою](STAGE_4B_REVIEW_WORKBENCH.md), вставте його в поле
+   `JoinProof` та натисніть кнопку. JSON має відповідати вибраній парі. Потрібні
+   реальні незалежні evidence reviewer і mapping reviewer. UI не генерує proof
+   чи attestations; перевіряє їх через ті самі Stage 3 gates, що й CLI.
+4. У **Translation Review** натисніть «Зберегти поточних кандидатів / оновити».
+   Лише перевірені joins можуть дати кандидата. Політика провайдера
+   `store_locally=false` залишає текст тільки у RAM/браузері й блокує збереження
+   та approval/import. Поточні кандидати доступні для перегляду окремо від історії.
+5. Оберіть збережену версію. Порівняйте UA/EN, номер версії, source/target,
+   provenance, hashes, editor і попередні рішення. Редагування → «Зберегти нову
+   ручну версію» створює pending-версію; воно не змінює upstream і не переносить
+   approval. Введений незбережений текст не можна схвалити.
+6. Вкажіть content reviewer. Для **Approve translation** особисто перевірте та
+   позначте всі чотири пункти: текст, граматика/шаблони, AI, права/attribution.
+   Reject/Defer доступні окремо; повторний розгляд додає рішення до історії.
+   Жоден content approval не є approval аудіо або runtime.
+7. Натисніть **«Явно імпортувати схвалені»**. Сервер повторно перевіряє proof,
+   ефективний текст, оригінал, контекст, політику й рішення. Імпорт — локальний
+   інертний snapshot посилань на версії; він нічого не активує та не публікує.
+   `approved` і `imported` показані окремо. Повторний імпорт ідемпотентний.
 
-**Схвалення canonical identity ≠ схвалення українського тексту**. Граматика, AI, права, аудіо та підтримка runtime перевіряються окремо. UI не генерує pack, TTS, масові approvals або відібрані переклади.
+Еквівалентна CLI-процедура явного імпорту без запуску HTTP:
 
-## Дані та безпека
+```sh
+python3 tools/review_ui_server.py \
+  --classicua /absolute/path/to/clean-pinned-ClassicUA \
+  --spoken /absolute/path/to/clean-pinned-spoken-wow \
+  --import-approved
+```
 
-- Українські й англійські тексти залишаються **в RAM процесу та локальному HTTP-відповіді/браузері**. У JSON/CSV-звіт, файл рішень, Git, CI artifacts і логи тексти **не записуються**.
-- Manual decision ledger — сувора **Stage 4B schema v2**: source/target ID, reviewer, причина, source/target revisions, file/field/context/blob SHA-256. Стара відмова після зміни доказів **не застосовується автоматично**, потрібно переглянути заново. Запис — атомарна заміна файлу.
-- Сервер слухає тільки **loopback**; перевіряє HTTP Host, origin для змін, per-run CSRF token, JSON content type та розмір POST. Вбудований HTML/CSS/JS не звертається до CDN; діють CSP, no-store, no-CORS і відсутність access logs.
-- Це **не** захищений багатокористувацький додаток. Той, хто має доступ до цього локального браузера/сеансу, може взаємодіяти з UI. **Не** виставляйте порт через публічні reverse proxy, відкритий SSH port forwarding або хмарні port-sharing сервіси.
-- ID reviewer — локальна позначка, а не криптографічне підтвердження особи/незалежності. Справжнє підтвердження відбувається **поза UI**.
+Для нестандартних файлів передавайте ті самі `--reviews`, `--local-reviews`,
+`--translations`, `--decisions` та `--policy`, що й при запуску UI.
 
-## Перевірки та обмеження
+## Зберігання, оновлення та відновлення
 
-Тести \`tests/test_review_ui.py\` використовують **вигадані** UA/EN-тексти та синтетичні source/target contexts. Перевіряють дві панелі, різні voice-варіанти, недоступний English, схему рішень, збереження **тільки метаданих**, захист шляхів, origin/CSRF/Host HTTP, заборону approvals.
+- `build/stage4b-decisions.json`: сумісні metadata-only відмови/відкладення v2.
+- `build/stage3-ui-reviews.json`: Stage 3 proofs, metadata-only v1.
+- `build/translation-reviews.json`: приватний журнал v1 із локальними текстами,
+  історією, reviewer, provenance та `imports`; `0600`, атомарний запис, fsync і
+  захист від конфліктних процесів. Усі ці файли ігнорує Git.
 
-Початкова версія підтримує **лише Quests**. Gossip, Readables, Places та Bosses потребують власних правил proof/review. Проєкт наразі **не має реальних незалежно схвалених source→Spoken joins**, а UI не підключає новий переклад до гри автоматично.
+Зміна лише ревізії/файлу може зберегти approval після незалежного аудиту й
+перевірки mapping. Зміна UA, English, grammar або identity context робить стару
+версію непридатною для імпорту. Ручний текст залишається в історії й не
+перезаписується оновленням джерела. Суперечливі схвалені ручні версії блокують
+імпорт, доки reviewer явно не відкличе зайве схвалення.
 
-Точні джерела й обмеження описано в [Stage 3 implementation](STAGE_3_IMPLEMENTATION.md), [Stage 4A coverage](STAGE_4A_INVENTORY_COVERAGE.md), [Stage 4B Workbench](STAGE_4B_REVIEW_WORKBENCH.md) і [Stage 2B compatibility](STAGE_2B_COMPATIBILITY.md).
+Наявні коректні v2 рішення завантажуються без міграції; Stage 3 proofs не стають
+content approval. Для старої v1 workbench-схеми, stale/corrupt файла зупиніть UI,
+збережіть приватну копію у `build/`, оберіть новий шлях і повторіть review;
+відсутні hashes не можна домислювати. Для конфлікту перезапустіть сервер із
+актуальним файлом. Деталі схеми, порівняння версій і recovery:
+[архітектура persistent approvals](TRANSLATION_APPROVALS.md).
+
+## Безпека та обмеження
+
+Host, same-origin Origin, per-run CSRF token, JSON type/size та неоднозначні
+Content-Length/Transfer-Encoding перевіряються для всіх змін. CSP, no-store,
+no-CORS, відсутність access logs/CDN і безпечні `textContent`/`value` збережені.
+Тексти дозволені тільки в RAM/локальному HTTP та приватному ігнорованому журналі;
+**не додавайте їх у Git, CI artifacts чи публічні звіти**. Не відкривайте порт
+через публічний proxy або port-sharing.
+
+Це однокористувацький локальний інструмент: reviewer ID не є автентифікацією.
+Автоматичного pin updater немає, історичні mapping baselines не завантажуються
+самі. `another` залишається stub, `own_translator` — mock. Empty policy не викликає
+провайдерів; UI не має справжнього `GetLocale()` і не вигадує локалізований текст.
+Підтримано тільки Quests; інші content flows, TTS, пакети й runtime — поза scope.
+Stage 4A discovery CLI не підключено до журналу approval/import.
+
+## Тести
+
+Усі committed fixtures — синтетичні. Запуск із кореня (потрібні локальні сокети):
+
+```sh
+python3 tools/version.py check
+python3 tools/build.py
+python3 -m unittest discover -s tests -v
+```
+
+Тести охоплюють незалежні mapping proofs, content attestations, редагування,
+версії, декілька synthetic providers, пріоритет, повторне збереження/імпорт,
+застарілі докази, схеми, конфлікти, symlinks та HTTP Host/Origin/CSRF/size.
