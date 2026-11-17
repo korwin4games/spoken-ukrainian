@@ -233,7 +233,8 @@ class BuildUkrainianTests(unittest.TestCase):
                 return_value={"machine_provisional": 0, "human_reviewed": 0}), patch.object(
                 builder, "read_classicua_inflections", return_value={}), patch.object(
                 builder, "local_gossip_titles", return_value={"horde": {}, "alliance": {}}), patch.object(
-                builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {}}), patch.object(
+                builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {}}), patch(
+                "tools.gossip_translation_review.load_reviewed_gossip", return_value={}), patch.object(
                 builder, "import_reason_for_quest", return_value={"quest_id": 97279}), patch.object(
                 builder, "write_zip", side_effect=fake_zip):
             built = builder.build(Path("/unused/classicua"), Path("/unused/spoken"))
