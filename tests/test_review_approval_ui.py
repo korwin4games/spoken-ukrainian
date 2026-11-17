@@ -38,6 +38,17 @@ class ReviewApprovalUITests(unittest.TestCase):
         return LocalReviewState(self.dataset, self.source, self.inventory, self.originals,
                                  self.base / "decisions.json", self.base, **kwargs)
 
+    def unique_one_to_one_state(self, **kwargs):
+        # The default quest_both test inventory has Horde and Alliance variants
+        # pointing to the same Spoken target: that is NOT globally 1:1.
+        # Restrict a separate synthetic audited source inventory to one faction
+        # for the positive auto-import test only. Never fabricate a mapping.
+        unique_source = replace(self.source, units={
+            self.unit.source_id: self.source.units[self.unit.source_id]})
+        return LocalReviewState(self.dataset, unique_source,
+                                self.inventory, self.originals,
+                                self.base / "decisions.json", self.base, **kwargs)
+
     def approve_and_collect(self):
         self.state.approve_mapping(self.request)
         self.state.translation_action("refresh", {})
@@ -77,7 +88,7 @@ class ReviewApprovalUITests(unittest.TestCase):
              "auto_approve_one_to_one": True},
             {"name": "original_english", "save_translations": False},
         ]})
-        state = self.new_state(policy=policy)
+        state = self.unique_one_to_one_state(policy=policy)
         # Quest ID/title intersections alone cannot approve anything.
         self.assertEqual(state.translation_action("refresh", {})["auto_approved"], 0)
         self.assertEqual(state.translation_page()["versions"], [])
@@ -100,7 +111,7 @@ class ReviewApprovalUITests(unittest.TestCase):
              "auto_approve_one_to_one": True},
             {"name": "original_english", "save_translations": False},
         ]})
-        state = self.new_state(policy=policy)
+        state = self.unique_one_to_one_state(policy=policy)
         empty = state.translation_action("auto_import_one_to_one",
                                          {"source": "classicua"})
         self.assertEqual(empty["imported"], 0)
@@ -128,6 +139,19 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertFalse(state.translation_action("auto_import_one_to_one",
                            {"source": "classicua"})["changed"])
         self.assertFalse(report["saved_to_git"])
+
+    def test_shared_faction_variant_does_not_auto_import(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True}]})
+        state = self.new_state(policy=policy)
+        state.approve_mapping(self.request)
+        result = state.translation_action("auto_import_one_to_one",
+                                          {"source": "classicua"})
+        self.assertEqual(result["auto_approved"], 0)
+        self.assertEqual(result["imported"], 0)
+        self.assertEqual(result["report"]["unreviewed_one_to_one_candidates"], 0)
+        self.assertEqual(state.translation_page()["versions"][0]["status"], "pending")
 
     def test_bulk_one_to_one_rejects_disabled_policy_and_invalid_source(self):
         with self.assertRaisesRegex(ValueError, "not_enabled"):
