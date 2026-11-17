@@ -263,6 +263,29 @@ def import_reason_for_quest(state, quest_id):
             "allow_ai_transations": state.policy.allows_ai_transations("classicua")}
 
 
+def unknown_faction_import_counts(state):
+    """Metadata-only counts of CURRENT imported records lacking Spoken faction.
+
+    Unknown is not evidence of either Horde or Alliance. These are private
+    local-test records, never an automatic human mapping approval. Count
+    target IDs (not source texts) after the importer has validated its ledgers.
+    """
+    summary = {"machine_provisional": 0, "human_reviewed": 0}
+    for label, ledger in (
+            ("machine_provisional", state.machine_imports.file.data),
+            ("human_reviewed", state.translations.file.data)):
+        seen = set()
+        for ref in ledger["imports"]:
+            target = ref["target_id"]
+            if target in seen:
+                raise ValueError("duplicate_quest_faction_import_target")
+            seen.add(target)
+            contexts = state.inventory.contexts.get(target, ())
+            if len(contexts) == 1 and contexts[0].get("faction") == "unknown":
+                summary[label] += 1
+    return summary
+
+
 def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles=None):
     if not re.fullmatch(r"[a-f0-9]{40}", pinned_spoken_sha):
         raise ValueError("invalid_spoken_pin")
@@ -422,6 +445,7 @@ def build(classicua, spoken):
         "auto_import_one_to_one", {"source": "classicua"})
     report = report_action["report"]
     preview, imported, ambiguous = current_quest_texts(state)
+    unknown_factions = unknown_faction_import_counts(state)
     preview_count = sum(event in ("accept", "progress", "complete")
                         for events in preview.values() for event in events)
     if not preview_count:
@@ -440,6 +464,7 @@ def build(classicua, spoken):
         "machine_provisional": report["machine_one_to_one_imported"],
         "human_reviewed": report["human_reviewed_imported_total"],
         "title_only_gossip_records": {k: len(v) for k, v in titles.items()},
+        "unknown_faction_imports": unknown_factions,
         "quest_97279": import_reason_for_quest(state, 97279),
         "report": report,
     }
@@ -467,6 +492,8 @@ def main(argv=None):
     print("Local test ZIP:", result["artifact"])
     print("Title-only Gossip entries by faction:",
           result["title_only_gossip_records"])
+    print("Imported records with unverified Spoken faction (machine vs reviewed):",
+          result["unknown_faction_imports"])
     print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])
     print("SHA-256:", result["sha256"])
     print("NOT a release: no recorded audio and NO replacement of Spoken narrator captions.")
