@@ -88,7 +88,8 @@ class SQLiteStorageTests(unittest.TestCase):
             reviews.propose([proposal], "manual")
             row = reviews.file.data["versions"][0]
             self.assertEqual(memory_suggestions(self.db, "gossip",
-                             [groups[0]["english_sha256"]]), {})
+                             [groups[0]["english_sha256"]]),
+                             {groups[0]["english_sha256"]: "Вітаю, мандрівнику!"})
             reviews.decide(row["id"], "approved", "human",
                            {k: True for k in ("text", "grammar", "ai", "rights", "all_contexts")})
             reviews.import_approved()
