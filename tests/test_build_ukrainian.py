@@ -89,6 +89,58 @@ class BuildUkrainianTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertEqual(skipped, 2)
 
+    def test_quest_title_comes_from_the_exact_audited_source_not_an_id_guess(self):
+        target = "q:42:accept"
+        source_id = "quest:horde:42:accept"
+        row = {"id": "machine-version", "target_id": target, "source_id": source_id,
+               "decision": "machine_1to1_provisional", "text": "Вигаданий текст."}
+        state = Mock()
+        state.machine_imports.file.data = {
+            "versions": [row], "imports": [{"target_id": target, "version_id": row["id"]}]}
+        state.translations.file.data = {"versions": [], "imports": []}
+        state.inventory.targets = {target: SimpleNamespace(family="quest")}
+        state.source.units = {source_id: object()}
+        record = SimpleNamespace(fields={(1,): SimpleNamespace(
+            node=SimpleNamespace(value="Вигадана назва"))})
+        state.dataset.faction_views.return_value = ({"horde": {42: record}, "alliance": {}}, [])
+        with patch.object(builder, "validate_machine_ledger", side_effect=lambda x: x), patch.object(
+                builder, "_validate_ledger", side_effect=lambda x: x):
+            preview, count, skipped = builder.current_quest_texts(state)
+        self.assertEqual((count, skipped), (1, 0))
+        self.assertEqual(preview[42]["title"], "Вигадана назва")
+        generated = builder.render_quest_lua(preview, "a" * 40).decode()
+        self.assertIn('title = "Вигадана назва"', generated)
+        self.assertIn('accept = { text = "Вигаданий текст."', generated)
+
+    def test_quest_title_is_omitted_when_audited_faction_titles_conflict(self):
+        # Two distinct events can share one QuestID; do not choose one
+        # faction's title blindly on an unknown client context.
+        targets = ("q:42:accept", "q:42:complete")
+        rows = [
+            {"id": "a", "target_id": targets[0], "source_id": "quest:horde:42:accept",
+             "decision": "machine_1to1_provisional", "text": "Перший текст."},
+            {"id": "b", "target_id": targets[1], "source_id": "quest:alliance:42:complete",
+             "decision": "machine_1to1_provisional", "text": "Другий текст."},
+        ]
+        state = Mock()
+        state.machine_imports.file.data = {
+            "versions": rows, "imports": [
+                {"target_id": item["target_id"], "version_id": item["id"]}
+                for item in rows]}
+        state.translations.file.data = {"versions": [], "imports": []}
+        state.inventory.targets = {target: SimpleNamespace(family="quest") for target in targets}
+        state.source.units = {row["source_id"]: object() for row in rows}
+        def record(title):
+            return SimpleNamespace(fields={(1,): SimpleNamespace(
+                node=SimpleNamespace(value=title))})
+        state.dataset.faction_views.return_value = (
+            {"horde": {42: record("Назва орди")},
+             "alliance": {42: record("Назва альянсу")}}, [])
+        with patch.object(builder, "validate_machine_ledger", side_effect=lambda x: x), patch.object(
+                builder, "_validate_ledger", side_effect=lambda x: x):
+            preview, _, _ = builder.current_quest_texts(state)
+        self.assertNotIn("title", preview[42])
+
     def test_import_always_runs_before_zip_write(self):
         state = Mock()
         state.inventory.revision = "a" * 40
@@ -144,7 +196,11 @@ class BuildUkrainianTests(unittest.TestCase):
     def test_lua_module_registers_without_audio_and_preview_is_opt_in(self):
         files = builder.template_entries(
             builder.render_quest_lua(
-                {42: {"accept": {"text": UK, "reviewed": False}}}, "a" * 40))
+                {42: {"title": "Вигадана назва", "accept": {
+                    "text": "{Ім'я:к}, {стать:готовий:готова}, {Клас:к} із раси {раса}! {необроблений:код}",
+                    "reviewed": False}}}, "a" * 40, {
+                    "class": {"paladin": {"к": ("паладине", "паладинко")}},
+                    "race": {"orc": {"н": ("орк", "орчиня")}}}))
         script = """
 SlashCmdList = {}
 DEFAULT_CHAT_FRAME = {AddMessage = function(self, text) assert(type(text) == "string") end}
@@ -154,6 +210,8 @@ widgetMT = {__index = function(self, key)
     if key == "CreateTexture" or key == "CreateFontString" then
         return function() return setmetatable({}, widgetMT) end
     elseif key == "GetStringHeight" then return function() return 28 end
+    elseif key == "SetText" then
+        return function(self, value) self.text = value end
     elseif key == "SetScript" then
         return function(self, name, callback) self[name] = callback end
     elseif key == "RegisterEvent" then
@@ -171,6 +229,12 @@ function CreateFrame(type, name, parent, template)
     return frame
 end
 GetQuestID = function() return 42 end
+GetTitleText = function() return "Fallback English title" end
+UnitName = function() return "Тест" end
+local sex = 2
+UnitSex = function() return sex end
+UnitClass = function() return "Paladin", "PALADIN" end
+UnitRace = function() return "Orc", "Orc" end
 VoiceOver = {DataModules = {
     Register = function(self, name, module)
         assert(name == "Spoken_Quests_UA")
@@ -199,6 +263,25 @@ SlashCmdList.SPOKENUKRAINIAN("preview on")
 found.OnEvent(found, "QUEST_DETAIL") -- opted in: preview exists
 assert(#widgets > 1)
 assert(SpokenUkrainian.previewEnabled)
+local previewWindow
+for _, widget in ipairs(widgets) do
+    if widget.Info and widget.Content then previewWindow = widget end
+end
+assert(previewWindow ~= nil)
+assert(previewWindow.Info.text:find("Вигадана назва", 1, true))
+assert(previewWindow.Info.text:find("Quest 42", 1, true))
+assert(previewWindow.Content.text:find("Тест", 1, true))
+assert(previewWindow.Content.text:find("готовий", 1, true))
+assert(previewWindow.Content.text:find("Паладине", 1, true))
+assert(previewWindow.Content.text:find("орк", 1, true))
+assert(previewWindow.Content.text:find("{необроблений:код}", 1, true))
+assert(not previewWindow.Content.text:find("{Ім'я:к}", 1, true))
+sex = 3
+assert(SpokenUkrainian:ExpandQuestText("{стать:готовий:готова}") == "готова")
+assert(SpokenUkrainian:ExpandQuestText("{клас:к}") == "паладинко")
+assert(SpokenUkrainian:ExpandQuestText("{раса}") == "орчиня")
+assert(SpokenUkrainian:ExpandQuestText("{ім'я:р}") == "Тест")
+assert(SpokenUkrainian:ExpandQuestText("{вигаданий:код}") == "{вигаданий:код}")
 SlashCmdList.SPOKENUKRAINIAN("preview off")
 assert(SpokenUkrainian.previewEnabled == false)
 """
