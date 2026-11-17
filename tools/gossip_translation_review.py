@@ -67,6 +67,8 @@ def discover_groups(lines, gossip, spoken_rev, classicua_rev):
         if type(english) is not str or not english.strip():
             english = row.get("text")
         clean, hash_value = normalized(english), classicua_hash(english)
+        display = re.sub(" +", " ", english.replace("\u00a0", " ")).strip(" \t\n\r\v\f") \
+            if type(english) is str else ""
         if not clean or not hash_value:
             continue
         if (hash_value in gossip["byNpc"].get(npc, {})
@@ -79,7 +81,7 @@ def discover_groups(lines, gossip, spoken_rev, classicua_rev):
         by_npc_hash[key] = clean
         identity = text_hash(clean)
         group = groups.setdefault(identity, {
-            "group_id": identity, "english_sha256": identity, "english": clean, "contexts": {}
+            "group_id": identity, "english_sha256": identity, "english": display, "contexts": {}
         })
         name = row.get("npcName")
         group["contexts"][key] = {"npc_id": npc,
