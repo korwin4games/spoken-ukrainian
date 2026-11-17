@@ -26,31 +26,29 @@ jobs:
           path: spoken-ukrainian
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install uv
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           cache-dependency-glob: spoken-ukrainian/uv.lock
 
+      - name: Manage Python 3.12 with uv
+        run: uv python install 3.12
+
       - name: Validate uv lock and initialize Python environment
         run: uv sync --locked
 
       - name: Validate project version and changelog
-        run: python3 tools/version.py check
+        run: uv run --locked python tools/version.py check
 
       - name: Validate project version tag
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         env:
           VERSION_TAG: ${{ github.ref_name }}
-        run: python3 tools/version.py check --tag "$VERSION_TAG"
+        run: uv run --locked python tools/version.py check --tag "$VERSION_TAG"
 
       - name: Read pinned Spoken revision
         id: spoken
-        run: python3 -c 'import json; print("revision=" + json.load(open("sources.lock.json"))["spoken"]["revision"])' >> "$GITHUB_OUTPUT"
+        run: uv run --locked python -c 'import json; print("revision=" + json.load(open("sources.lock.json"))["spoken"]["revision"])' >> "$GITHUB_OUTPUT"
 
       - name: Check out pinned Spoken source
         uses: actions/checkout@v6
@@ -62,7 +60,7 @@ jobs:
 
       - name: Read pinned ClassicUA revision
         id: classicua
-        run: python3 -c 'import json; print("revision=" + json.load(open("sources.lock.json"))["classicua"]["revision"])' >> "$GITHUB_OUTPUT"
+        run: uv run --locked python -c 'import json; print("revision=" + json.load(open("sources.lock.json"))["classicua"]["revision"])' >> "$GITHUB_OUTPUT"
 
       - name: Check out pinned ClassicUA source
         uses: actions/checkout@v6
@@ -78,7 +76,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y liblua5.4-0
 
       - name: Build diagnostic pack
-        run: python3 tools/build.py
+        run: uv run --locked python tools/build.py
 
       - name: Run tests
         run: uv run --locked python -m unittest discover -s tests -v
@@ -88,7 +86,7 @@ jobs:
           uv run --locked python tools/build_ukrainian.py \
             --classicua "$CLASSICUA_SOURCE" \
             --spoken "$SPOKEN_SOURCE"
-          python3 - <<'PY'
+          uv run --locked python - <<'PY'
           from zipfile import ZipFile
           from pathlib import Path
           p = Path("dist/Spoken_Ukrainian_Quest_Local_Test.zip")
@@ -111,7 +109,7 @@ jobs:
           echo official > build/install-ci/Interface/AddOns/Spoken_Quests/Spoken_Quests.toc
           uv run --locked python tools/install_addon.py --addons build/install-ci/Interface/AddOns --dry-run
           uv run --locked python tools/install_addon.py --addons build/install-ci/Interface/AddOns
-          python3 - <<'PY'
+          uv run --locked python - <<'PY'
           from pathlib import Path
           base = Path("build/install-ci/Interface/AddOns")
           assert (base / "Spoken/Spoken.toc").read_text().strip() == "official"
@@ -123,26 +121,26 @@ jobs:
           PY
 
       - name: Validate real pinned Spoken source-coverage dry-run
-        run: python3 tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE"
+        run: uv run --locked python tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE"
 
       - name: Validate full canonical client-locale coverage with empty policy
         run: |
-          python3 tools/stage4_coverage.py \
+          uv run --locked python tools/stage4_coverage.py \
             --spoken "$SPOKEN_SOURCE" \
             --policy config/examples/client-language.json \
             --client-locale deDE \
             --output build/stage4-client-language-coverage.json
-          python3 -c 'import json; r=json.load(open("build/stage4-client-language-coverage.json")); c=r["coverage"]; assert c["client_language_selected"] == c["total_spoken_identities"]; assert c["without_verified_public_original"] > 0; assert r["stages"] == []; assert all(row["status"] == "client_language" and row["client_locale"] == "deDE" for row in r["records"])'
+          uv run --locked python -c 'import json; r=json.load(open("build/stage4-client-language-coverage.json")); c=r["coverage"]; assert c["client_language_selected"] == c["total_spoken_identities"]; assert c["without_verified_public_original"] > 0; assert r["stages"] == []; assert all(row["status"] == "client_language" and row["client_locale"] == "deDE" for row in r["records"])'
 
       - name: Validate real pinned Stage 4B Quest review queue
         run: |
-          python3 tools/stage4b_workbench.py \
+          uv run --locked python tools/stage4b_workbench.py \
             --classicua "$CLASSICUA_SOURCE" \
             --spoken "$SPOKEN_SOURCE" \
             --faction horde --limit 40
-          python3 -c 'import json; r=json.load(open("build/stage4b-review-queue.json")); s=r["summary"]; assert r["family"]=="quest"; assert 0<len(r["queue"])<=40; assert s["new_identity_approvals_created"]==0; assert s["human_stage3_approved_joins"]==0; assert s["translation_content_approvals_created"]==0; assert all(row["status"]=="identity_review_required" for row in r["queue"])'
+          uv run --locked python -c 'import json; r=json.load(open("build/stage4b-review-queue.json")); s=r["summary"]; assert r["family"]=="quest"; assert 0<len(r["queue"])<=40; assert s["new_identity_approvals_created"]==0; assert s["human_stage3_approved_joins"]==0; assert s["translation_content_approvals_created"]==0; assert all(row["status"]=="identity_review_required" for row in r["queue"])'
 
-          python3 -c 'import csv; p="build/stage4b-review-worksheet.csv"; rows=list(csv.DictReader(open(p,encoding="utf-8",newline=""))); assert len(rows)>=40; assert all(r["review_check"]=="requires_independent_context_verification" and r["source_id"] and r["target_id"] and r["source_context_sha256"] and r["target_context_sha256"] for r in rows); assert not any("original_text" in r or "translated_text" in r for r in rows); print("Stage 4B review rows:",len(rows))'
+          uv run --locked python -c 'import csv; p="build/stage4b-review-worksheet.csv"; rows=list(csv.DictReader(open(p,encoding="utf-8",newline=""))); assert len(rows)>=40; assert all(r["review_check"]=="requires_independent_context_verification" and r["source_id"] and r["target_id"] and r["source_context_sha256"] and r["target_context_sha256"] for r in rows); assert not any("original_text" in r or "translated_text" in r for r in rows); print("Stage 4B review rows:",len(rows))'
 
       - name: Upload metadata-only initial Quest review worksheet
         uses: actions/upload-artifact@v4
@@ -156,7 +154,7 @@ jobs:
 
       - name: Smoke-test local review UI against both real pinned inventories
         run: |
-          python3 - <<'PY'
+          uv run --locked python - <<'PY'
           import os
           from pathlib import Path
           from tools.review_ui_server import build_state
