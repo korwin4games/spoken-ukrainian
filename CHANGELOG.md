@@ -28,6 +28,7 @@ or GitHub Release has been published.
 
 ### Changed
 
+- Prioritize Ukrainian content **Places lore → Readables (Books and Notes) → Bosses → Compendium interface strings → Quests/Gossip**. Add an audited source survey: ClassicUA place-name dictionary vs UA VoiceOver publisher-reported ~900 zone/subzone histories and 1000+ book pages; external text/audio provenance and canonical matches remain unverified. Add a dependency/rights/runtime-gated roadmap; no new fifth module, source-policy change or released translation.
 - Refresh English/Ukrainian READMEs with the four approved modules, configurable provider chain, sequential candidate accounting, synthetic coverage example and editable diagram; document current offline/runtime limitations. Clarify AGENTS.md guidance on mapping invalidation and bilingual parity, update existing code-review/runtime/ClassicUA skills, and add translation-source-pipeline and canonical-mapping-review Codex skills.
 
 ### Fixed
