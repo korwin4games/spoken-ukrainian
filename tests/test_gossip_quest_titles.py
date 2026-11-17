@@ -86,7 +86,7 @@ GetActiveQuestID = function(id) return id == 1 and 97279 or 42 end
 assert(#createdFrames == 1)
 local eventFrame = createdFrames[1]
 local info = {questID = 97279, title = "Wayward Weapons"}
-GossipAvailableQuestButtonMixin:Setup(first, info)
+GossipAvailableQuestButtonMixin.Setup(first, info)
 assert(first:GetText() == "! Загублена зброя")
 shifted = true
 eventFrame:Fire("MODIFIER_STATE_CHANGED")
@@ -95,12 +95,12 @@ shifted = false
 eventFrame:Fire("MODIFIER_STATE_CHANGED")
 assert(first:GetText() == "! Загублена зброя")
 -- Reused pooled button must not carry text for old QuestID.
-GossipAvailableQuestButtonMixin:Setup(first, {questID = 42, title = "Cutting Teeth"})
+GossipAvailableQuestButtonMixin.Setup(first, {questID = 42, title = "Cutting Teeth"})
 assert(first:GetText() == "! Перші випробування")
-GossipAvailableQuestButtonMixin:Setup(second, {questID = 777, title = "Unknown Quest"})
+GossipAvailableQuestButtonMixin.Setup(second, {questID = 777, title = "Unknown Quest"})
 assert(second:GetText() == "! Unknown Quest")
 -- Captured original includes decorative glyphs; Shift preserves it.
-GossipActiveQuestButtonMixin:Setup(first, {questID = 97279, title = "Wayward Weapons"})
+GossipActiveQuestButtonMixin.Setup(first, {questID = 97279, title = "Wayward Weapons"})
 assert(first:GetText() == "? Загублена зброя")
 shifted = true
 eventFrame:Fire("MODIFIER_STATE_CHANGED")
@@ -110,14 +110,14 @@ eventFrame:Fire("MODIFIER_STATE_CHANGED")
 assert(first:GetText() == "? Загублена зброя")
 -- The character's faction is consulted live.
 faction = "Alliance"
-GossipAvailableQuestButtonMixin:Setup(first, {questID = 42, title = "Cutting Teeth"})
+GossipAvailableQuestButtonMixin.Setup(first, {questID = 42, title = "Cutting Teeth"})
 assert(first:GetText() == "! Випробування альянсу")
-GossipAvailableQuestButtonMixin:Setup(first, {questID = 97279, title = "Wayward Weapons"})
+GossipAvailableQuestButtonMixin.Setup(first, {questID = 97279, title = "Wayward Weapons"})
 assert(first:GetText() == "! Wayward Weapons") -- no Alliance title
 faction = "Horde"
 -- ClassicUA owns Gossip UI when installed, to avoid competing hooks.
 classicua = true
-GossipAvailableQuestButtonMixin:Setup(first, {questID = 97279, title = "Wayward Weapons"})
+GossipAvailableQuestButtonMixin.Setup(first, {questID = 97279, title = "Wayward Weapons"})
 assert(first:GetText() == "! Wayward Weapons")
 classicua = false
 -- QuestFrameGreetingPanel: same questID from GetAvailableQuestInfo/getActive.
