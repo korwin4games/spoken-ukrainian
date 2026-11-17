@@ -9,7 +9,7 @@ import unittest
 from adapters.local_review_store import LocalFile
 from adapters.sqlite_translation_store import (
     enable_sqlite, default_db_path, protected_path, backup_database,
-    memory_suggestions, connection,
+    memory_suggestions, connection, _memory_versions,
 )
 from tools.gossip_translation_review import GossipReviews, discover_groups, create_batches
 from tools.gossip_coverage import classicua_hash
@@ -139,6 +139,35 @@ class SQLiteStorageTests(unittest.TestCase):
                 LocalFile(self.build / "stage4b-decisions.json", self.build, {}, self.check_document)
             with connection(self.db) as db:
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM ledger_documents").fetchone()[0], 0)
+
+    def test_translation_memory_large_history_without_unbounded_placeholders(self):
+        # Source histories can contain thousands of retained review versions.
+        with connection(self.db) as db:
+            db.execute("BEGIN IMMEDIATE")
+            revisions = [{"id": f"v{i:06d}", "english_sha256": f"h{i:06d}",
+                          "context_sha256": f"c{i:06d}", "provider": "manual",
+                          "group_id": f"g{i:06d}", "text": f"Синтетика {i}",
+                          "decisions": []} for i in range(1800)]
+            _memory_versions(db, "gossip-translation-reviews.json",
+                             {"versions": revisions})
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM translation_memory").fetchone()[0], 1800)
+            # Re-indexing with fewer rows removes only obsolete entries.
+            _memory_versions(db, "gossip-translation-reviews.json",
+                             {"versions": revisions[:450]})
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM translation_memory").fetchone()[0], 450)
+            db.commit()
+
+    def test_existing_backup_is_never_overwritten(self):
+        with connection(self.db):
+            pass
+        destination = self.db.parent / "backups" / "existing.sqlite3"
+        destination.parent.mkdir()
+        destination.write_bytes(b"unrelated pre-existing backup")
+        with self.assertRaisesRegex(ValueError, "sqlite_backup_target_already_exists"):
+            backup_database(self.db, destination)
+        self.assertEqual(destination.read_bytes(), b"unrelated pre-existing backup")
 
     def test_path_and_context_restore(self):
         original = os.environ.get("SPOKEN_TRANSLATION_DB")
