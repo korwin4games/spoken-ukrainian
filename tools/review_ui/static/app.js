@@ -171,6 +171,17 @@ function render() {
   setText(ui.stats, "У черзі: " + summary.queued_source_units.toLocaleString("uk-UA") +
     " · AI виключено: " + summary.ai_marked_excluded_from_queue.toLocaleString("uk-UA") +
     " · Схвалено identity: " + summary.human_stage3_approved_joins);
+  const approvedPanel = document.getElementById("approved-mappings");
+  approvedPanel.replaceChildren();
+  const approvedMappings = state.report.approved_mappings || [];
+  if (!approvedMappings.length) {
+    approvedPanel.appendChild(make("span", "small", "Для цієї фракції поки немає схвалених mappings."));
+  } else {
+    approvedMappings.forEach(row => {
+      approvedPanel.appendChild(make("span", "approved-item",
+        "✓ " + row.source_id + " → " + row.target_id + " · Approved"));
+    });
+  }
   setText(ui.queueCount, summary.page_count + " цього разу");
   setText(ui.pageLabel, (state.offset + 1) + "–" +
     (state.offset + summary.page_count) + " з " + summary.queued_source_units);
@@ -295,8 +306,9 @@ async function reviewPost(route, payload) {
   const response = await fetch(route, {method: "POST", headers: {
     "Content-Type": "application/json", "X-Review-Token": state.csrf,
   }, body: JSON.stringify(payload)});
-  if (!response.ok) throw new Error("evidence_or_storage_conflict");
-  return response.json();
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "evidence_or_storage_conflict");
+  return result;
 }
 function resetMappingAttestations() {
   document.getElementById("mapping-inspected").checked = false;
@@ -338,13 +350,20 @@ document.getElementById("mapping-approve").addEventListener("click", async funct
       },
     };
     if (!window.confirm("Підтвердити, що два незалежні реальні reviewer перевірили цю точну пару?")) return;
+    const approvedSource = item.source_id, approvedTarget = option.target_id;
     await reviewPost("/api/mapping/approve", request);
     resetMappingAttestations();
     await loadPage();
-    setText(ui.feedback, "Mapping схвалено через Stage 3. Переклад ще не схвалено.");
+    const approved = (state.report?.approved_mappings || []).some(row =>
+      row.source_id === approvedSource && row.target_id === approvedTarget);
+    setText(ui.feedback, approved
+      ? "✓ Approved: " + approvedSource + " → " + approvedTarget +
+        ". Запис переміщено до Approved mappings. Переклад ще не схвалено."
+      : "Approval записано сервером, але чергу не вдалося підтвердити. Оновіть сторінку.");
     await loadTranslations();
-  } catch (_) {
-    setText(ui.feedback, "Mapping не схвалено. Перевірте джерела, повний контекст та двох незалежних reviewer.");
+  } catch (error) {
+    setText(ui.feedback, "Mapping не схвалено: " + error.message +
+      ". Перевірте термінал сервера та докази.");
   }
 });
 const translations = {rows: [], selected: null, busy: false};
