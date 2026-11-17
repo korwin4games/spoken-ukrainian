@@ -100,8 +100,10 @@ display (a Quest pack has not been generated).
 2. In AddOns, enable official `Spoken` and `Spoken_Quests`.
    The existing `SpokenCommunity_ukrainian-diagnostic` is
    **Places-only** and can be left disabled for this isolated test.
-   Neither the offline importer nor `SpokenCommunity_ukUA_Quests`
-   should be shown as an installed addon.
+   The offline importer is not installed as an addon. For an isolated
+   upstream **baseline** test, leave both new test addons `Spoken_Ukrainian`
+   and `Spoken_Quests_UA` disabled; for an opt-in Ukrainian **preview** test,
+   follow the newer installation guide linked above.
 3. Log in to WoW Forever. Open Spoken options and confirm the
    official **Quests** module loads without Lua errors. Record client
    locale and options for voice/text fallback; do **not** change
