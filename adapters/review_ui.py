@@ -17,6 +17,7 @@ from adapters.review_workbench import (approve_explicit_join, build_workbench,
 from adapters.spoken.text_index import TextIndex
 from adapters.local_review_store import LocalFile, strict_json
 from adapters.import_summary import import_summary, unique_one_to_one_hint_pairs
+from adapters.auto_one_to_one import MachineOneToOneStore, machine_candidates
 from adapters.reviewed_bridge import approved_quest_bindings
 from adapters.translation_approvals import ReviewCandidate, TranslationApprovals
 from adapters.translation_sources import (AlternativeSourceStub, ClassicUAProvider,
@@ -79,7 +80,9 @@ class LocalReviewState:
         self.decisions = self._decisions_store.data
         self.reviews_file = self.reviews_file or self.decisions_file.with_name("stage3-ui-reviews.json")
         self.translations_file = self.translations_file or self.decisions_file.with_name("translation-reviews.json")
-        paths = [Path(p).resolve() for p in (self.decisions_file, self.reviews_file, self.translations_file)]
+        machine_file = self.decisions_file.with_name("machine-one-to-one.json")
+        paths = [Path(p).resolve() for p in
+                 (self.decisions_file, self.reviews_file, self.translations_file, machine_file)]
         if (len(set(paths)) != len(paths)
                 or any(p.with_name(p.name + ".lock") in paths for p in paths)
                 or self.reviews_input_file is not None and Path(self.reviews_input_file).resolve() in paths):
@@ -101,6 +104,7 @@ class LocalReviewState:
         self.reviews = tuple(load_reviews(combined, source_inventories={self.source.revision: self.source}))
         self._input_reviews = tuple(r for r in self.reviews if r not in local)
         self.translations = TranslationApprovals(self.translations_file, self.allowed_directory)
+        self.machine_imports = MachineOneToOneStore(machine_file, self.allowed_directory)
         build_workbench(self.source, self.inventory, reviews=self.reviews, decisions=self.decisions)
 
     def _check_mapping_files(self):
@@ -132,6 +136,7 @@ class LocalReviewState:
         # action, including import. No candidate IDs are inferred from numbers.
         self._check_mapping_files()
         self.translations.file.check_unchanged()
+        self.machine_imports.file.check_unchanged()
         bindings = approved_quest_bindings(self.dataset, self.source, self.inventory, self.reviews)
         registry = {"classicua": ClassicUAProvider({source: field for source, field in bindings.values()}),
                     "another": AlternativeSourceStub(), "own_translator": OwnTranslatorMock()}
@@ -184,7 +189,8 @@ class LocalReviewState:
                         self._hints, self.source.units, self.inventory))
                 return result | {"report": import_summary(
                     self.inventory, observations, self.policy, self.translations,
-                    self._hints, self.source.units, changed=result["changed"])}
+                    self._hints, self.source.units, changed=result["changed"],
+                    machine_targets=self.machine_imports.current_import_targets())}
             elif action == "auto_import_one_to_one" and payload == {"source": "classicua"}:
                 # This action is intentionally limited to an already explicitly
                 # opted-in, audited source; it cannot auto-approve ID mappings.
@@ -192,18 +198,28 @@ class LocalReviewState:
                     raise ValueError("one_to_one_auto_import_not_enabled_for_source")
                 if any(o.candidate.provider != "classicua" for o in observations):
                     raise ValueError("multi_source_auto_import_not_supported")
-                saved = self.translations.observe(observations, self.policy,
-                    one_to_one_pairs=unique_one_to_one_hint_pairs(
-                        self._hints, self.source.units, self.inventory))
-                result = self.translations.import_approved(observations, self.policy,
-                    one_to_one_pairs=unique_one_to_one_hint_pairs(
-                        self._hints, self.source.units, self.inventory))
+                pairs = unique_one_to_one_hint_pairs(
+                    self._hints, self.source.units, self.inventory)
+                saved = self.translations.observe(
+                    observations, self.policy, one_to_one_pairs=pairs)
+                result = self.translations.import_approved(
+                    observations, self.policy, one_to_one_pairs=pairs)
+                machine_rows = machine_candidates(
+                    self.dataset, self.source, self.inventory,
+                    self.original_index, self._hints)
+                blocked = {row["target_id"] for row in self.translations.file.data["versions"]}
+                machine_result = self.machine_imports.run(machine_rows, blocked_targets=blocked)
                 summary = import_summary(
                     self.inventory, observations, self.policy, self.translations,
                     self._hints, self.source.units,
-                    auto_approved=saved["auto_approved"], changed=result["changed"])
-                return {"imported": result["imported"], "changed": result["changed"],
+                    auto_approved=saved["auto_approved"],
+                    changed=result["changed"] or machine_result["changed"],
+                    machine_targets=self.machine_imports.current_import_targets())
+                return {"imported": summary["imported_total"],
+                        "changed": summary["changed"],
                         "auto_approved": saved["auto_approved"],
+                        "machine_imported": machine_result["imported"],
+                        "machine_added": machine_result["new_machine_1to1"],
                         "activated": False, "report": summary}
             else:
                 raise ValueError("invalid_translation_action")
