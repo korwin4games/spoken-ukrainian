@@ -553,3 +553,165 @@ t("edit").addEventListener("click", () => {
   });
 });
 loadTranslations().catch(() => setText(t("feedback"), "Не вдалося перевірити translation evidence."));
+
+
+// Gossip Translation Review is independent of Quest Stage 3 mappings.
+// All data is inserted via textContent; CSRF comes from the existing bootstrap.
+(function() {
+  const g = id => document.getElementById("gossip-" + id);
+  const gs = {items: [], selectedGroup: null, selectedVersion: null,
+              offset: 0, limit: 12, total: 0, busy: false};
+  const checks = ["text", "grammar", "ai", "rights", "all_contexts"];
+  const currentGroup = () => gs.items.find(x => x.group_id === gs.selectedGroup) || null;
+  const currentVersion = () => currentGroup()?.versions.find(x => x.id === gs.selectedVersion) || null;
+
+  function render() {
+    const row = currentGroup();
+    setText(g("stats"), "Унікальних реплік для перекладу: " + gs.total +
+      " · 12 на сторінці");
+    setText(g("page"), gs.total ?
+      (gs.offset + 1) + "–" + (gs.offset + gs.items.length) + " / " + gs.total : "0");
+    g("prev").disabled = gs.busy || gs.offset === 0;
+    g("next").disabled = gs.busy || gs.offset + gs.items.length >= gs.total;
+    g("items").replaceChildren();
+    gs.items.forEach(item => {
+      const button = make("button", "queue-item" +
+        (gs.selectedGroup === item.group_id ? " selected" : ""));
+      button.type = "button";
+      button.appendChild(make("div", "queue-id", item.english.slice(0, 100)));
+      button.appendChild(make("div", "queue-meta", item.occurrence_count +
+        " NPC · версій: " + item.versions.length));
+      const imported = item.versions.some(x => x.imported);
+      button.appendChild(make("span", "queue-pill",
+        imported ? "Imported" : item.versions.some(x => x.status === "approved")
+          ? "Approved · not imported" : item.versions.length ? "Pending / reviewed" : "Untranslated"));
+      button.addEventListener("click", () => {
+        gs.selectedGroup = item.group_id;
+        gs.selectedVersion = null;
+        checks.forEach(k => { g("check-" + k).checked = false; });
+        render();
+      });
+      g("items").appendChild(button);
+    });
+    setText(g("group"), row ? row.group_id.slice(0, 16) + " · " +
+      row.occurrence_count + " NPC" : "Оберіть репліку");
+    setText(g("english"), row?.english || "Немає записів на цій сторінці.");
+    setText(g("contexts"), row ? row.contexts.map(x =>
+      "NPC #" + x.npc_id + " · " + x.npc_name +
+      " · English hash " + x.english_hash).join("\n") : "");
+    g("versions").replaceChildren();
+    const versions = row?.versions || [];
+    if (!versions.some(x => x.id === gs.selectedVersion))
+      gs.selectedVersion = versions.length ? versions[versions.length - 1].id : null;
+    versions.forEach(v => {
+      const option = make("option", "", v.provider + " · " + v.id.slice(0, 12) +
+        " · " + v.status + (v.imported ? " · IMPORTED" : ""));
+      option.value = v.id;
+      g("versions").appendChild(option);
+    });
+    if (gs.selectedVersion) g("versions").value = gs.selectedVersion;
+    const v = currentVersion();
+    g("ukrainian").value = v ? v.text : "";
+    setText(g("status"), v?.status || "Untranslated");
+    ["propose", "approved", "rejected", "deferred"].forEach(name => {
+      g(name).disabled = gs.busy || !row ||
+        (name !== "propose" && (!v || v.status === "stale"));
+    });
+    g("import").disabled = gs.busy;
+  }
+
+  async function reload() {
+    if (gs.busy) return;
+    gs.busy = true;
+    try {
+      const resp = await fetch("/api/gossip?offset=" + gs.offset +
+        "&limit=" + gs.limit, {cache: "no-store"});
+      if (!resp.ok) throw new Error("gossip_queue_unavailable");
+      const data = await resp.json();
+      gs.total = data.total;
+      gs.items = data.items;
+      if (!gs.items.some(x => x.group_id === gs.selectedGroup)) {
+        gs.selectedGroup = gs.items[0]?.group_id || null;
+        gs.selectedVersion = null;
+      }
+      setText(g("feedback"), "Версій: " + data.versions +
+        " · явно імпортовано груп: " + data.imports);
+    } catch (error) {
+      setText(g("feedback"), "Gossip не завантажено: " + error.message);
+    } finally {
+      gs.busy = false;
+      render();
+    }
+  }
+
+  async function mutate(route, payload, message) {
+    if (gs.busy) return;
+    gs.busy = true;
+    render();
+    try {
+      if (!state.csrf) throw new Error("review_session_not_ready");
+      const result = await reviewPost("/api/gossip/" + route, payload);
+      gs.busy = false;
+      if (result.version_id) gs.selectedVersion = result.version_id;
+      await reload();
+      setText(g("feedback"), message + (result.imported !== undefined
+        ? " Груп імпортовано: " + result.imported : "") +
+        ". Жодних релізів або озвучення.");
+    } catch (error) {
+      gs.busy = false;
+      setText(g("feedback"), "Не збережено: " + error.message +
+        ". Перевірте оригінал, provenance і термінал.");
+      render();
+    }
+  }
+  g("prev").addEventListener("click", () => {
+    gs.offset = Math.max(0, gs.offset - gs.limit); gs.selectedVersion = null; reload();
+  });
+  g("next").addEventListener("click", () => {
+    if (gs.offset + gs.limit >= gs.total) return;
+    gs.offset += gs.limit; gs.selectedVersion = null; reload();
+  });
+  g("refresh").addEventListener("click", reload);
+  g("versions").addEventListener("change", () => {
+    gs.selectedVersion = g("versions").value;
+    checks.forEach(k => { g("check-" + k).checked = false; });
+    render();
+  });
+  g("propose").addEventListener("click", () => {
+    const row = currentGroup(), text = g("ukrainian").value.trim();
+    if (!row || !text) {
+      setText(g("feedback"), "Введіть український текст для вибраної репліки.");
+      return;
+    }
+    mutate("propose", {group_id: row.group_id,
+      english_sha256: row.english_sha256, context_sha256: row.context_sha256,
+      ukrainian_text: text, provider: "manual"},
+      "Нова версія збережена як pending. Потрібне окреме схвалення.");
+  });
+  ["approved", "rejected", "deferred"].forEach(decision => {
+    g(decision).addEventListener("click", () => {
+      const version = currentVersion(), reviewer = g("reviewer").value.trim();
+      if (!version || !reviewer) {
+        setText(g("feedback"), "Оберіть версію та вкажіть Content reviewer.");
+        return;
+      }
+      if (g("ukrainian").value !== version.text) {
+        setText(g("feedback"), "Текст змінено. Спочатку збережіть нову pending-версію.");
+        return;
+      }
+      const attestations = Object.fromEntries(checks.map(k => [k, g("check-" + k).checked]));
+      if (decision === "approved" && !Object.values(attestations).every(Boolean)) {
+        setText(g("feedback"), "Для Approve перевірте всі п'ять пунктів, особливо ВСІ NPC-контексти.");
+        return;
+      }
+      mutate("decide", {version_id: version.id, decision, reviewer, checks: attestations},
+        "Рішення " + decision + " збережено.");
+      checks.forEach(k => { g("check-" + k).checked = false; });
+    });
+  });
+  g("import").addEventListener("click", () => {
+    if (!window.confirm("Імпортувати лише вручну схвалені Gossip-версії в локальне build/?")) return;
+    mutate("import", {}, "Явний локальний імпорт завершено.");
+  });
+  reload();
+})();

@@ -76,7 +76,24 @@ mapping, narrator captions, audio generation, license rights to other source
 projects or a public release. Repeat manual WoW Forever client testing
 (including Cyrillic glyphs, placeholders and Shift-to-English) before release.
 
-The existing Quest Translation Review UI remains for Quests. Gossip uses
-the separate reviewed private ledger in this first stage; do not imply the
-Quest UI approves Gossip. A Gossip-specific UI panel can follow using
-the same store and gate.
+## Browser-based Gossip Translation Review
+
+Launch the existing **local-only** review server:
+
+```bash
+uv run --locked python tools/review_ui_server.py --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+Open `http://127.0.0.1:8765/` and scroll to **Gossip Translation Review · NPC**.
+The list is sorted by shared English wording frequency. Select a group to see
+its English original, ALL NPC IDs/names and a Ukrainian translation editor.
+**Save as pending version** stores a new manual proposal with provenance; choose
+a version from the version history, enter a reviewer ID, personally check all
+five explicit attestations (text, grammar, AI, rights, all NPC contexts), then
+approve/reject/defer. **Import approved (local)** is a separate action. Pending
+or approved-but-not-imported text cannot enter a ZIP.
+
+The Gossip panel and CLI share the same atomic, private
+`build/gossip-translation-reviews.json` ledger. Quest Translation Review stays
+separate and does NOT review Gossip. The server retains its strict loopback,
+Origin, CSRF, content-type and request-size checks.
