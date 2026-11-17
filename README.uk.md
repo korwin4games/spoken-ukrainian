@@ -14,6 +14,8 @@
 python3 tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
 ```
 
+**AI-переклади ClassicUA:** необов’язковий прапорець `allow_ai_transations` (саме таке написання) за замовчуванням `false`, але в поточному `config/translation_sources.json` для `classicua` встановлено **`true`**. Він дозволяє тільки попередній локальний автоімпорт AI-записів, які пройшли суворе зіставлення 1:1; не означає людського схвалення перекладу. Зміна на `false` та повторний білд виключає AI-записи з активного тестового ZIP, не стираючи локальну історію імпорту. Не всі AI-переклади ClassicUA гарантовано існують у корпусі Spoken.
+
 Результат у приватному `dist/Spoken_Ukrainian_Quest_Local_Test.zip` (два каталоги аддонів + SHA-256). Для перевірки у WoW Forever розпакуй ZIP до `Interface/AddOns/`, увімкни **Spoken Ukrainian** та **Spoken Ukrainian: Quests**, введи `/spokenuk preview on` і відкрий квест, який є у згенерованому локальному `Translations.lua`. Показується **окрема тестова панель**, а не штатні субтитри Spoken: у pinned Spoken 3.9.0 Quest-підписи залежать від наявності справжнього аудіо. Панель вимкнена за замовчуванням, не змінює оригінальних аддонів і явно маркує машинні переклади як попередні. **Це локальний тест, не реліз.** [Повна інструкція, сумісність, перевірка та обмеження](docs/QUEST_LOCAL_TEST_BUILD.md).
 
 ## Архітектура та пошук перекладів
@@ -45,7 +47,7 @@ Compendium — спільне вікно `Spoken`, **не п'ятий модул
 {
   "schema_version": 2,
   "sources": [
-    {"name": "classicua", "save_translations": true},
+    {"name": "classicua", "save_translations": true, "auto_approve_one_to_one": true, "allow_ai_transations": true},
     {"name": "another", "save_translations": false},
     {"name": "own_translator", "save_translations": true},
     {"name": "original_english", "save_translations": false}
