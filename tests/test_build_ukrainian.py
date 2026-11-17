@@ -170,6 +170,9 @@ class BuildUkrainianTests(unittest.TestCase):
         state = Mock()
         state.policy.allows_ai_transations.return_value = True
         state.inventory.targets = {"q:42:accept": SimpleNamespace(family="quest")}
+        state.inventory.contexts = {}
+        state.original_index.original_english = {}
+        state.source.units = {}
         state._hints = [{"source_id": "quest:horde:97279:accept",
                          "reason": "target_unavailable", "candidates": []}]
         state.machine_imports.file.data = {"imports": []}
