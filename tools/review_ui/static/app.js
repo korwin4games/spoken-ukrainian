@@ -407,6 +407,8 @@ async function loadTranslations() {
   });
   if (data.versions.some(row => row.id === previous)) t("versions").value = previous;
   setText(t("candidates"), "Джерела: " + data.source_policy.join(" → ") +
+    ". Автоапрув 1:1 (після підтвердженого mapping review): " +
+    (data.auto_approve_one_to_one?.join(", ") || "вимкнено") +
     ". Поточних кандидатів після mapping review: " + data.current_candidates.length +
     ". Збережених версій: " + data.versions.length + ". " +
     (data.import_conflict ? "Конфлікт схвалених версій: імпорт заблоковано. " : "") +
@@ -436,6 +438,10 @@ async function translationAction(action, payload) {
     let message = action === "import"
       ? "Явний inert import: " + result.imported + "; changed=" + result.changed + ". Активації немає."
       : "Збережено локально: " + action + ". Імпорт — окрема дія.";
+    if (action === "refresh") {
+      message = "Збережено кандидатів. Автоматично схвалено 1:1: " +
+        result.auto_approved + ". Збережено лише приватно, імпорт — окрема дія.";
+    }
     if (action === "decide") {
       const reviewed = translations.rows.find(row => row.id === payload.identity);
       if (!reviewed || reviewed.status !== payload.decision) {
