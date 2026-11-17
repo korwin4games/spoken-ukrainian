@@ -247,7 +247,7 @@ def main(argv=None):
     parser.add_argument("--translations", type=Path, default=ROOT / "build/translation-reviews.json")
     parser.add_argument("--policy", type=Path, default=ROOT / "config/translation_sources.json")
     parser.add_argument("--auto-import-one-to-one", action="store_true",
-                        help="Explicitly refresh, auto-approve and inert-import unique audited ClassicUA 1:1 bindings; print summary table")
+                        help="Bulk import strictly unique ClassicUA Quest 1:1 matches into inert private machine store plus reviewed approvals; print source summary table")
     parser.add_argument("--import-approved", action="store_true",
                         help="Revalidate and explicitly import an inert local snapshot, then exit")
     parser.add_argument("--port", type=int, default=8765)
