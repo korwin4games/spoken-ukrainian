@@ -715,3 +715,164 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
   });
   reload();
 })();
+
+
+// Immutable source revisions and independently reviewed explicit selection.
+// Dynamic strings are deliberately rendered via textContent only.
+(function() {
+  const e = name => document.getElementById("source-" + name);
+  const flags = ["text", "grammar", "ai", "rights", "all_contexts"];
+  const sr = {items: [], offset: 0, limit: 20, total: 0, conflicting: 0,
+              revisions: [], key: null, candidate: null, busy: false};
+  const keyOf = x => [x.domain, x.target_id, x.english_sha256, x.context_sha256].join(":");
+  const current = () => sr.items.find(x => keyOf(x) === sr.key) || null;
+  const candidate = () => current()?.candidates.find(x => x.id === sr.candidate) || null;
+
+  function render() {
+    const group = current();
+    setText(e("stats"), "Кандидатів/контекстів: " + sr.total +
+      " · конфліктів: " + sr.conflicting +
+      " · ревізій: " + sr.revisions.length);
+    setText(e("page"), sr.total ?
+      (sr.offset + 1) + "–" + (sr.offset + sr.items.length) + " / " + sr.total : "0");
+    e("prev").disabled = sr.busy || sr.offset === 0;
+    e("next").disabled = sr.busy || sr.offset + sr.items.length >= sr.total;
+    e("items").replaceChildren();
+    sr.items.forEach(item => {
+      const b = make("button", "queue-item" +
+        (sr.key === keyOf(item) ? " selected" : ""));
+      b.type = "button";
+      b.appendChild(make("div", "queue-id", item.target_id));
+      b.appendChild(make("div", "queue-meta", item.candidates.length +
+        " версій · " + (item.different ? "тексти відрізняються" : "без розбіжностей")));
+      b.appendChild(make("span", "queue-pill", item.selected_candidate_id ?
+        (item.selected_is_latest_source_revision ? "ACTIVE" : "ACTIVE · OLD REVISION") :
+        item.different ? "CONFLICT · REVIEW" : "NOT SELECTED"));
+      b.addEventListener("click", () => {
+        sr.key = keyOf(item);
+        sr.candidate = null;
+        flags.forEach(x => { e("check-" + x).checked = false; });
+        render();
+      });
+      e("items").appendChild(b);
+    });
+    setText(e("target"), group?.target_id || "Оберіть контекст");
+    setText(e("current"), group
+      ? "Активна версія: " + (group.selected_candidate_id?.slice(0, 12) || "відсутня") +
+        (group.selected_is_latest_source_revision === false
+          ? " · джерело оновилося, попередній ручний вибір збережено" : "")
+      : "Спочатку виконайте source_revision_review.py capture / ingest.");
+    setText(e("variants"), group?.candidates.map(c =>
+      c.provider + " @ " + c.revision.slice(0, 10) +
+      " [" + c.status + "]\n" + c.ukrainian_text +
+      "\nsource: " + c.source_ref + "\n").join("\n") || "");
+    e("candidate").replaceChildren();
+    if (!group?.candidates.some(c => c.id === sr.candidate))
+      sr.candidate = group?.selected_candidate_id ||
+        group?.candidates[0]?.id || null;
+    for (const v of group?.candidates || []) {
+      const opt = make("option", "", v.provider + " · " +
+        v.revision.slice(0, 10) + " · " + v.status +
+        (v.id === group.selected_candidate_id ? " · ACTIVE" : ""));
+      opt.value = v.id;
+      e("candidate").appendChild(opt);
+    }
+    if (sr.candidate) e("candidate").value = sr.candidate;
+    const version = candidate();
+    setText(e("text"), version ?
+      version.ukrainian_text + "\n\nRevision: " + version.revision +
+      "\nSource: " + version.source_ref +
+      "\nSHA-256: " + version.text_sha256 : "Оберіть версію");
+    for (const action of ["approved", "rejected", "deferred", "activate"])
+      e(action).disabled = sr.busy || !version ||
+        (action === "activate" && version.status !== "approved");
+    e("clear").disabled = sr.busy || !group?.selected_candidate_id;
+  }
+  async function reload() {
+    if (sr.busy) return;
+    sr.busy = true;
+    try {
+      const resp = await fetch("/api/source-reviews?offset=" + sr.offset +
+        "&limit=" + sr.limit, {cache: "no-store"});
+      if (!resp.ok) throw new Error("source_review_list_unavailable");
+      const data = await resp.json();
+      sr.items = data.items;
+      sr.total = data.total;
+      sr.conflicting = data.conflicts;
+      sr.revisions = data.revisions;
+      if (!sr.items.some(x => keyOf(x) === sr.key)) {
+        sr.key = sr.items[0] ? keyOf(sr.items[0]) : null;
+        sr.candidate = null;
+      }
+      setText(e("feedback"), "Список джерел оновлено. Ручне схвалення необхідне.");
+    } catch (error) {
+      setText(e("feedback"), "Помилка Source Review: " + error.message);
+    } finally { sr.busy = false; render(); }
+  }
+  async function mutate(route, payload, message) {
+    if (sr.busy) return;
+    sr.busy = true;
+    render();
+    try {
+      if (!state.csrf) throw new Error("review_session_not_ready");
+      await reviewPost("/api/source-reviews/" + route, payload);
+      sr.busy = false;
+      await reload();
+      setText(e("feedback"), message);
+    } catch (error) {
+      sr.busy = false;
+      render();
+      setText(e("feedback"), "Не збережено: " + error.message);
+    }
+  }
+  e("refresh").addEventListener("click", reload);
+  e("prev").addEventListener("click", () => {
+    sr.offset = Math.max(0, sr.offset - sr.limit);
+    sr.key = null; reload();
+  });
+  e("next").addEventListener("click", () => {
+    if (sr.offset + sr.limit >= sr.total) return;
+    sr.offset += sr.limit; sr.key = null; reload();
+  });
+  e("candidate").addEventListener("change", () => {
+    sr.candidate = e("candidate").value;
+    flags.forEach(x => { e("check-" + x).checked = false; });
+    render();
+  });
+  for (const decision of ["approved", "rejected", "deferred"]) {
+    e(decision).addEventListener("click", () => {
+      const c = candidate(), reviewer = e("reviewer").value.trim();
+      if (!c || !reviewer) {
+        setText(e("feedback"), "Оберіть версію і вкажіть рев’ювера.");
+        return;
+      }
+      const checks = Object.fromEntries(flags.map(x => [x, e("check-" + x).checked]));
+      if (decision === "approved" && !Object.values(checks).every(Boolean)) {
+        setText(e("feedback"), "Для Approve необхідні всі 5 ручних підтверджень.");
+        return;
+      }
+      mutate("decide", {candidate_id: c.id, decision, reviewer, checks},
+        "Рішення збережено. Активація — окремою кнопкою.");
+      flags.forEach(x => { e("check-" + x).checked = false; });
+    });
+  }
+  e("activate").addEventListener("click", () => {
+    const c = candidate(), reviewer = e("reviewer").value.trim();
+    if (!c || !reviewer) {
+      setText(e("feedback"), "Оберіть схвалену версію і вкажіть рев’ювера.");
+      return;
+    }
+    if (!window.confirm("Зробити цю перевірену версію активною для локального тестового ZIP?")) return;
+    mutate("activate", {candidate_id: c.id, reviewer}, "Активну версію збережено.");
+  });
+  e("clear").addEventListener("click", () => {
+    const c = current(), reviewer = e("reviewer").value.trim();
+    if (!c || !reviewer) {
+      setText(e("feedback"), "Вкажіть рев’ювера.");
+      return;
+    }
+    mutate("clear", {domain: c.domain, target_id: c.target_id, reviewer},
+      "Активний вибір прибрано; джерела збережено.");
+  });
+  reload();
+})();

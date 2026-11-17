@@ -116,6 +116,27 @@ def current_quest_texts(state):
                         if value and len(value) <= limit:
                             supporting_fields[int(source_match.group(2))][key].add(value)
 
+    # A source-review Quest override is valid only on top of a separately
+    # human-approved Stage 3 Spoken ↔ source mapping. Pinned English, target
+    # and canonical context must still match. Manual Quest Translation Review
+    # and explicit source selection must not silently contradict one another.
+    from adapters.sqlite_translation_store import DB_ENV
+    db_path = os.environ.get(DB_ENV)
+    if db_path:
+        from adapters.source_revision_store import SourceReviewStore
+        from tools.source_revision_review import quest_contexts
+        selected_quest = SourceReviewStore(db_path).active(quest_contexts(state), domain="quest")
+        if selected_quest:
+            mapped = {o.target_id for o in state.translation_observations()}
+            for selection in selected_quest:
+                target = selection["target_id"]
+                if target not in mapped:
+                    raise ValueError("source_quest_selection_requires_approved_stage3_mapping")
+                already = texts.get(target)
+                if (already and already["reviewed"]
+                        and already["text"] != selection["ukrainian_text"]):
+                    raise ValueError("conflicting_human_reviewed_quest_selection")
+                texts[target] = {"text": selection["ukrainian_text"], "reviewed": True}
     # The preview only has QuestID and event from public WoW functions.
     # It cannot choose between different NPC voice / wording variants;
     # skip the whole moment when their texts conflict.
@@ -330,7 +351,7 @@ def render_gossip_lua(gossip):
     if type(gossip) is not dict or set(gossip) != {"byNpc", "common"}:
         raise ValueError("invalid_gossip_lookup")
     lines = [
-        "-- GENERATED local test from pinned ClassicUA Gossip hash translations.",
+        "-- GENERATED local test from audited source and human-reviewed Gossip hashes.",
         "-- Not an approved Spoken Gossip text mapping; no audio files included.",
         "SpokenUkrainian = SpokenUkrainian or {}",
         "SpokenUkrainian.GossipTexts = {",
@@ -538,6 +559,30 @@ def build(classicua, spoken):
             if digest in gossip["byNpc"].get(npc_id, {}) or digest in gossip["common"]:
                 raise ValueError("gossip_review_may_not_replace_classicua")
             gossip["byNpc"].setdefault(npc_id, {})[digest] = text
+    # Source Review selections override provider priority only when explicitly
+    # human-approved AND scoped to an exact pinned Spoken NPC/English hash.
+    # They never override a second, separately imported human Gossip decision
+    # without first resolving that conflict in the review ledger.
+    from adapters.sqlite_translation_store import DB_ENV
+    selected_gossip = []
+    db_path = os.environ.get(DB_ENV)
+    if db_path:
+        from adapters.source_revision_store import SourceReviewStore
+        from tools.source_revision_review import gossip_contexts
+        from tools.gossip_coverage import read_pinned_corpus
+        source_proofs = gossip_contexts(read_pinned_corpus(spoken, state.inventory.revision))
+        selected_gossip = SourceReviewStore(db_path).active(source_proofs, domain="gossip")
+        for selection in selected_gossip:
+            match = re.fullmatch(r"gossip:([1-9][0-9]*):([1-9][0-9]*)",
+                                 selection["target_id"])
+            if match is None:
+                raise ValueError("source_selection_not_exact_npc_gossip")
+            npc_id, text_hash = map(int, match.groups())
+            existing_reviewed = reviewed_gossip.get(npc_id, {}).get(text_hash)
+            if (existing_reviewed is not None
+                    and existing_reviewed != selection["ukrainian_text"]):
+                raise ValueError("conflicting_human_reviewed_gossip_selection")
+            gossip["byNpc"].setdefault(npc_id, {})[text_hash] = selection["ukrainian_text"]
     entries = template_entries(render_quest_lua(
         preview, state.inventory.revision, forms, titles),
         render_gossip_lua(gossip))
@@ -560,6 +605,7 @@ def build(classicua, spoken):
             "npc_ids": len(reviewed_gossip),
             "npc_hashes": sum(len(rows) for rows in reviewed_gossip.values()),
         },
+        "explicit_source_gossip_selections": len(selected_gossip),
         "unknown_faction_imports": unknown_factions,
         "quest_97279": import_reason_for_quest(state, 97279),
         "report": report,
@@ -592,6 +638,8 @@ def main(argv=None):
           result["gossip_text_records"])
     print("Explicitly imported human-reviewed Gossip (private local ZIP only):",
           result["reviewed_gossip_text_records"])
+    print("Explicitly selected human-reviewed source Gossip variants:",
+          result["explicit_source_gossip_selections"])
     print("Imported records with unverified Spoken faction (machine vs reviewed):",
           result["unknown_faction_imports"])
     print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])

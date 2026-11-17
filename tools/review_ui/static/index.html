@@ -231,7 +231,63 @@
         </section>
       </div>
     </section>
-    <footer>Локальні тексти й рішення зберігаються тільки в ігнорованому build/. Не відкривайте цей UI через публічний proxy.</footer>
+    <section class="review translation-section" aria-label="Source Revision Review">
+      <div class="review-heading">
+        <h2>Source Revision Review · ClassicUA / Source B</h2>
+        <button type="button" class="secondary" id="source-refresh">Оновити історію джерел</button>
+      </div>
+      <p class="approval-note">Знімки джерел незмінні. Новий переклад у ClassicUA чи Source B не замінює раніше обрану версію.
+        Спочатку імпортуйте підтверджені ревізії через CLI (інструкція в docs/SOURCE_REVISION_REVIEW.md).
+        Approve не дорівнює Activate: ручний вибір окремий, як і перевірка прав та всіх контекстів.</p>
+      <p id="source-stats" class="stats" aria-live="polite"></p>
+      <div class="toolbar">
+        <div class="toolbar-end">
+          <button type="button" class="secondary" id="source-prev">← Попередні</button>
+          <span id="source-page" class="small"></span>
+          <button type="button" class="secondary" id="source-next">Наступні →</button>
+        </div>
+      </div>
+      <div class="layout">
+        <aside class="queue" aria-label="Джерела та конфлікти">
+          <div class="panel-heading"><h3>Джерела · відмінності · вибір</h3></div>
+          <div id="source-items" class="queue-items" aria-live="polite"></div>
+        </aside>
+        <section class="review" aria-label="Source version decisions">
+          <h3 id="source-target">Оберіть запис</h3>
+          <p id="source-current" class="approval-note"></p>
+          <div class="comparison">
+            <article class="language-card"><h4>Варіанти джерел</h4>
+              <pre id="source-variants" class="story-text"></pre></article>
+            <article class="language-card"><h4>Вибрана версія</h4>
+              <label for="source-candidate">Версія / provenance / status</label>
+              <select id="source-candidate"></select>
+              <pre id="source-text" class="story-text"></pre>
+            </article>
+          </div>
+          <label for="source-reviewer">Content reviewer</label>
+          <input id="source-reviewer" maxlength="120" placeholder="Ідентифікатор рев’ювера">
+          <fieldset class="gossip-checks">
+            <legend>Ручна перевірка цього джерела</legend>
+            <label><input type="checkbox" id="source-check-text"> Зміст і точність тексту</label>
+            <label><input type="checkbox" id="source-check-grammar"> Граматика і WoW-змінні</label>
+            <label><input type="checkbox" id="source-check-ai"> AI-походження та обмеження</label>
+            <label><input type="checkbox" id="source-check-rights"> Права та attribution</label>
+            <label><input type="checkbox" id="source-check-all_contexts"> Усі NPC/Quest-контексти</label>
+          </fieldset>
+          <div class="actions">
+            <button type="button" id="source-approved" class="primary">Approve</button>
+            <button type="button" id="source-rejected" class="danger">Reject</button>
+            <button type="button" id="source-deferred" class="secondary">Defer</button>
+          </div>
+          <div class="actions">
+            <button type="button" id="source-activate" class="primary">Явно вибрати активну версію</button>
+            <button type="button" id="source-clear" class="secondary">Прибрати активний вибір</button>
+          </div>
+          <p id="source-feedback" class="feedback" role="status" aria-live="polite"></p>
+        </section>
+      </div>
+    </section>
+    <footer>Джерела й переклади залишаються локально в SQLite (а приватні пакети — у build/). Не відкривайте цей UI через публічний proxy.</footer>
   </div>
 </body>
 </html>

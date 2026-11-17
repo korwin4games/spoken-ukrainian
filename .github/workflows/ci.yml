@@ -78,6 +78,9 @@ jobs:
       - name: Build diagnostic pack
         run: uv run --locked python tools/build.py
 
+      - name: Validate local Review UI JavaScript syntax
+        run: node --check tools/review_ui/static/app.js
+
       - name: Run tests
         run: uv run --locked python -m unittest discover -s tests -v
 
@@ -174,6 +177,24 @@ jobs:
           assert Path("build/gossip-batches/batch-0001.json").exists()
           print("Unique Gossip translation candidates:", s["unique_english_texts_to_translate"])
           print("Private queue only; no model calls or approved imports.")
+          PY
+
+      - name: Capture and validate pinned source revision history
+        run: |
+          uv run --locked python tools/source_revision_review.py capture \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE" > build/source-review-capture.json
+          uv run --locked python tools/source_revision_review.py revisions \
+            > build/source-review-revisions.json
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          capture = json.loads(Path("build/source-review-capture.json").read_text(encoding="utf-8"))
+          revisions = json.loads(Path("build/source-review-revisions.json").read_text(encoding="utf-8"))
+          assert capture["provider"] == "classicua"
+          assert capture["records"] > 0
+          assert len(revisions["revisions"]) >= 1
+          print("Audited source revision history captured without activation")
           PY
 
       - name: Upload metadata-only Gossip coverage report

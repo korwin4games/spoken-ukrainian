@@ -40,3 +40,8 @@ textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);borde
   border:1px solid var(--line);border-radius:8px;padding:12px;min-height:155px}
 #gossip-propose{margin:0 12px 12px}
 #gossip-reviewer{display:block;margin:5px 0 12px}
+
+#source-variants{max-height:270px;overflow:auto;white-space:pre-wrap}
+#source-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto}
+#source-candidate{max-width:100%;width:100%;margin:8px 0}
+#source-reviewer{margin:6px 0 12px;display:block}
