@@ -12,6 +12,8 @@ import re
 
 from adapters.classicua.evidence import SourceInventory
 from adapters.crosswalk import QUEST_EVENTS, digest
+
+EVENT_POSITION = {event: position for position, event in QUEST_EVENTS.items()}
 from adapters.import_summary import unique_one_to_one_hint_pairs
 from adapters.local_review_store import LocalFile
 from adapters.mapping import target_context
@@ -103,7 +105,7 @@ def machine_candidates(dataset, source, inventory, originals, hints):
                 or not target_id.startswith(f"q:{quest_id}:{event}")):
             continue
         record = views[faction].get(int(quest_id))
-        leaf = record.fields.get((QUEST_EVENTS[event],)) if record else None
+        leaf = record.fields.get((EVENT_POSITION[event],)) if record else None
         if (leaf is None or type(leaf.node.value) is not str or not leaf.node.value.strip()
                 or sha256(leaf.node.value.encode("utf-8")).hexdigest() != unit.effective_sha256
                 or (leaf.origin.revision, leaf.origin.file, leaf.origin.layer,
