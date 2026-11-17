@@ -274,16 +274,22 @@ def run(argv=None):
 
 
 def main(argv=None):
-    try:
-        return run(argv)
-    except (ValueError, TypeError, KeyError, OSError, RuntimeError) as error:
-        detail = str(error)
-        if not re.fullmatch(r"[a-z0-9_]{2,100}", detail):
-            detail = type(error).__name__
-        print("source_review_failed:", detail, file=sys.stderr)
-        return 1
+    # --db must apply to BOTH the new source revision tables and the existing
+    # Quest/Gossip review ledgers built by local_evidence. Without this, --db
+    # could silently split linked review provenance between two databases.
+    preflight = argparse.ArgumentParser(add_help=False)
+    preflight.add_argument("--db", type=Path)
+    selected, _ = preflight.parse_known_args(argv)
+    with enable_sqlite(selected.db or os.environ.get(DB_ENV)):
+        try:
+            return run(argv)
+        except (ValueError, TypeError, KeyError, OSError, RuntimeError) as error:
+            detail = str(error)
+            if not re.fullmatch(r"[a-z0-9_]{2,100}", detail):
+                detail = type(error).__name__
+            print("source_review_failed:", detail, file=sys.stderr)
+            return 1
 
 
 if __name__ == "__main__":
-    with enable_sqlite(os.environ.get(DB_ENV)):
-        raise SystemExit(main())
+    raise SystemExit(main())
