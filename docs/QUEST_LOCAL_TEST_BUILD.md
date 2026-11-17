@@ -22,6 +22,40 @@ Spoken Player / `Spoken_Quests`, game files, native quest windows, or `GetLocale
 fake sound durations, recording playback or unsupported Spoken
 `textOnly` spoofing.
 
+## AI-marked ClassicUA Quest translations
+
+The optional provider setting `allow_ai_transations` (**literal spelling**,
+for compatibility with the requested config key) is **false by default**
+if omitted. The project's current `config/translation_sources.json` has:
+
+```json
+{
+  "name": "classicua",
+  "save_translations": true,
+  "auto_approve_one_to_one": true,
+  "allow_ai_transations": true
+}
+```
+
+On every build, the mandatory `auto_import_one_to_one` action reads that
+policy. With `true`, AI-marked ClassicUA Quest fields can enter **only**
+the private **machine-provisional** import store after all unchanged
+source/target 1:1 uniqueness, faction, context and SHA-256 checks. With
+`false`, the next import removes those AI entries from its *current
+imports* (without erasing historical ledger versions), and the new
+test ZIP excludes them. No flag changes the independent human Stage 3
+mapping approvals, source rights, actual Spoken audio/caption availability,
+or publishing restrictions.
+
+For example Quest **97279** (`Wayward Weapons`) is marked `ai=true` in
+the pinned ClassicUA Forever Horde source, so it was previously excluded
+by the AI setting. Enabling the setting removes **that exclusion only**:
+it will not invent a Spoken corpus voice-line target if none exists or
+overrule ambiguous cross-faction or speaker variants. Confirm the
+actual generated `Translations.lua` contains `[97279]` and the
+required `accept` / `progress` / `complete` event before assuming a
+specific in-game Quest dialog can be previewed.
+
 ## Build steps
 
 From the project repository with Python 3.12+ and Git installed:
