@@ -11,3 +11,10 @@ button,input,select{font:inherit}button{cursor:pointer;transition:background .12
 @media(max-width:730px){.shell{padding:15px 12px 30px}.header,.intro{align-items:start}.local-tag,.safe-tag{display:none}.toolbar{flex-wrap:wrap}.toolbar-end{width:100%;justify-content:space-between;margin-left:0}.layout{grid-template-columns:1fr}.queue-items{max-height:260px}.comparison{grid-template-columns:1fr}.option-title{display:block}.option-title .small{display:block}.decision-inputs{flex-direction:column}.decision-inputs label{min-width:0}.review-heading{align-items:start;flex-direction:column}}
 
 textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:7px;resize:vertical}textarea:focus-visible{outline:3px solid #b4c7f5} .translation-section{margin-top:25px;padding:18px} .translation-section select{width:100%;max-width:100%} .translation-section pre{white-space:pre-wrap;overflow-wrap:anywhere} .translation-section input[type=checkbox]{min-width:0} fieldset{margin-top:15px} fieldset label{display:block} details{margin:12px 0} #translation-feedback{padding:12px}
+
+/* Proof form and translation review remain usable on narrow screens. */
+#mapping-context{width:100%;margin:8px 0 14px}
+.approval-note .decision-inputs{margin:10px 0}
+.approval-note p{margin:9px 0}
+.approval-note input[type="checkbox"]{min-width:0;margin-right:6px}
+#mapping-approve{margin-top:12px}
