@@ -93,6 +93,8 @@ class SourceRevisionTests(unittest.TestCase):
         first = self.store.candidates("classicua", A)[0]
         self.approved(first["id"])
         self.store.activate(first["id"], "human-reviewer", self.trusted)
+        self.assertEqual([r["action"] for r in
+            self.store.selection_history("gossip", self.key[1])], ["activate"])
         self.store.ingest(self.snapshot("classicua", B, "Новий текст"),
                           self.trusted)
         actual = self.store.active(self.trusted)
@@ -103,6 +105,9 @@ class SourceRevisionTests(unittest.TestCase):
         self.store.decide(first["id"], "rejected", "human-reviewer",
                           {k: False for k in CHECKS}, self.trusted)
         self.assertEqual(self.store.active(self.trusted), [])
+        self.assertEqual([r["action"] for r in
+            self.store.selection_history("gossip", self.key[1])],
+            ["activate", "clear"])
         self.assertEqual(len(self.store.candidates("classicua", A)), 1)
 
     def test_modified_original_fails_closed_and_does_not_rewrite(self):
@@ -128,6 +133,9 @@ class SourceRevisionTests(unittest.TestCase):
             self.store.active({})
         cleared = self.store.clear_selection("gossip", self.key[1], "reviewer", {})
         self.assertFalse(cleared["selected"])
+        self.assertEqual([r["action"] for r in
+            self.store.selection_history("gossip", self.key[1])],
+            ["activate", "clear"])
         self.assertEqual(self.store.active({}), [])
         self.assertEqual(len(self.store.candidates()), 1)
 
@@ -184,8 +192,10 @@ class SourceRevisionTests(unittest.TestCase):
         with connection(self.db) as db:
             versions = [x[0] for x in db.execute("SELECT version FROM schema_migrations")]
             self.assertIn(2, versions)
+            self.assertIn(3, versions)
             for table in ("source_snapshots", "source_candidates",
-                          "source_candidate_decisions", "source_active_selections"):
+                          "source_candidate_decisions", "source_active_selections",
+                          "source_selection_events"):
                 self.assertEqual(db.execute(
                     "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
                     (table,)).fetchone()[0], 1)
