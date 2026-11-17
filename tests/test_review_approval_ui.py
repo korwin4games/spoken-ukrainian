@@ -94,6 +94,54 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertTrue(state.translation_page()["versions"][0]["imported"])
         self.assertEqual(state.translation_page()["auto_approve_one_to_one"], ["classicua"])
 
+    def test_bulk_one_to_one_import_shows_global_spoken_summary(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True},
+            {"name": "original_english", "save_translations": False},
+        ]})
+        state = self.new_state(policy=policy)
+        empty = state.translation_action("auto_import_one_to_one",
+                                         {"source": "classicua"})
+        self.assertEqual(empty["imported"], 0)
+        self.assertEqual(empty["report"]["total_spoken_records"],
+                         len(self.inventory.targets))
+        self.assertEqual(empty["report"]["untranslated_total"],
+                         len(self.inventory.targets))
+        self.assertEqual(empty["auto_approved"], 0)
+        state.approve_mapping(self.request)
+        imported = state.translation_action("auto_import_one_to_one",
+                                            {"source": "classicua"})
+        self.assertEqual(imported["imported"], 1)
+        self.assertEqual(imported["auto_approved"], 1)
+        self.assertFalse(imported["activated"])
+        report = imported["report"]
+        self.assertEqual(report["total_spoken_records"], len(self.inventory.targets))
+        self.assertEqual(report["imported_total"], 1)
+        self.assertEqual(report["untranslated_total"],
+                         len(self.inventory.targets) - 1)
+        self.assertEqual(report["by_source"][0]["source"], "classicua")
+        self.assertEqual(report["by_source"][0]["imported_translations"], 1)
+        self.assertEqual(report["verified_source_to_target_bindings"], 1)
+        self.assertEqual(state.translation_action("auto_import_one_to_one",
+                           {"source": "classicua"})["auto_approved"], 0)
+        self.assertFalse(state.translation_action("auto_import_one_to_one",
+                           {"source": "classicua"})["changed"])
+        self.assertFalse(report["saved_to_git"])
+
+    def test_bulk_one_to_one_rejects_disabled_policy_and_invalid_source(self):
+        with self.assertRaisesRegex(ValueError, "not_enabled"):
+            self.state.translation_action("auto_import_one_to_one",
+                                          {"source": "classicua"})
+        self.assertEqual(self.state.translations.file.data["versions"], [])
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True}]})
+        self.state.policy = policy
+        for bad in ({}, {"source": "another"}, {"source": "classicua", "force": True}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.state.translation_action("auto_import_one_to_one", bad)
+
     def test_mapping_requires_independent_reviewers_and_exact_proof(self):
         for change in ({"mapping_reviewer": self.request["proof"]["evidence_reviewer"]},
                        {"proof": self.request["proof"] | {"facts": {}}},
@@ -252,7 +300,8 @@ class ReviewApprovalUITests(unittest.TestCase):
             return urlopen(Request(base + route, data=body, method="POST", headers=headers or {
                 "Content-Type": "application/json", "Origin": base, "X-Review-Token": "token"}), timeout=5)
         for route in ("/api/mapping/approve", "/api/translations/refresh", "/api/translations/edit",
-                      "/api/translations/decide", "/api/translations/import"):
+                      "/api/translations/decide", "/api/translations/import",
+                      "/api/translations/auto_import_one_to_one"):
             with self.subTest(route=route), self.assertRaises(HTTPError) as error:
                 post(route, b'{}', {"Content-Type": "application/json", "Origin": base})
             self.assertEqual(error.exception.code, 403)
