@@ -1,4 +1,6 @@
-# Spoken Ukrainian — Quest Import naming and in-game test plan
+# Spoken Ukrainian — historical Quest offline-import naming and initial game checklist
+
+**Update (PR #18):** The owner's final installable names are `Spoken_Ukrainian` (title **Spoken Ukrainian**) and `Spoken_Quests_UA` (title **Spoken Ukrainian: Quests**). An actual **local test** build, including a default-off standalone Quest preview and mandatory auto-import, is now available; follow [QUEST_LOCAL_TEST_BUILD.md](QUEST_LOCAL_TEST_BUILD.md) for all installation/testing. The notes below document the earlier PR #17 offline-only stage and must not be interpreted as current pack availability or native Spoken caption support.
 
 **Status:** Offline Quest 1:1 importer in PR #17; **not an installable Quest
 Community Pack**. This checklist does **not** claim a live WoW Forever test.
