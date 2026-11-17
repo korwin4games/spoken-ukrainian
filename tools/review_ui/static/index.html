@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
-  <title>Spoken Ukrainian · Quest Review</title>
+  <title>Spoken Ukrainian · Quest Translation Import (offline)</title>
   <link rel="stylesheet" href="/styles.css">
   <script defer src="/app.js"></script>
 </head>
@@ -12,8 +12,8 @@
   <div class="shell">
     <header class="header">
       <div class="brand"><span class="logo" aria-hidden="true">SU</span>
-        <div><div class="eyebrow">SPOKEN UKRAINIAN / STAGE 4B</div>
-          <h1>Quest Mapping Review</h1>
+        <div><div class="eyebrow">SPOKEN UKRAINIAN / SPOKEN_QUESTS / OFFLINE</div>
+          <h1>Quest Translation Import · Spoken_Quests</h1>
         </div>
       </div>
       <div class="local-tag"><span class="status-dot"></span>Локальний інструмент · 127.0.0.1</div>
@@ -133,12 +133,12 @@
       </section>
     </main>
     <section class="review translation-section" aria-label="Translation Review">
-      <div class="review-heading"><h2>Translation Review</h2>
+      <div class="review-heading"><h2>Quest Translation Review &amp; Import (offline)</h2>
         <div class="actions"><button id="translation-refresh" class="secondary" type="button">Зберегти поточних кандидатів / оновити</button>
           <button id="translation-import" class="primary" type="button">Явно імпортувати схвалені</button>
-          <button id="translation-auto-import" class="primary" type="button" disabled>Автоімпорт 1:1 · ClassicUA</button></div></div>
+          <button id="translation-auto-import" class="primary" type="button" disabled>Автоімпорт Quests 1:1 · ClassicUA</button></div></div>
       <p class="approval-note">Ручний шлях: Mapping approval → pending → окрема перевірка тексту → approved → inert import. Масовий шлях: лише унікальні Quest 1:1 з перевіреним контекстом → попередній машинний імпорт, який не є Stage 3 mapping approval.
-        Імпорт не активує переклади у WoW. Редагування не перезаписує джерело. Історія текстів зберігається тільки в ігнорованому build/.</p>
+        Тут імпортуються лише Quest-тексти (accept, progress, complete); Gossip, Places, Readables і Bosses не імпортуються. Це не ігровий аддон і не активація перекладів у WoW. Редагування не перезаписує джерело. Історія текстів зберігається тільки в ігнорованому build/.</p>
       <p id="translation-feedback" class="feedback" role="status"></p>
       <section id="translation-import-report" class="import-report" aria-live="polite" aria-label="Підсумкова таблиця імпорту" hidden></section>
       <p id="translation-candidates" class="approval-note"></p>
