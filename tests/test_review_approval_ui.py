@@ -47,6 +47,14 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertEqual(self.state.translation_page()["versions"], [])
         identity = self.approve_and_collect()
         self.assertEqual(self.state.page()["summary"]["human_stage3_approved_joins"], 1)
+        approved_page = self.state.page()
+        self.assertEqual(approved_page["approved_mappings"], [{
+            "source_id": self.unit.source_id,
+            "target_id": "q:42:accept",
+            "mapping_status": "approved",
+        }])
+        self.assertFalse(any(item["source_id"] == self.unit.source_id
+                             for item in approved_page["items"]))
         self.assertFalse(self.state.translation_page()["versions"][0]["imported"])
         edited = self.state.translation_action("edit", {"identity": identity,
                     "text": "Вигаданий переклад.", "reviewer": "Invented editor"})["version_id"]
@@ -238,8 +246,12 @@ class ReviewApprovalUITests(unittest.TestCase):
             with self.assertRaises(HTTPError) as error:
                 post("/api/mapping/approve", body)
             self.assertEqual(error.exception.code, 400)
-        with post("/api/mapping/approve", json.dumps(self.request).encode()) as response:
-            self.assertTrue(json.load(response)["identity_approved"])
+        with self.assertLogs("spoken.review_ui", level="INFO") as emitted:
+            with post("/api/mapping/approve", json.dumps(self.request).encode()) as response:
+                self.assertTrue(json.load(response)["identity_approved"])
+        self.assertTrue(any("mapping.approve succeeded" in row for row in emitted.output))
+        self.assertFalse(any("invented wording" in row or "Invented mapping reviewer" in row
+                             for row in emitted.output))
         with post("/api/translations/refresh", b'{}') as response:
             self.assertTrue(json.load(response)["saved"])
         with urlopen(base + "/api/translations", timeout=5) as response:
