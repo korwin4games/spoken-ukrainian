@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve a *local-only* Quest review UI. Not a public or multi-user service.
+"""Serve local-only Spoken_Quests translation import/review. Not a game AddOn.
 
 Needs clean exact pinned ClassicUA + Spoken checkouts. Reviewed translations
 persist only in private ignored build storage. No pack activation or publication.
@@ -247,7 +247,7 @@ def main(argv=None):
     parser.add_argument("--translations", type=Path, default=ROOT / "build/translation-reviews.json")
     parser.add_argument("--policy", type=Path, default=ROOT / "config/translation_sources.json")
     parser.add_argument("--auto-import-one-to-one", action="store_true",
-                        help="Bulk import strictly unique ClassicUA Quest 1:1 matches into inert private machine store plus reviewed approvals; print source summary table")
+                        help="Import Quest (accept/progress/complete) ClassicUA 1:1 candidates into inert private store, report all Spoken records; no in-game AddOn is generated")
     parser.add_argument("--import-approved", action="store_true",
                         help="Revalidate and explicitly import an inert local snapshot, then exit")
     parser.add_argument("--port", type=int, default=8765)
@@ -296,8 +296,8 @@ def main(argv=None):
         print("review_ui_pinned_sources_or_local_bind_failed", file=sys.stderr)
         return 1
     LOGGER.info("startup succeeded; listening on localhost port %d", args.port)
-    print(f"Quest review UI: http://127.0.0.1:{args.port}/", flush=True)
-    print("Local-only. Mapping requires independent JoinProof; translation approval and import are separate.", flush=True)
+    print(f"Spoken_Quests offline translation review/import UI: http://127.0.0.1:{args.port}/", flush=True)
+    print("Offline-only (not a WoW AddOn): Quest content only; 1:1 machine imports are provisional. No game installation.", flush=True)
     try:
         with server:
             server.serve_forever()
