@@ -45,3 +45,9 @@ textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);borde
 #source-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto}
 #source-candidate{max-width:100%;width:100%;margin:8px 0}
 #source-reviewer{margin:6px 0 12px;display:block}
+
+/* Explicit, scannable per-source import counts with horizontal overflow on mobile. */
+.import-stats-table { width:100%; border-collapse:collapse; margin:8px 0 20px; font-size:0.9rem; }
+.import-stats-table th, .import-stats-table td { padding:8px 10px; border-bottom:1px solid var(--border, #d3d9df); text-align:left; overflow-wrap:anywhere; }
+.import-stats-table th:nth-child(4), .import-stats-table th:nth-child(5),
+.import-stats-table td:nth-child(4), .import-stats-table td:nth-child(5) { text-align:right; font-variant-numeric:tabular-nums; }
