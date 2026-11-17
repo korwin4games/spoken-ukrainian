@@ -165,7 +165,6 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
         "-- NOT RELEASE-READY. machine 1:1 entries lack human Stage 3 mapping review.",
         "-- No recordings, synthetic sound lengths or playback metadata.",
         "SpokenUkrainian = SpokenUkrainian or {}",
-        "SpokenUkrainian.QuestTranslations = {",
     ]
     # Private test build: embed ClassicUA declined race/class names.
     lines.append("SpokenUkrainian.Inflections = {")
@@ -183,6 +182,7 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
             lines.append("        },")
         lines.append("    },")
     lines.append("}")
+    lines.append("SpokenUkrainian.QuestTranslations = {")
     for quest, events in sorted(preview.items()):
         if type(quest) is not int or quest < 1:
             raise ValueError("invalid_quest_id")
