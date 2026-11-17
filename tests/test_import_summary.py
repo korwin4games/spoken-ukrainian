@@ -95,6 +95,57 @@ class ImportSummaryTests(unittest.TestCase):
                 one_to_one_pairs=frozenset())["auto_approved"], 0)
             self.assertEqual(approvals.import_approved([ob], auto_policy())["imported"], 0)
 
+    def test_ai_quest_is_strictly_opt_in_and_reversible_without_erasing_history(self):
+        # Source declares a synthetic AI translation; there is exactly one
+        # pinned Spoken canonical target/English context.
+        f = Fixture().add("quest_horde", "classic",
+                          '{[42]={nil,"Вигаданий ШІ переклад.",ai=true}}')
+        source = f.inventory()
+        inv = synthetic_inventory()
+        originals = TextIndex({"q:42:accept": "invented wording"}, (), {})
+        hints = candidates(source.units, inv)
+        self.assertTrue(source.units["quest:horde:42:accept"].ai)
+        self.assertEqual(hints[0]["reason"], "ai_independent_review_required")
+        self.assertEqual(unique_one_to_one_hint_pairs(hints, source.units, inv), frozenset())
+        pair = ("quest:horde:42:accept", "q:42:accept")
+        self.assertEqual(
+            unique_one_to_one_hint_pairs(hints, source.units, inv, allow_ai_transations=True),
+            frozenset({pair}))
+        rows_off = machine_candidates(f.dataset, source, inv, originals, hints)
+        rows_on = machine_candidates(
+            f.dataset, source, inv, originals, hints, allow_ai_transations=True)
+        self.assertEqual(rows_off, [])
+        self.assertEqual(len(rows_on), 1)
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d) / "build"
+            store = MachineOneToOneStore(base / "machine.json", base)
+            self.assertEqual(store.run(rows_on)["imported"], 1)
+            self.assertEqual(store.current_import_targets(), {pair[1]})
+            # Disabling AI on the next import drops active references without
+            # discarding the user-local provenance/version history.
+            self.assertEqual(store.run(rows_off)["imported"], 0)
+            self.assertEqual(store.current_import_targets(), set())
+            self.assertEqual(len(store.file.data["versions"]), 1)
+            self.assertEqual(store.run(rows_on)["imported"], 1)
+            self.assertEqual(store.run(rows_on)["changed"], False)
+        with self.assertRaisesRegex(ValueError, "invalid_allow_ai_transations"):
+            unique_one_to_one_hint_pairs(hints, source.units, inv,
+                                        allow_ai_transations="true")
+
+    def test_ai_opt_in_does_not_break_global_bipartite_uniqueness(self):
+        f = Fixture().add("quest_both", "classic",
+                          '{[42]={nil,"Вигаданий ШІ переклад.",ai=true}}')
+        source = f.inventory()
+        inv = synthetic_inventory()
+        hints = candidates(source.units, inv)
+        self.assertEqual(
+            unique_one_to_one_hint_pairs(hints, source.units, inv, allow_ai_transations=True),
+            frozenset())
+        self.assertEqual(
+            machine_candidates(f.dataset, source, inv,
+                TextIndex({"q:42:accept": "invented wording"}, (), {}),
+                hints, allow_ai_transations=True), [])
+
     def test_provisional_machine_import_survives_restart_and_blocks_upstream_changes(self):
         fixture = Fixture().add("quest_horde", "classic",
                                 '{[42]={nil,"Вигаданий переклад."}}')
