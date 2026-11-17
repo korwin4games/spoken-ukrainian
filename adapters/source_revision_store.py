@@ -259,12 +259,20 @@ class SourceReviewStore:
 
     def clear_selection(self, domain, target_id, reviewer, trusted):
         key = domain, target_id
-        if (key not in trusted or type(reviewer) is not str
+        if (domain not in DOMAINS or type(target_id) is not str or not target_id
+                or len(target_id) > 256 or type(reviewer) is not str
                 or not reviewer.strip() or len(reviewer) > 120):
             raise ValueError("invalid_source_selection_clear")
+        # Clearing a stale choice must remain possible even if the original
+        # NPC/Quest was removed from the new pinned source corpus. Otherwise
+        # the test build would fail closed with no way to recover.
         with connection(self.db_path) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
+                row = db.execute("""SELECT COUNT(*) FROM source_active_selections
+                    WHERE domain = ? AND target_id = ?""", key).fetchone()
+                if not row or not row[0]:
+                    raise ValueError("unknown_source_selection")
                 db.execute("""DELETE FROM source_active_selections
                     WHERE domain = ? AND target_id = ?""", key)
                 db.commit()
