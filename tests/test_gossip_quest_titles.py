@@ -67,7 +67,12 @@ local first, second = button(1), button(2)
 local panelHooks = {}
 local pool = {}
 function pool:EnumerateActive()
-    return ipairs({first, second})
+    local i = 0
+    local buttons = {first, second}
+    return function()
+        i = i + 1
+        return buttons[i]
+    end
 end
 QuestFrameGreetingPanel = {titleButtonPool = pool}
 function QuestFrameGreetingPanel:HookScript(name, callback)
