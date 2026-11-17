@@ -4,6 +4,7 @@ from dataclasses import asdict, replace
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
+from unittest.mock import patch
 import tempfile
 import threading
 import unittest
@@ -14,7 +15,7 @@ from test_stage3 import Fixture, reviewed
 from adapters.review_ui import LocalReviewState
 from adapters.spoken.text_index import TextIndex
 from adapters.mapping import review_file, load_reviews
-from adapters.translation_sources import SourcePolicy
+from adapters.translation_sources import SourcePolicy, TranslationCandidate, CandidateState
 from tools.review_ui_server import create_handler
 
 CHECKS = dict(text=True, grammar=True, ai=True, rights=True)
@@ -123,6 +124,42 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.state.translation_action("refresh", {})
         self.assertEqual(self.state.translation_page()["versions"], [])
         self.assertFalse(self.state.translation_page()["current_candidates"][0]["stored_locally"])
+
+    def test_review_discovers_all_providers_and_imports_approved_lower_priority(self):
+        """An unreviewed higher-priority result must not hide approved later content."""
+        from adapters.translation_approvals import text_sha
+        self.state.approve_mapping(self.request)
+        self.state.policy = SourcePolicy(("classicua", "another", "original_english"))
+        lower_text = "Вигаданий переклад із другого джерела."
+        class SecondProvider:
+            def lookup(self, request):
+                return TranslationCandidate(
+                    lower_text, "another", "synthetic/other.lua", "synthetic-revision",
+                    "b" * 64, text_sha(lower_text), "reviewed",
+                    CandidateState.NEEDS_REVIEW)
+        with patch("adapters.review_ui.AlternativeSourceStub", SecondProvider):
+            observations = self.state.translation_observations()
+            self.assertEqual([o.candidate.provider for o in observations],
+                             ["classicua", "another"])
+            self.state.translation_action("refresh", {})
+            versions = self.state.translation_page()["versions"]
+            self.assertEqual(len(versions), 2)
+            lower = next(row for row in versions
+                         if row["provenance"][0]["provider"] == "another")
+            self.state.translation_action("decide", {
+                "identity": lower["id"], "decision": "approved",
+                "reviewer": "Actual reviewer", "checks": CHECKS})
+            imported = self.state.translation_action("import", {})
+            self.assertEqual(imported["imported"], 1)
+            selected = self.state.translations.file.data["imports"][0]
+            self.assertEqual(selected["version_id"], lower["id"])
+            self.assertEqual(sum(row["status"] == "pending"
+                                 for row in self.state.translation_page()["versions"]), 1)
+
+    def test_review_discovery_respects_explicit_english_boundary(self):
+        self.state.approve_mapping(self.request)
+        self.state.policy = SourcePolicy(("original_english", "classicua", "another"))
+        self.assertEqual(self.state.translation_observations(), [])
 
     def test_corrupt_or_conflicting_local_mapping_files_refused(self):
         self.state.approve_mapping(self.request)
