@@ -123,10 +123,9 @@ display (a Quest pack has not been generated).
    Spoken's caption, native Blizzard frame or audio changed.
    Re-enable normal addons and original fallback settings afterward.
 
-## Blocking acceptance criteria for a future playable Quest pack
+## Blocking acceptance criteria for native Spoken Quest captions / release
 
-A future **`SpokenCommunity_ukUA_Quests`** is ready to test in the
-game only after all of the following: (1) confirmed public
+A future **release** of `Spoken_Quests_UA` can claim native Spoken Quest-caption support only after all of the following: (1) confirmed public
 `Spoken_Quests` Community Pack registration and canonical-ID
 contract, (2) safe text-only captions on an `enUS` client **without
 invented audio**, (3) independent review/promotion of machine-provisional
