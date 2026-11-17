@@ -33,6 +33,8 @@ class GossipTextsTests(unittest.TestCase):
         self.assertEqual(set(data["byNpc"][42]), {3995595454, 3242472692})
         self.assertIn(99, builder.local_gossip_texts(self.fixture_state(True))["byNpc"])
         # Source file/revision must be pinned, never emitted from edited data.
+        state.source = SimpleNamespace(revision=state.source.revision,
+                                       files=dict(state.source.files))
         state.source.files["classic/gossip.lua"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "unverified_classicua_gossip_source"):
             builder.local_gossip_texts(state)
