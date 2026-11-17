@@ -179,7 +179,9 @@ class LocalReviewState:
             elif action == "decide" and set(payload) == {"identity", "decision", "reviewer", "checks"}:
                 self.translations.decide(**payload, observations=observations, policy=self.policy)
             elif action == "import" and payload == {}:
-                result = self.translations.import_approved(observations, self.policy)
+                result = self.translations.import_approved(observations, self.policy,
+                    one_to_one_pairs=unique_one_to_one_hint_pairs(
+                        self._hints, self.source.units, self.inventory))
                 return result | {"report": import_summary(
                     self.inventory, observations, self.policy, self.translations,
                     self._hints, self.source.units, changed=result["changed"])}
@@ -193,7 +195,9 @@ class LocalReviewState:
                 saved = self.translations.observe(observations, self.policy,
                     one_to_one_pairs=unique_one_to_one_hint_pairs(
                         self._hints, self.source.units, self.inventory))
-                result = self.translations.import_approved(observations, self.policy)
+                result = self.translations.import_approved(observations, self.policy,
+                    one_to_one_pairs=unique_one_to_one_hint_pairs(
+                        self._hints, self.source.units, self.inventory))
                 summary = import_summary(
                     self.inventory, observations, self.policy, self.translations,
                     self._hints, self.source.units,
