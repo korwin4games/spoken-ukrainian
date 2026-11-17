@@ -75,6 +75,26 @@ jobs:
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
 
+      - name: Build local-test Spoken Ukrainian Quest pack (mandatory 1:1 auto-import)
+        run: |
+          python3 tools/build_ukrainian.py \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE"
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          p = Path("dist/Spoken_Ukrainian_Quest_Local_Test.zip")
+          with ZipFile(p) as z:
+              names = set(z.namelist())
+              assert "Spoken_Ukrainian/Spoken_Ukrainian.toc" in names
+              assert "Spoken_Quests_UA/Spoken_Quests_UA.toc" in names
+              assert "Spoken_Quests_UA/Translations.lua" in names
+              assert "Spoken_Quests_UA/Module.lua" in names
+              assert not any(name.endswith(".mp3") or "Spoken_Quests/" in name for name in names)
+              assert z.testzip() is None
+          print("Local Quest test pack: structure valid (not uploaded).")
+          PY
+
       - name: Validate real pinned Spoken source-coverage dry-run
         run: python3 tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE"
 
