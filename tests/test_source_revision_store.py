@@ -117,6 +117,18 @@ class SourceRevisionTests(unittest.TestCase):
             self.store.activate(first["id"], "reviewer", changed)
         self.assertEqual(len(self.store.revisions()), 1)
 
+    def test_removed_pinned_original_allows_revoking_old_selection(self):
+        self.store.ingest(self.snapshot("classicua", A, "Старий текст"), self.trusted)
+        first = self.store.candidates()[0]
+        self.approved(first["id"])
+        self.store.activate(first["id"], "reviewer", self.trusted)
+        with self.assertRaisesRegex(ValueError, "source_candidate_target_not_verified"):
+            self.store.active({})
+        cleared = self.store.clear_selection("gossip", self.key[1], "reviewer", {})
+        self.assertFalse(cleared["selected"])
+        self.assertEqual(self.store.active({}), [])
+        self.assertEqual(len(self.store.candidates()), 1)
+
     def test_agreement_not_conflict_priority_is_advisory(self):
         self.store.ingest(self.snapshot("classicua", A, "Той самий текст"), self.trusted)
         self.store.ingest(self.snapshot("another", B, "Той самий текст"), self.trusted)
