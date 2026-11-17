@@ -3,7 +3,8 @@
   "sources": [
     {
       "name": "classicua",
-      "save_translations": true
+      "save_translations": true,
+      "auto_approve_one_to_one": false
     },
     {
       "name": "another",
