@@ -308,6 +308,8 @@ async function reviewPost(route, payload) {
   }, body: JSON.stringify(payload)});
   const result = await response.json();
   if (!response.ok) throw new Error(result.reason || result.error || "evidence_or_storage_conflict");
+  // Read-only statistics are recomputed from authoritative SQLite imports.
+  window.dispatchEvent(new Event("spoken-import-stats-refresh"));
   return result;
 }
 function resetMappingAttestations() {
@@ -875,4 +877,82 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
       "Активний вибір прибрано; джерела збережено.");
   });
   reload();
+})();
+
+
+// Import statistics are metadata only. No unreviewed translation bodies,
+// SQL, model drafts, or private source text are exposed by this panel.
+(function() {
+  const root = id => document.getElementById("import-stats-" + id);
+  const names = {
+    quests: "Quests", gossip: "Gossip (NPC)",
+    gossip_common: "Gossip (common)", gossip_titles: "Gossip Quest Titles",
+    places: "Places", readables: "Books & Notes", bosses: "Bosses",
+    compendium: "Compendium UI"
+  };
+  const routes = {
+    machine_1to1: "Machine 1:1 (provisional)",
+    reviewed: "Human Review",
+    source_selected: "Active Source Selection",
+    pinned_source: "Pinned audited source"
+  };
+  let loading = false;
+
+  function renderTable(target, group) {
+    const container = root(target);
+    container.replaceChildren();
+    for (const entry of group?.rows || []) {
+      const row = make("tr");
+      for (const value of [
+        names[entry.category] || entry.category,
+        entry.source, routes[entry.route] || entry.route,
+        entry.text_records, entry.unique_entities
+      ]) row.appendChild(make("td", "", value));
+      container.appendChild(row);
+    }
+    if (!container.children.length) {
+      const row = make("tr"), cell = make("td", "", "Немає записів");
+      cell.colSpan = 5;
+      row.appendChild(cell);
+      container.appendChild(row);
+    }
+  }
+  function totals(summary) {
+    return Object.entries(names).map(([key, name]) =>
+      name + ": " + (summary?.categories?.[key] || 0)).join(" · ");
+  }
+  async function loadImportStatistics() {
+    if (loading) return;
+    loading = true;
+    root("refresh").disabled = true;
+    try {
+      const response = await fetch("/api/import-stats", {cache: "no-store"});
+      if (!response.ok) throw new Error("import_statistics_unavailable");
+      const data = await response.json();
+      renderTable("reviewed", data.recorded_imports);
+      renderTable("selected", data.selected_not_necessarily_built);
+      renderTable("build", data.latest_successful_build);
+      setText(root("review-totals"), totals(data.recorded_imports));
+      setText(root("build-totals"), totals(data.latest_successful_build));
+      setText(root("build-info"), data.latest_successful_build
+        ? "Snapshot #" + data.latest_successful_build.snapshot_id +
+          " · " + data.latest_successful_build.built_at +
+          " · ZIP SHA-256: " + data.latest_successful_build.artifact_sha256
+        : "Ще немає успішної SQLite-інвентаризованої збірки. Запустіть tools/build_ukrainian.py.");
+      setText(root("status"), "Поточних Review-імпортів: " +
+        data.recorded_imports.total_text_records +
+        " · Source selections: " +
+        data.selected_not_necessarily_built.total_text_records +
+        " · в останньому ZIP: " +
+        (data.latest_successful_build?.total_text_records ?? 0));
+    } catch (error) {
+      setText(root("status"), "Не вдалося отримати статистику: " + error.message);
+    } finally {
+      loading = false;
+      root("refresh").disabled = false;
+    }
+  }
+  root("refresh").addEventListener("click", loadImportStatistics);
+  window.addEventListener("spoken-import-stats-refresh", loadImportStatistics);
+  loadImportStatistics();
 })();
