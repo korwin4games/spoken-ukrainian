@@ -135,10 +135,12 @@
     <section class="review translation-section" aria-label="Translation Review">
       <div class="review-heading"><h2>Translation Review</h2>
         <div class="actions"><button id="translation-refresh" class="secondary" type="button">Зберегти поточних кандидатів / оновити</button>
-          <button id="translation-import" class="primary" type="button">Явно імпортувати схвалені</button></div></div>
+          <button id="translation-import" class="primary" type="button">Явно імпортувати схвалені</button>
+          <button id="translation-auto-import" class="primary" type="button" disabled>Автоімпорт 1:1 · ClassicUA</button></div></div>
       <p class="approval-note">Mapping approval → pending → окрема перевірка тексту, граматики, AI та прав → approved → явний inert import.
         Імпорт не активує переклади у WoW. Редагування не перезаписує джерело. Історія текстів зберігається тільки в ігнорованому build/.</p>
       <p id="translation-feedback" class="feedback" role="status"></p>
+      <section id="translation-import-report" class="import-report" aria-live="polite" aria-label="Підсумкова таблиця імпорту" hidden></section>
       <p id="translation-candidates" class="approval-note"></p>
       <label for="translation-versions">Версії та історія (source / target / status / imported)</label>
       <select id="translation-versions"><option value="">Немає збережених версій</option></select>
