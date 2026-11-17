@@ -27,8 +27,13 @@ Spoken Ukrainian готує український контент **офлайн
 
 ```json
 {
-  "schema_version": 1,
-  "sources": ["classicua", "another", "own_translator", "original_english"]
+  "schema_version": 2,
+  "sources": [
+    {"name": "classicua", "save_translations": true},
+    {"name": "another", "save_translations": false},
+    {"name": "own_translator", "save_translations": true},
+    {"name": "original_english", "save_translations": false}
+  ]
 }
 ```
 
@@ -40,6 +45,8 @@ Spoken Ukrainian готує український контент **офлайн
 | `original_english` | Явний fallback | Використовує англійський оригінал для залишку, але не рахується українським перекладом |
 
 **Джерела можна переставляти або прибирати.** Наприклад, `["own_translator", "classicua", "original_english"]` змінює порядок (перекладач поки mock), `["original_english"]` — тільки англійська. **`{"schema_version":1,"sources":[]}` або `{}` означає реальну мову клієнта WoW**, без виклику перекладачів; клієнт `deDE` не перемикається на англійську. Реальну локаль передає викликач. `original_english` не додається приховано, якщо його немає в списку. Відсутній чи некоректний конфігураційний файл — помилка.
+
+**Параметр `save_translations` задається окремо для кожного джерела** й дозволятиме зберігати перевірені переклади у Git (`translations/ukUA/`). Під час поточного пошуку кандидатів файли **ще не записуються**: потрібні підтверджені ID, походження, права й рев’ю. Імпортовані тексти зберігатимуться окремо від наших редакцій; оновлення джерела проходитимуть через перевірку, а не автоматичний перезапис. `own_translator` поки mock, тому навіть із `true` нічого не зберігає. [Політика зберігання й оновлення](docs/TRANSLATION_STORAGE_POLICY.md).
 
 ### Послідовна обробка та звіт
 
