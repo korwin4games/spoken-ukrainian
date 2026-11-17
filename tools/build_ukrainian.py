@@ -35,6 +35,7 @@ TEMPLATE_FILES = {
     "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
+QUEST_SOURCE = re.compile(r"quest:(horde|alliance):([1-9][0-9]*):(accept|progress|complete)\Z")
 MAX_TEXT = 60000
 UKRAINIAN_CASES = ("н", "р", "д", "з", "о", "м", "к")
 
@@ -71,6 +72,8 @@ def current_quest_texts(state):
     version_by_id = {v["id"]: v for v in reviewed["versions"]}
     machine_by_id = {v["id"]: v for v in machine["versions"]}
     texts = {}
+    title_candidates = defaultdict(set)
+    source_views = None
     for imports, versions, human in (
             (machine["imports"], machine_by_id, False),
             (reviewed["imports"], version_by_id, True)):
@@ -94,6 +97,23 @@ def current_quest_texts(state):
             if not row["text"].strip():
                 raise ValueError("blank_quest_import")
             texts[target_id] = {"text": row["text"], "reviewed": human}
+            # The Quest title is ClassicUA field [1], not a Spoken
+            # narration event. Read it only from the audited source unit
+            # bound to this imported Quest ID/event; never guess by title.
+            source_match = QUEST_SOURCE.fullmatch(row.get("source_id", ""))
+            target_match = QUEST_TARGET.fullmatch(target_id)
+            if (source_match is not None
+                    and int(source_match.group(2)) == int(target_match.group(1))
+                    and source_match.group(3) == target_match.group(2)
+                    and source_match.group(0) in state.source.units):
+                if source_views is None:
+                    source_views, _ = state.dataset.faction_views(include_ai=True)
+                record = source_views[source_match.group(1)].get(int(source_match.group(2)))
+                title_leaf = record.fields.get((1,)) if record else None
+                if title_leaf and isinstance(title_leaf.node.value, str):
+                    title = title_leaf.node.value.strip()
+                    if title and len(title) <= 500:
+                        title_candidates[int(source_match.group(2))].add(title)
 
     # The preview only has QuestID and event from public WoW functions.
     # It cannot choose between different NPC voice / wording variants;
@@ -113,6 +133,11 @@ def current_quest_texts(state):
             "text": rows[0]["text"],
             "reviewed": all(row["reviewed"] for row in rows),
         }
+    # If different source factions supplied incompatible Quest titles,
+    # omit the title rather than showing an incorrect localized heading.
+    for quest, titles in title_candidates.items():
+        if quest in result and len(titles) == 1:
+            result[quest]["title"] = next(iter(titles))
     return result, len(texts), skipped
 
 
@@ -193,6 +218,8 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
         if type(quest) is not int or quest < 1:
             raise ValueError("invalid_quest_id")
         lines.append("    [%d] = {" % quest)
+        if type(events.get("title")) is str and events["title"].strip():
+            lines.append("        title = " + lua_quote(events["title"]) + ",")
         for event in ("accept", "progress", "complete"):
             if event in events:
                 row = events[event]
@@ -294,7 +321,8 @@ def build(classicua, spoken):
         "auto_import_one_to_one", {"source": "classicua"})
     report = report_action["report"]
     preview, imported, ambiguous = current_quest_texts(state)
-    preview_count = sum(map(len, preview.values()))
+    preview_count = sum(event in ("accept", "progress", "complete")
+                        for events in preview.values() for event in events)
     if not preview_count:
         raise ValueError("no_unambiguous_quest_imports_for_local_test_pack")
     forms = read_classicua_inflections(classicua, state.source.files)
