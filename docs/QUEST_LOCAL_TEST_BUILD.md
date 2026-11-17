@@ -3,7 +3,9 @@
 **Status: local test only, not released.** Builds two independently installable
 addon folders from the `spoken-ukrainian` project while **automatically running
 ClassicUA 1:1 Quest auto-import on EVERY build**. Never modifies upstream
-Spoken Player / `Spoken_Quests`, game files, native quest windows, or `GetLocale()`.
+Spoken Player / `Spoken_Quests`, game files, or `GetLocale()`. Issue #19
+uses guarded text-widget hooks to translate the live NPC QuestFrame, without
+modifying Blizzard's files or global quest getters.
 
 ## Names and packaging
 
@@ -250,10 +252,12 @@ replace its strings.
    Ukrainian text, matching Quest ID + event, with
    **machine 1:1 (provisional)** or **human-reviewed** label.
 6. Check an **untranslated or ambiguous** quest: no Ukrainian
-   test preview should appear. Verify original WoW/ClassicUA quest
-   window and Spoken captions/audio are unchanged. Test once with
-   ClassicUA enabled and once without it; only native quest frames
-   should depend on ClassicUA.
+   test preview should appear. Native QuestFrame should show Ukrainian
+   only for available translations and retain original English for missing
+   entries. With ClassicUA enabled, Spoken Ukrainian's QuestFrame hooks
+   yield ownership to ClassicUA; with ClassicUA disabled, our native hooks
+   own just the translated Quest text widgets. Spoken narrator audio/captions
+   remain unchanged.
 7. Type `/spokenuk preview off`. The test panel closes and stops
    reacting; no text injection or patched Blizzard frames remain.
    Try `/reload`, repeat. Disable or remove the two Ukrainian addon
