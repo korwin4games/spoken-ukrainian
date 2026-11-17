@@ -591,8 +591,23 @@ def build(classicua, spoken):
         preview, state.inventory.revision, forms, titles),
         render_gossip_lua(gossip))
     artifact, digest = write_zip(entries)
+    # Only metadata for texts that actually entered a successful local ZIP.
+    # Never count raw proposals or claim an import was embedded beforehand.
+    import_inventory = None
+    if db_path:
+        from adapters.import_statistics import store_successful_build
+        from tools.import_build_inventory import collect_build_rows
+        inventory_rows = collect_build_rows(
+            state, preview, gossip, titles, reviewed_gossip,
+            selected_gossip, selected_quest, source_proofs, db_path)
+        import_inventory = store_successful_build(
+            db_path, artifact_sha256=digest,
+            spoken_revision=state.inventory.revision,
+            classicua_revision=state.source.revision,
+            rows=inventory_rows)
     return {
         "artifact": artifact, "sha256": digest,
+        "import_inventory": import_inventory,
         "reported_total_spoken": report["total_spoken_records"],
         "imported_quest_records": imported,
         "previewable_quest_moments": preview_count,
@@ -644,6 +659,10 @@ def main(argv=None):
           result["reviewed_gossip_text_records"])
     print("Explicitly selected human-reviewed source Gossip variants:",
           result["explicit_source_gossip_selections"])
+    if result["import_inventory"] is not None:
+        print("Actual ZIP import inventory by domain/source/route:")
+        for line in result["import_inventory"]["rows"]:
+            print("  {category}: {source} ({route}) - {text_records} texts / {unique_entities} entities".format(**line))
     print("Imported records with unverified Spoken faction (machine vs reviewed):",
           result["unknown_faction_imports"])
     print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])
