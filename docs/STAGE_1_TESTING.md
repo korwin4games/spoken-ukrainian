@@ -7,14 +7,14 @@ Automated implementation: complete. Full in-game acceptance: passed, as reported
 From `/home/korwin/projects/wow/spoken-ukrainian`:
 
 ```sh
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 For a different local upstream checkout:
 
 ```sh
-SPOKEN_SOURCE=/absolute/path/to/spoken-wow python3 -m unittest discover -s tests -v
+SPOKEN_SOURCE=/absolute/path/to/spoken-wow uv run --locked python -m unittest discover -s tests -v
 ```
 
 Final result: 16 tests passed. Tests require Python 3, Git and the system Lua 5.4 shared library. Missing prerequisites fail rather than skipping the contract tests. No pip/npm packages or network access are needed.
@@ -59,8 +59,8 @@ sha256sum -c SpokenCommunity_ukrainian-diagnostic.zip.sha256
 `.github/workflows/ci.yml` runs on pushes, pull requests and manual dispatch. It checks out this project and the Spoken revision read from `sources.lock.json` into separate directories, sets up Python 3.12, and installs the Lua 5.4 shared library on Ubuntu. It then runs:
 
 ```sh
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 `SPOKEN_SOURCE` points to the separate pinned checkout. The workflow has read-only repository permissions and publishes no artifacts or releases. Runner setup downloads public source and dependencies; the build and tests remain offline.
@@ -97,7 +97,7 @@ Exit WoW Forever completely before adding the new addon. Keep the existing `Spok
 
 ```sh
 cd /home/korwin/projects/wow/spoken-ukrainian
-python3 tools/build.py
+uv run --locked python tools/build.py
 (cd dist && sha256sum -c SpokenCommunity_ukrainian-diagnostic.zip.sha256)
 unzip -l dist/SpokenCommunity_ukrainian-diagnostic.zip
 unzip -n dist/SpokenCommunity_ukrainian-diagnostic.zip -d '/media/korwin/00C6E733C6E7281C1/Games/World of Warcraft/_forever_/Interface/AddOns/'
