@@ -256,11 +256,6 @@ class TranslationApprovals:
         return {"imported": len(data["imports"]), "changed": changed, "activated": False}
 
     def page(self, observations, policy):
-        try:
-            eligible = self.eligible(observations, policy)
-            conflict = False
-        except ValueError:
-            eligible, conflict = [], True
         result = []
         try:
             eligible = self.eligible(observations, policy)
