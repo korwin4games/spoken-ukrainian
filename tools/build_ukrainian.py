@@ -25,7 +25,7 @@ from adapters.spoken import PublicSource
 from adapters.classicua.source import GitSource
 from adapters.classicua.lua import Parser, Table
 from tools.review_ui_server import build_state, validate_source_paths, _reason
-from adapters.import_summary import format_import_table
+from adapters.import_summary import format_import_table, unique_one_to_one_hint_pairs
 
 DIST = ROOT / "dist"
 ARCHIVE = DIST / "Spoken_Ukrainian_Quest_Local_Test.zip"
@@ -235,10 +235,30 @@ def import_reason_for_quest(state, quest_id):
             (state.machine_imports.file.data, state.translations.file.data)
             for row in store.get("imports", [])
             if row["target_id"].startswith(prefix)]
+    eligible = unique_one_to_one_hint_pairs(
+        state._hints, state.source.units, state.inventory,
+        allow_ai_transations=state.policy.allows_ai_transations("classicua"))
+    source_rows = []
+    for row in hints:
+        source_id = row["source_id"]
+        source_rows.append({
+            "source_event": source_id.split(":")[-1],
+            "faction": source_id.split(":")[1],
+            "candidate_count": len(row["candidates"]),
+            "eligible_strict_one_to_one": any(pair[0] == source_id for pair in eligible),
+            "candidate_contexts": [
+                {"identity": target_id,
+                 "contexts": len(state.inventory.contexts.get(target_id, ())),
+                 "factions": sorted({ctx.get("faction", "?") for ctx in
+                     state.inventory.contexts.get(target_id, ())}),
+                 "verified_english": target_id in state.original_index.original_english}
+                for target_id in row["candidates"] if target_id in state.inventory.targets],
+        })
     return {"quest_id": quest_id,
             "spoken_narrated_targets": len(targets),
             "classicua_candidates": len(hints),
             "candidate_reasons": sorted({row["reason"] for row in hints}),
+            "source_events": source_rows,
             "auto_imported_targets": len(set(refs)),
             "allow_ai_transations": state.policy.allows_ai_transations("classicua")}
 
