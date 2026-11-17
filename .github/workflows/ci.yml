@@ -137,6 +137,35 @@ jobs:
           print("Local test ZIP installed; official Spoken preserved.")
           PY
 
+      - name: Audit full pinned Gossip NPC corpus against ClassicUA hashes
+        run: |
+          uv run --locked python tools/gossip_coverage.py \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE"
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("build/gossip-coverage.json").read_text(encoding="utf-8"))
+          s = r["summary"]
+          assert s["total_gossip_npcs"] > 0
+          assert s["total_gossip_npcs"] == s["covered_gossip_npcs"] + s["untranslated_gossip_npcs"]
+          assert s["covered_distinct_npc_wordings"] == (
+              s["wordings_matched_by_npc_hash"] + s["wordings_matched_by_common_hash"])
+          assert s["total_distinct_npc_wordings"] == (
+              s["covered_distinct_npc_wordings"] + s["untranslated_distinct_npc_wordings"])
+          print("Gossip coverage audit OK")
+          PY
+
+      - name: Upload metadata-only Gossip coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-gossip-coverage
+          path: |
+            spoken-ukrainian/build/gossip-coverage.json
+            spoken-ukrainian/build/gossip-untranslated-npcs.csv
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Validate real pinned Spoken source-coverage dry-run
         run: uv run --locked python tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE"
 
