@@ -159,6 +159,7 @@ class LocalReviewState:
             observations = self.translation_observations()
             return self.translations.page(observations, self.policy) | {
                 "source_policy": list(self.policy.sources),
+                "auto_approve_one_to_one": sorted(self.policy.auto_approve_sources),
                 "current_candidates": [o.row() | {"stored_locally": self.policy.stores(o.candidate.provider),
                                                    "english_original": o.original} for o in observations]}
 
@@ -168,7 +169,8 @@ class LocalReviewState:
                 self.revalidate_inputs()
             observations = self.translation_observations()
             if action == "refresh" and payload == {}:
-                self.translations.observe(observations, self.policy)
+                result = self.translations.observe(observations, self.policy)
+                return result | {"activated": False}
             elif action == "edit" and set(payload) == {"identity", "text", "reviewer"}:
                 return {"version_id": self.translations.edit(**payload, observations=observations, policy=self.policy)}
             elif action == "decide" and set(payload) == {"identity", "decision", "reviewer", "checks"}:
