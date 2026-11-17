@@ -64,7 +64,7 @@ From the project repository with Python 3.12+ and Git installed:
 
 ```sh
 cd /path/to/spoken-ukrainian
-python3 tools/build_ukrainian.py \
+uv run --locked python tools/build_ukrainian.py \
   --classicua ../ClassicUA \
   --spoken ../spoken-wow
 ```
@@ -260,7 +260,6 @@ local `dist/Spoken_Ukrainian_Quest_Local_Test.zip` from the builder.
 - The test ZIP and generated translations remain **private and local**.
   Do not distribute them or claim they are release-approved.
 
-You may substitute `python3` for `uv run --locked python` if desired.
 After installation, restart the game, disable ClassicUA **in game**
 for native QuestFrame testing, open an imported quest and hold Shift
 to inspect the original English text.
