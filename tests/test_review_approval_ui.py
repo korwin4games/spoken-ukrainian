@@ -38,6 +38,17 @@ class ReviewApprovalUITests(unittest.TestCase):
         return LocalReviewState(self.dataset, self.source, self.inventory, self.originals,
                                  self.base / "decisions.json", self.base, **kwargs)
 
+    def unique_one_to_one_state(self, **kwargs):
+        # The default quest_both test inventory has Horde and Alliance variants
+        # pointing to the same Spoken target: that is NOT globally 1:1.
+        # Restrict a separate synthetic audited source inventory to one faction
+        # for the positive auto-import test only. Never fabricate a mapping.
+        unique_source = replace(self.source, units={
+            self.unit.source_id: self.source.units[self.unit.source_id]})
+        return LocalReviewState(self.dataset, unique_source,
+                                self.inventory, self.originals,
+                                self.base / "decisions.json", self.base, **kwargs)
+
     def approve_and_collect(self):
         self.state.approve_mapping(self.request)
         self.state.translation_action("refresh", {})
@@ -70,6 +81,97 @@ class ReviewApprovalUITests(unittest.TestCase):
         mapping_disk = (self.base / "stage3-ui-reviews.json").read_text()
         self.assertNotIn("invented wording", mapping_disk)
         self.assertNotIn("Вигаданий переклад.", mapping_disk)
+
+    def test_auto_approval_requires_reviewed_identity_and_one_to_one(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True},
+            {"name": "original_english", "save_translations": False},
+        ]})
+        state = self.unique_one_to_one_state(policy=policy)
+        # Quest ID/title intersections alone cannot approve anything.
+        self.assertEqual(state.translation_action("refresh", {})["auto_approved"], 0)
+        self.assertEqual(state.translation_page()["versions"], [])
+        state.approve_mapping(self.request)
+        result = state.translation_action("refresh", {})
+        self.assertEqual(result["auto_approved"], 1)
+        row = state.translation_page()["versions"][0]
+        self.assertEqual(row["status"], "auto_approved_1to1")
+        self.assertEqual(row["decisions"][0]["checks"]["text"], False)
+        self.assertFalse(row["imported"])
+        imported = state.translation_action("import", {})
+        self.assertEqual(imported["imported"], 1)
+        self.assertFalse(imported["activated"])
+        self.assertTrue(state.translation_page()["versions"][0]["imported"])
+        self.assertEqual(state.translation_page()["auto_approve_one_to_one"], ["classicua"])
+
+    def test_bulk_one_to_one_import_shows_global_spoken_summary(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True},
+            {"name": "original_english", "save_translations": False},
+        ]})
+        state = self.unique_one_to_one_state(policy=policy)
+        provisional = state.translation_action("auto_import_one_to_one",
+                                               {"source": "classicua"})
+        self.assertEqual(provisional["imported"], 1)
+        self.assertEqual(provisional["machine_imported"], 1)
+        self.assertEqual(provisional["auto_approved"], 0)
+        self.assertEqual(provisional["report"]["total_spoken_records"],
+                         len(self.inventory.targets))
+        self.assertEqual(provisional["report"]["machine_one_to_one_imported"], 1)
+        self.assertEqual(provisional["report"]["verified_source_to_target_bindings"], 0)
+        self.assertEqual(provisional["report"]["untranslated_total"],
+                         len(self.inventory.targets) - 1)
+        self.assertEqual(len(state.machine_imports.file.data["versions"]), 1)
+        # A subsequent independently reviewed human mapping takes precedence.
+        state.approve_mapping(self.request)
+        imported = state.translation_action("auto_import_one_to_one",
+                                            {"source": "classicua"})
+        self.assertEqual(imported["imported"], 1)
+        self.assertEqual(imported["auto_approved"], 1)
+        self.assertFalse(imported["activated"])
+        report = imported["report"]
+        self.assertEqual(report["total_spoken_records"], len(self.inventory.targets))
+        self.assertEqual(report["imported_total"], 1)
+        self.assertEqual(report["untranslated_total"],
+                         len(self.inventory.targets) - 1)
+        self.assertEqual(report["by_source"][0]["source"], "classicua")
+        self.assertEqual(report["by_source"][0]["imported_translations"], 1)
+        self.assertEqual(report["verified_source_to_target_bindings"], 1)
+        self.assertEqual(report["machine_one_to_one_imported"], 0)
+        self.assertEqual(state.machine_imports.current_import_targets(), set())
+        self.assertEqual(state.translation_action("auto_import_one_to_one",
+                           {"source": "classicua"})["auto_approved"], 0)
+        self.assertFalse(state.translation_action("auto_import_one_to_one",
+                           {"source": "classicua"})["changed"])
+        self.assertFalse(report["saved_to_git"])
+
+    def test_shared_faction_variant_does_not_auto_import(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True}]})
+        state = self.new_state(policy=policy)
+        state.approve_mapping(self.request)
+        result = state.translation_action("auto_import_one_to_one",
+                                          {"source": "classicua"})
+        self.assertEqual(result["auto_approved"], 0)
+        self.assertEqual(result["imported"], 0)
+        self.assertEqual(result["report"]["unreviewed_one_to_one_candidates"], 0)
+        self.assertEqual(state.translation_page()["versions"][0]["status"], "pending")
+
+    def test_bulk_one_to_one_rejects_disabled_policy_and_invalid_source(self):
+        with self.assertRaisesRegex(ValueError, "not_enabled"):
+            self.state.translation_action("auto_import_one_to_one",
+                                          {"source": "classicua"})
+        self.assertEqual(self.state.translations.file.data["versions"], [])
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True}]})
+        self.state.policy = policy
+        for bad in ({}, {"source": "another"}, {"source": "classicua", "force": True}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.state.translation_action("auto_import_one_to_one", bad)
 
     def test_mapping_requires_independent_reviewers_and_exact_proof(self):
         for change in ({"mapping_reviewer": self.request["proof"]["evidence_reviewer"]},
@@ -229,7 +331,8 @@ class ReviewApprovalUITests(unittest.TestCase):
             return urlopen(Request(base + route, data=body, method="POST", headers=headers or {
                 "Content-Type": "application/json", "Origin": base, "X-Review-Token": "token"}), timeout=5)
         for route in ("/api/mapping/approve", "/api/translations/refresh", "/api/translations/edit",
-                      "/api/translations/decide", "/api/translations/import"):
+                      "/api/translations/decide", "/api/translations/import",
+                      "/api/translations/auto_import_one_to_one"):
             with self.subTest(route=route), self.assertRaises(HTTPError) as error:
                 post(route, b'{}', {"Content-Type": "application/json", "Origin": base})
             self.assertEqual(error.exception.code, 403)

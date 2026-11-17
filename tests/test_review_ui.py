@@ -147,7 +147,9 @@ class ReviewUITests(unittest.TestCase):
         base = f"http://127.0.0.1:{port}"
         with urlopen(base + "/", timeout=5) as reply:
             html = reply.read().decode("utf-8")
-            self.assertIn("Quest Mapping Review", html)
+            self.assertIn("Quest Translation Import · Spoken_Quests", html)
+            self.assertIn("Mapping Review", html)
+            self.assertIn("offline", html)
             self.assertIn("id=\"target-ref\"", html)
             self.assertEqual(reply.headers.get("X-Frame-Options"), "DENY")
         with urlopen(base + "/app.js", timeout=5) as reply:

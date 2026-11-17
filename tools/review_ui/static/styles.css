@@ -21,3 +21,11 @@ textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);borde
 
 .approved-mappings{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
 .approved-item{border:1px solid #9fc6af;background:#e8f4eb;color:#245c3b;border-radius:7px;padding:6px 10px;font-size:12px;font-weight:650}
+
+.import-report{margin:14px 0;padding:16px;border:1px solid #b5c6ec;border-radius:10px;background:#f8faff}
+.import-report h3{margin:0 0 12px}
+.import-report-table{width:100%;border-collapse:collapse;margin:10px 0 15px}
+.import-report-table th,.import-report-table td{padding:8px 10px;border:1px solid var(--line);text-align:left;word-break:break-word}
+.import-report-table thead{background:#e8edf9}
+.import-report-table td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.import-report .muted{padding:4px 0}

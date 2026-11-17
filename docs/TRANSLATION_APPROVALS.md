@@ -17,7 +17,7 @@ reports and their zero-approved baseline remain unchanged.
    `approved_quest_bindings`. Actual effective UTF-8 bytes and origin provenance
    are checked against the audited inventory; only verified English originals
    are accepted. AI-marked inputs remain excluded.
-3. Explicit **refresh** stores allowed source candidates as `pending`. Content
+3. Explicit **refresh** stores allowed source candidates as `pending` by default. An **opt-in** `auto_approve_one_to_one` source policy may additionally mark the first unique, validated 1:1 ClassicUA candidate as `auto_approved_1to1` in the private ledger. The identity must already have independently human-approved Stage 3 JoinProof; a mere one-to-one match by names/IDs is insufficient. The automatic decision has fixed provenance and `text=false`, `grammar=false`, `ai=true`, `rights=true` checks so it **never masquerades as a human text/grammar review**. Source changes, existing manual edits or decisions, conflicting candidates, unreviewed rights or AI-marked content cannot auto-approve. Content
    reviewers can reject, defer or approve individual versions. Approval requires
    a named reviewer and four explicit attestations: wording, grammar/templates,
    AI restrictions, and rights/attribution. Reviewer IDs record human statements;
@@ -33,6 +33,25 @@ reports and their zero-approved baseline remain unchanged.
 Mapping, content, imported snapshot, audio and runtime support are distinct
 states. A later official pack builder would need separate authorization and
 runtime/rights gates; this snapshot is not a pack or a publication approval.
+
+## Bulk 1:1 import and coverage report
+
+The default schema-v2 config now explicitly enables `auto_approve_one_to_one: true` for ClassicUA (other providers remain disabled). The setting is optional and defaults to false when omitted. The local Review UI exposes **Auto-import 1:1 · ClassicUA** and the same workflow is available from the terminal:
+
+```sh
+python3 tools/review_ui_server.py \\
+  --classicua /path/to/pinned/ClassicUA \\
+  --spoken /path/to/pinned/spoken-wow \\
+  --auto-import-one-to-one
+```
+
+It re-audits the pinned checkouts, validates pre-existing independent Stage 3 identity proofs, enumerates audited candidates, requires **global one-to-one** cardinality in both source→target and target→source directions (including conflicting faction/AI candidates), preserves manual/version history, optionally auto-approves only the first unchanged eligible ClassicUA version and revalidates before writing the **inert** imported snapshot. It is idempotent: a second run with unchanged evidence adds no versions or approvals. Old automatic approvals become ineligible for re-import if the cardinality changes. A disabled policy fails closed.
+
+The final table (UI and CLI) always uses the **entire pinned Spoken canonical inventory** for `total_spoken_records` and `untranslated_total`. `unreviewed_one_to_one_candidates` are only structural candidates; `verified_source_to_target_bindings` have valid Stage 3 identity reviews and available source texts; `imported_total` counts actual current inert import references, broken out by provider and separately by manual edits. Numbers are deduplicated by canonical Spoken ID. The table is metadata only, never containing imported text or personal reviewer IDs.
+
+**Provisional machine import:** in addition to the human-reviewed text ledger, the explicit bulk action considers uniquely matched Quest source/target pairs across the *complete* audited ClassicUA and Spoken inventories. It requires a single Spoken identity context, verified English original fingerprint, matching quest ID/event/faction, exact effective ClassicUA bytes, source-origin SHA-256 and no ambiguity (including the reverse candidate graph). Eligible translations are copied into **`build/machine-one-to-one.json`** with status `machine_1to1_provisional`, never as Stage 3 JoinProof. If newer upstream text/context differs, the old machine import is invalidated and a `pending_update` version retained for review rather than silently replacing it. The human translation ledger always takes precedence and blocks machine imports for the same canonical target. The report's `machine_one_to_one_imported` and `human_reviewed_imported_total` distinguish the two classes; `imported_total` counts their de-duplicated union. These machine translations are **not eligible for a public pack without separate identity and content review**.
+
+**This does not auto-create Stage 3 mapping proofs.** Quest ID/event intersections and shared Horde/Alliance IDs alone do not prove identity. Existing real independently approved joins are zero unless local users have reviewed them; automatic import can legitimately produce zero and list possible 1:1 candidates separately. Places, Readables and Bosses remain in the overall Spoken denominator but await family-specific verified text bridges. No automatic Git write, public pack generation, live AddOn activation, source revision advancement or release takes place.
 
 ## Local storage schema
 

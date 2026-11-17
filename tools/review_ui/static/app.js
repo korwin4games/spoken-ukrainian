@@ -366,7 +366,7 @@ document.getElementById("mapping-approve").addEventListener("click", async funct
       ". Перевірте термінал сервера та докази.");
   }
 });
-const translations = {rows: [], selected: null, busy: false};
+const translations = {rows: [], selected: null, busy: false, autoAllowed: false};
 const t = id => document.getElementById("translation-" + id);
 function renderTranslation() {
   const row = translations.rows.find(r => r.id === t("versions").value);
@@ -389,6 +389,7 @@ function updateTranslationButtons() {
   ["edit", "approved", "rejected", "deferred"].forEach(k => {
     t(k).disabled = translations.busy || !row || !row.current;
   });
+  t("auto-import").disabled = translations.busy || !translations.autoAllowed;
 }
 async function loadTranslations() {
   const response = await fetch("/api/translations", {cache: "no-store"});
@@ -396,6 +397,7 @@ async function loadTranslations() {
   const data = await response.json();
   const previous = t("versions").value;
   translations.rows = data.versions;
+  translations.autoAllowed = (data.auto_approve_one_to_one || []).includes("classicua");
   t("versions").replaceChildren();
   data.versions.sort((a, b) => a.target_id.localeCompare(b.target_id) || b.number - a.number);
   data.versions.forEach(row => {
@@ -407,6 +409,8 @@ async function loadTranslations() {
   });
   if (data.versions.some(row => row.id === previous)) t("versions").value = previous;
   setText(t("candidates"), "Джерела: " + data.source_policy.join(" → ") +
+    ". Автоапрув 1:1 (після підтвердженого mapping review): " +
+    (data.auto_approve_one_to_one?.join(", ") || "вимкнено") +
     ". Поточних кандидатів після mapping review: " + data.current_candidates.length +
     ". Збережених версій: " + data.versions.length + ". " +
     (data.import_conflict ? "Конфлікт схвалених версій: імпорт заблоковано. " : "") +
@@ -425,6 +429,51 @@ async function loadTranslations() {
   });
   renderTranslation();
 }
+function renderImportReport(report) {
+  const target = t("import-report");
+  target.hidden = false;
+  target.replaceChildren();
+  target.appendChild(make("h3", "", "Підсумок імпорту · Spoken Ukrainian"));
+  const table = make("table", "import-report-table");
+  const header = make("thead");
+  const headings = make("tr");
+  ["Джерело", "Кандидатів", "Імпортовано / перекладено", "Із них машинні 1:1"].forEach(title =>
+    headings.appendChild(make("th", "", title)));
+  header.appendChild(headings);
+  table.appendChild(header);
+  const body = make("tbody");
+  report.by_source.forEach(entry => {
+    const row = make("tr");
+    [entry.source, entry.candidate_translations, entry.imported_translations, entry.machine_provisional_imports || 0]
+      .forEach(value => row.appendChild(make("td", "", String(value))));
+    body.appendChild(row);
+  });
+  table.appendChild(body);
+  target.appendChild(table);
+  const totals = [
+    ["Всього записів Spoken", report.total_spoken_records],
+    ["Можливі 1:1 без підтвердження", report.unreviewed_one_to_one_candidates],
+    ["Перевірені відповідності з перекладом", report.verified_source_to_target_bindings],
+    ["Автоматично схвалено за цей запуск", report.auto_approved_now],
+    ["Всього імпортовано", report.imported_total],
+    ["Із них автоматичні 1:1 (ще без human mapping review)", report.machine_one_to_one_imported || 0],
+    ["Залишилося без імпорту", report.untranslated_total],
+    ["Покриття", report.coverage_percent + "%"],
+  ];
+  const summary = make("table", "import-report-table");
+  const summaryBody = make("tbody");
+  totals.forEach(([name, value]) => {
+    const row = make("tr");
+    row.appendChild(make("th", "", String(name)));
+    row.appendChild(make("td", "", String(value)));
+    summaryBody.appendChild(row);
+  });
+  summary.appendChild(summaryBody);
+  target.appendChild(summary);
+  target.appendChild(make("p", "muted",
+    "Імпорт — тільки приватне локальне сховище build/. Машинні 1:1 є попередніми до human mapping review; нічого не записано в Git чи активний аддон."));
+}
+
 async function translationAction(action, payload) {
   if (translations.busy) return;
   translations.busy = true;
@@ -433,9 +482,20 @@ async function translationAction(action, payload) {
     const result = await reviewPost("/api/translations/" + action, payload);
     await loadTranslations();
     if (result.version_id) { t("versions").value = result.version_id; renderTranslation(); }
+    if (result.report) renderImportReport(result.report);
     let message = action === "import"
       ? "Явний inert import: " + result.imported + "; changed=" + result.changed + ". Активації немає."
       : "Збережено локально: " + action + ". Імпорт — окрема дія.";
+    if (action === "refresh") {
+      message = "Збережено кандидатів. Автоматично схвалено 1:1: " +
+        result.auto_approved + ". Збережено лише приватно, імпорт — окрема дія.";
+    }
+    if (action === "auto_import_one_to_one") {
+      message = "Автоімпорт 1:1 завершено. Підтверджених автоапрувів за запуск: " +
+        result.auto_approved + "; попередніх машинних 1:1: " + result.machine_imported +
+        "; імпортовано загалом: " + result.imported +
+        ". Таблиця нижче. Активації у WoW немає.";
+    }
     if (action === "decide") {
       const reviewed = translations.rows.find(row => row.id === payload.identity);
       if (!reviewed || reviewed.status !== payload.decision) {
@@ -454,6 +514,8 @@ async function translationAction(action, payload) {
 t("versions").addEventListener("change", renderTranslation);
 t("refresh").addEventListener("click", () => translationAction("refresh", {}));
 t("import").addEventListener("click", () => translationAction("import", {}));
+t("auto-import").addEventListener("click", () =>
+  translationAction("auto_import_one_to_one", {source: "classicua"}));
 t("edit").addEventListener("click", () => {
   if (translations.selected) translationAction("edit", {identity: translations.selected.id,
     text: t("text").value, reviewer: t("reviewer").value.trim()});
