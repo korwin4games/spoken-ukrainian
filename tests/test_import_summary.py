@@ -1,5 +1,5 @@
 """Synthetic coverage/report regression tests; no real source text is copied."""
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
@@ -170,6 +170,8 @@ class ImportSummaryTests(unittest.TestCase):
             "report": summary, "imported": 2, "auto_approved": 1, "changed": True}
         with tempfile.TemporaryDirectory() as d, patch(
                 "tools.review_ui_server.build_state", return_value=state):
+            for name in ("classicua", "spoken"):
+                (Path(d) / name / ".git").mkdir(parents=True)
             output = StringIO()
             with redirect_stdout(output):
                 code = cli_main(["--classicua", str(Path(d) / "classicua"),
@@ -181,6 +183,50 @@ class ImportSummaryTests(unittest.TestCase):
         self.assertIn("Записів Spoken усього: 10", output.getvalue())
         self.assertIn("Імпортовано: 2", output.getvalue())
         self.assertIn("classicua", output.getvalue())
+
+
+    def test_cli_rejects_example_paths_with_actionable_hint(self):
+        with tempfile.TemporaryDirectory() as d, patch(
+                "tools.review_ui_server.build_state") as state:
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                code = cli_main(["--classicua", str(Path(d) / "missing-classicua"),
+                                 "--spoken", str(Path(d) / "missing-spoken"),
+                                 "--auto-import-one-to-one"])
+            self.assertEqual(code, 1)
+            self.assertIn("classicua_checkout_path_missing", stderr.getvalue())
+            self.assertIn("placeholders", stderr.getvalue())
+            state.assert_not_called()
+
+    def test_cli_explains_missing_spoken_checkout_git_directory(self):
+        with tempfile.TemporaryDirectory() as d, patch(
+                "tools.review_ui_server.build_state") as state:
+            (Path(d) / "classicua" / ".git").mkdir(parents=True)
+            (Path(d) / "spoken").mkdir()
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                code = cli_main(["--classicua", str(Path(d) / "classicua"),
+                                 "--spoken", str(Path(d) / "spoken"),
+                                 "--auto-import-one-to-one"])
+            self.assertEqual(code, 1)
+            self.assertIn("spoken_checkout_root_missing", stderr.getvalue())
+            self.assertIn("Spoken path must be a real Git repository root", stderr.getvalue())
+            state.assert_not_called()
+
+    def test_cli_explains_failed_spoken_git_read(self):
+        with tempfile.TemporaryDirectory() as d, patch(
+                "tools.review_ui_server.build_state",
+                side_effect=ValueError("public_git_read_failed")):
+            for name in ("classicua", "spoken"):
+                (Path(d) / name / ".git").mkdir(parents=True)
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                code = cli_main(["--classicua", str(Path(d) / "classicua"),
+                                 "--spoken", str(Path(d) / "spoken"),
+                                 "--auto-import-one-to-one"])
+            self.assertEqual(code, 1)
+            self.assertIn("public_git_read_failed", stderr.getvalue())
+            self.assertIn("git -C /your/real/spoken-wow rev-parse HEAD", stderr.getvalue())
 
 
 if __name__ == "__main__":
