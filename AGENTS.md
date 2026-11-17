@@ -39,6 +39,13 @@ Read only what the task needs; do not use old planning notes as proof of current
 
 - The historical Places diagnostic `addons/SpokenCommunity_ukrainian-diagnostic` remains unchanged and maintains its source-lock hashes. No Release, CurseForge distribution, or installer modification is authorized.
 
+### Source revision history & conflict policy
+
+- `adapters/source_revision_store.py` and `tools/source_revision_review.py` add immutable provider+revision candidate snapshots and independent source review decisions. **Do not equate source import with approved content, proven Spoken identity, publication rights or active import.**
+- External candidate files under ignored `build/` must be verified against the pinned Spoken original/context before accepting; reject attempted ClassicUA source impersonation and edited English proof fields. Source pin changes require explicit validated lock updates.
+- Manual active selection requires ALL five human attestations and a separate explicit step. Provider priority is advisory, never replaces an existing selection. Retain old source revisions and history; reject same-revision content rewrites. Rejection/defer revokes activation but does not erase history.
+- Local test build can render a selected NPC-scoped Gossip text and an independently Stage 3 mapped Quest override, checking current pinned context and conflicting human reviews before ZIP creation. No public release, unapproved TTS, provider auto-approval or audio changes.
+
 ### SQLite translation persistence
 
 - Executable Quest/Gossip CLIs use a durable local SQLite file outside `build/` by default, configured through `SPOKEN_TRANSLATION_DB` or `XDG_DATA_HOME`. See `docs/SQLITE_TRANSLATION_STORE.md`.

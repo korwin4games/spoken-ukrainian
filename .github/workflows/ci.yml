@@ -176,6 +176,24 @@ jobs:
           print("Private queue only; no model calls or approved imports.")
           PY
 
+      - name: Capture and validate pinned source revision history
+        run: |
+          uv run --locked python tools/source_revision_review.py capture \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE" > build/source-review-capture.json
+          uv run --locked python tools/source_revision_review.py revisions \
+            > build/source-review-revisions.json
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          capture = json.loads(Path("build/source-review-capture.json").read_text(encoding="utf-8"))
+          revisions = json.loads(Path("build/source-review-revisions.json").read_text(encoding="utf-8"))
+          assert capture["provider"] == "classicua"
+          assert capture["records"] > 0
+          assert len(revisions["revisions"]) >= 1
+          print("Audited source revision history captured without activation")
+          PY
+
       - name: Upload metadata-only Gossip coverage report
         uses: actions/upload-artifact@v4
         with:

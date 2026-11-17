@@ -86,7 +86,52 @@ def connection(path):
             );
             CREATE INDEX IF NOT EXISTS idx_translation_memory_original
                 ON translation_memory(domain, english_sha256, review_status);
+            CREATE TABLE IF NOT EXISTS source_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider TEXT NOT NULL CHECK (provider IN
+                    ('classicua', 'another', 'own_translator')),
+                revision TEXT NOT NULL,
+                content_sha256 TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(provider, revision)
+            );
+            CREATE TABLE IF NOT EXISTS source_candidates (
+                id TEXT PRIMARY KEY,
+                snapshot_id INTEGER NOT NULL REFERENCES source_snapshots(id),
+                domain TEXT NOT NULL CHECK (domain IN ('gossip', 'quest')),
+                target_id TEXT NOT NULL,
+                english_sha256 TEXT NOT NULL,
+                context_sha256 TEXT NOT NULL,
+                ukrainian_text TEXT NOT NULL,
+                text_sha256 TEXT NOT NULL,
+                source_ref TEXT NOT NULL,
+                UNIQUE(snapshot_id, domain, target_id, english_sha256, context_sha256)
+            );
+            CREATE INDEX IF NOT EXISTS idx_source_candidates_context
+                ON source_candidates(domain, target_id, english_sha256, context_sha256);
+            CREATE TABLE IF NOT EXISTS source_candidate_decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
+                decision TEXT NOT NULL CHECK (decision IN
+                    ('approved', 'rejected', 'deferred')),
+                reviewer TEXT NOT NULL,
+                checks_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_source_decisions_version
+                ON source_candidate_decisions(candidate_id, id);
+            CREATE TABLE IF NOT EXISTS source_active_selections (
+                domain TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                english_sha256 TEXT NOT NULL,
+                context_sha256 TEXT NOT NULL,
+                candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
+                reviewer TEXT NOT NULL,
+                selected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (domain, target_id, english_sha256, context_sha256)
+            );
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
+            INSERT OR IGNORE INTO schema_migrations(version) VALUES (2);
         """)
         os.chmod(path, 0o600)
         yield db
