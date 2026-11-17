@@ -6,15 +6,15 @@ Source revisions and coverage are recorded in [implementation](STAGE_3_IMPLEMENT
 Required commands:
 
 ```text
-$ python3 tools/version.py check
+$ uv run --locked python tools/version.py check
 0.0.1
 
-$ python3 tools/build.py
+$ uv run --locked python tools/build.py
 Archive: /home/korwin/projects/wow/spoken-ukrainian/dist/SpokenCommunity_ukrainian-diagnostic.zip
 SHA-256: 5a2519858229c9aa004dbef075d1c8c51561e33f09828112504e0558005c8a8e
 Size: 1651 bytes
 
-$ python3 -m unittest discover -s tests -v
+$ uv run --locked python -m unittest discover -s tests -v
 Ran 127 tests in 4.899s
 
 OK
@@ -59,7 +59,7 @@ Existing Stage 1 and Stage 2B Lua tests remain unchanged and pass.
 Additional exact results (exit 0):
 
 ```text
-$ python3 tools/classicua_audit.py --source /tmp/stage3-classicua
+$ uv run --locked python tools/classicua_audit.py --source /tmp/stage3-classicua
 Metadata audit written to /home/korwin/projects/wow/spoken-ukrainian/build/classicua-audit.json
 
 $ sha256sum build/stage3-report.json
@@ -93,15 +93,15 @@ Local verification on 2026-11-16 before committing the P2 fix on
 these local results do not claim remote CI for the unpushed fix.
 
 ```text
-$ python3 tools/version.py check
+$ uv run --locked python tools/version.py check
 0.0.1
 
-$ python3 tools/build.py
+$ uv run --locked python tools/build.py
 Archive: /home/korwin/projects/wow/spoken-ukrainian/dist/SpokenCommunity_ukrainian-diagnostic.zip
 SHA-256: 5a2519858229c9aa004dbef075d1c8c51561e33f09828112504e0558005c8a8e
 Size: 1651 bytes
 
-$ python3 -m unittest discover -s tests -v
+$ uv run --locked python -m unittest discover -s tests -v
 Ran 142 tests in 5.279s
 
 OK
@@ -161,8 +161,8 @@ unsupported versions, incomplete records and formerly accepted unverifiable refs
 Real-source compatibility checks (both commands exited 0):
 
 ```sh
-python3 tools/stage3_report.py --classicua /tmp/stage3-classicua --spoken ../spoken-wow --output build/p2-stage3-first.json
-python3 tools/stage3_report.py --classicua /tmp/stage3-classicua --spoken ../spoken-wow --output build/p2-stage3-second.json
+uv run --locked python tools/stage3_report.py --classicua /tmp/stage3-classicua --spoken ../spoken-wow --output build/p2-stage3-first.json
+uv run --locked python tools/stage3_report.py --classicua /tmp/stage3-classicua --spoken ../spoken-wow --output build/p2-stage3-second.json
 ```
 
 Both metadata files are byte-identical and retain the previous report SHA-256:
