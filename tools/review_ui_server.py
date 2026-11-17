@@ -22,6 +22,7 @@ from adapters.classicua.source import audit_checkout
 from adapters.classicua.evidence import from_audit
 from adapters.mapping import load_reviews
 from adapters.local_review_store import strict_json
+from adapters.import_summary import format_import_table
 from adapters.translation_sources import load_source_policy
 from adapters.review_ui import LocalReviewState, guarded_decisions_path
 from adapters.spoken import PublicSource, build_index
@@ -178,7 +179,8 @@ def create_handler(state, token, port):
                 return
             route = urlsplit(self.path).path
             routes = {"/api/decisions", "/api/mapping/approve", "/api/translations/refresh",
-                      "/api/translations/edit", "/api/translations/decide", "/api/translations/import"}
+                      "/api/translations/edit", "/api/translations/decide", "/api/translations/import",
+                      "/api/translations/auto_import_one_to_one"}
             if route not in routes or "?" in self.path:
                 self._json(404, {"error": "not_found"})
                 return
@@ -208,7 +210,8 @@ def create_handler(state, token, port):
                      "/api/translations/refresh": "translation.refresh",
                      "/api/translations/edit": "translation.edit",
                      "/api/translations/decide": "translation.decision",
-                     "/api/translations/import": "translation.import"}[route]
+                     "/api/translations/import": "translation.import",
+                     "/api/translations/auto_import_one_to_one": "translation.auto_import_one_to_one"}[route]
             self._event(event, "requested")
             try:
                 payload = strict_json(self.rfile.read(length))
@@ -243,12 +246,16 @@ def main(argv=None):
     parser.add_argument("--local-reviews", type=Path, default=ROOT / "build/stage3-ui-reviews.json")
     parser.add_argument("--translations", type=Path, default=ROOT / "build/translation-reviews.json")
     parser.add_argument("--policy", type=Path, default=ROOT / "config/translation_sources.json")
+    parser.add_argument("--auto-import-one-to-one", action="store_true",
+                        help="Explicitly refresh, auto-approve and inert-import unique audited ClassicUA 1:1 bindings; print summary table")
     parser.add_argument("--import-approved", action="store_true",
                         help="Revalidate and explicitly import an inert local snapshot, then exit")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [review-ui] %(message)s", stream=sys.stderr)
     LOGGER.info("startup requested; local-only")
+    if args.auto_import_one_to_one and args.import_approved:
+        parser.error("choose only one import mode")
     if not 1024 <= args.port <= 65535:
         parser.error("--port must be between 1024 and 65535")
     try:
@@ -264,11 +271,20 @@ def main(argv=None):
             raise ValueError("review_storage_conflicts_with_input")
         state = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
                             outputs[1], outputs[2], args.policy)
+        if args.auto_import_one_to_one:
+            LOGGER.info("translation.auto_import_one_to_one requested (CLI)")
+            result = state.translation_action(
+                "auto_import_one_to_one", {"source": "classicua"})
+            LOGGER.info("translation.auto_import_one_to_one succeeded imported=%d auto_approved=%d",
+                        result["imported"], result["auto_approved"])
+            print(format_import_table(result["report"]))
+            return 0
         if args.import_approved:
             LOGGER.info("translation.import requested (CLI)")
             result = state.translation_action("import", {})
             LOGGER.info("translation.import succeeded (CLI) imported=%d changed=%s",
                         result["imported"], result["changed"])
+            print(format_import_table(result["report"]))
             print(json.dumps(result, sort_keys=True))
             return 0
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
