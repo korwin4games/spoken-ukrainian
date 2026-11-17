@@ -11,7 +11,7 @@ ClassicUA і Spoken на точних ревізіях із `sources.lock.json`.
 Із кореня репозиторію:
 
 ```sh
-python3 tools/review_ui_server.py \
+uv run --locked python tools/review_ui_server.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow
 ```
@@ -59,7 +59,7 @@ python3 tools/review_ui_server.py \
 Еквівалентна CLI-процедура явного імпорту без запуску HTTP:
 
 ```sh
-python3 tools/review_ui_server.py \
+uv run --locked python tools/review_ui_server.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --import-approved
@@ -215,9 +215,9 @@ Stage 4A discovery CLI не підключено до журналу approval/im
 Усі committed fixtures — синтетичні. Запуск із кореня (потрібні локальні сокети):
 
 ```sh
-python3 tools/version.py check
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Тести охоплюють незалежні mapping proofs, content attestations, редагування,
