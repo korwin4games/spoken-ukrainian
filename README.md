@@ -37,6 +37,8 @@ uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoke
 
 Unzip the private `dist/Spoken_Ukrainian_Quest_Local_Test.zip` directly into `Interface/AddOns/`. **The native NPC QuestFrame displays Ukrainian text by default, while holding Shift shows the unmodified original and releasing it restores Ukrainian.** ClassicUA is needed only as an offline build-time Git checkout, not an installed game AddOn; if ClassicUA is loaded, its quest UI hooks take precedence. `/spokenuk preview on` remains an optional separate test frame. This is **not** Spoken's native audio-gated captions; imported machine translations remain provisional, not release-approved. Do not distribute this test build. [Exact game test steps and limitations](docs/QUEST_LOCAL_TEST_BUILD.md).
 
+The same **`Spoken_Quests_UA`** local-test addon also translates native NPC **Gossip greetings and player reply options** using exact NPC ID + normalized English hash lookups from pinned ClassicUA. The generated `GossipTranslations.lua` and runtime `GossipFrame.lua` live **inside the Quest addon**, alongside the existing `GossipQuestTitles.lua` for quest titles. Shift temporarily displays the original English. Missing entries remain English; installed ClassicUA takes priority. These are **provisional native UI translations only**, not approved canonical Spoken Gossip IDs, narrator captions or release-ready audio. **No `Spoken_Gossip_UA` addon is installed.**
+
 ## Architecture and translation flow
 
 Spoken Ukrainian prepares Ukrainian content **offline** for the **unmodified Spoken Player**. Discovering a translation does **not** approve its canonical Spoken identity, text quality, content rights or runtime compatibility.

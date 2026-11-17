@@ -7,6 +7,11 @@ or GitHub Release has been published.
 
 ## [Unreleased]
 
+### Native Gossip — integrated Quest local test
+
+- Include pinned ClassicUA exact NPC-ID/English-hash Gossip greeting and player-reply translations in the existing `Spoken_Quests_UA` test addon (separate `GossipTranslations.lua` data and `GossipFrame.lua` runtime). Reuse Shift-to-original and yield to installed ClassicUA; retain English on absent/mismatched identities. No new `Spoken_Gossip_UA` pack, fake audio, Spoken captions, approved canonical Gossip mapping or public release.
+- Update deterministic ZIP/installer contracts, synthetic Lua tests, CI archive smoke tests and EN/UK test instructions. Generated translation bodies stay in ignored private `dist/`; original Spoken/ClassicUA and source pins remain unchanged.
+
 ### Local review workflow
 
 - Extend PR #14 with separate Quest Mapping/Translation Review, explicit independently attested Stage 3 mapping approval, local text editing/version history, four-part content approval and deterministic explicit inert import. No real approvals, packs, runtime activation, TTS or source pin changes.
