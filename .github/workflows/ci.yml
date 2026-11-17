@@ -96,6 +96,16 @@ jobs:
               assert "Spoken_Quests_UA/Spoken_Quests_UA.toc" in names
               assert "Spoken_Quests_UA/Translations.lua" in names
               assert "Spoken_Quests_UA/Module.lua" in names
+              assert "Spoken_Quests_UA/GossipQuestTitles.lua" in names
+              corpus = z.read("Spoken_Quests_UA/Translations.lua").decode("utf-8")
+              assert "SpokenUkrainian.GossipQuestTitles = {" in corpus
+              assert "[97279] = \"Загублена зброя\"" in corpus
+              # Pinned ClassicUA+Spoken: exact 97279 accept/progress/complete
+              # were absent solely because Spoken's faction metadata was unknown.
+              spoken_rows = corpus.split("SpokenUkrainian.QuestTranslations = {", 1)[1]
+              record = spoken_rows.split("    [97279] = {", 1)[1].split("    },", 1)[0]
+              assert all(event + " = { text =" in record
+                         for event in ("accept", "progress", "complete"))
               assert not any(name.endswith(".mp3") or "Spoken_Quests/" in name for name in names)
               assert z.testzip() is None
           print("Local Quest test pack: structure valid (not uploaded).")

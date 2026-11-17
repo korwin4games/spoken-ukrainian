@@ -15,3 +15,4 @@
 Translations.lua
 Module.lua
 NativeQuestFrame.lua
+GossipQuestTitles.lua

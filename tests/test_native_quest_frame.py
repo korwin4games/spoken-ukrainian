@@ -68,7 +68,18 @@ function CreateFrame()
 end
 QuestFrame = CreateFrame()
 local function font(name)
-    local object = {content = "", callbacks = {}}
+    local object = {content = "", callbacks = {},
+        fontPath = name == "QuestInfoTitleHeader" or
+                   name == "QuestProgressTitleText" and "MORPHEUS" or "FRIZQT",
+        fontSize = 18, fontFlags = "OUTLINE"}
+    if name == "QuestInfoTitleHeader" or name == "QuestProgressTitleText" then
+        object.fontPath = "MORPHEUS"
+    end
+    function object:GetFont() return self.fontPath, self.fontSize, self.fontFlags end
+    function object:SetFont(path, size, flags)
+        self.fontPath, self.fontSize, self.fontFlags = path, size, flags
+        return true
+    end
     function object:GetText() return self.content end
     function object:SetText(text)
         self.content = text
@@ -115,6 +126,8 @@ title:SetText("English name")
 description:SetText("Hello $N!")
 objectives:SetText("Retrieve an item.")
 assert(title:GetText() == "Вигадана українська назва")
+assert(title.fontPath == "FRIZQT") -- caption font supports і/ї/є/ґ
+assert(title.fontSize == 18)
 assert(description:GetText() == "Вітаю, Гравець!")
 assert(objectives:GetText() == "Збери перший річ.")
 -- Existing title/progress/reward fields outside the current stage untouched.
@@ -123,6 +136,7 @@ reward:SetText("Unrelated reward")
 assert(progress:GetText() == "Unrelated progress")
 assert(reward:GetText() == "Unrelated reward")
 mod(true)
+assert(title.fontPath == "MORPHEUS") -- original decorative font restored
 assert(title:GetText() == "English name")
 assert(description:GetText() == "Hello $N!")
 assert(objectives:GetText() == "Retrieve an item.")
@@ -131,6 +145,7 @@ description:SetText("Hello again from client!")
 assert(description:GetText() == "Hello again from client!")
 mod(false)
 assert(description:GetText() == "Вітаю, Гравець!")
+assert(title.fontPath == "FRIZQT")
 assert(title:GetText() == "Вигадана українська назва")
 -- Many toggles: no hooks stack up; no original contamination.
 for i = 1, 3 do
@@ -158,6 +173,7 @@ assert(reward:GetText() == "Thank you, $N.")
 mod(false)
 -- No data / unmatched QuestID: never substitute text.
 moment("QUEST_FINISHED")
+assert(title.fontPath == "MORPHEUS")
 questID = 77777
 moment("QUEST_DETAIL")
 description:SetText("Unknown quest stays English")

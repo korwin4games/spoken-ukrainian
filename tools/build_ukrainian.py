@@ -25,14 +25,14 @@ from adapters.spoken import PublicSource
 from adapters.classicua.source import GitSource
 from adapters.classicua.lua import Parser, Table
 from tools.review_ui_server import build_state, validate_source_paths, _reason
-from adapters.import_summary import format_import_table
+from adapters.import_summary import format_import_table, unique_one_to_one_hint_pairs
 
 DIST = ROOT / "dist"
 ARCHIVE = DIST / "Spoken_Ukrainian_Quest_Local_Test.zip"
 ADDON_FOLDERS = ("Spoken_Ukrainian", "Spoken_Quests_UA")
 TEMPLATE_FILES = {
     "Spoken_Ukrainian": ("Spoken_Ukrainian.toc", "Core.lua"),
-    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua"),
+    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
 QUEST_SOURCE = re.compile(r"quest:(horde|alliance):([1-9][0-9]*):(accept|progress|complete)\Z")
@@ -190,7 +190,103 @@ def read_classicua_inflections(classicua_path, source_files):
     return result
 
 
-def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
+def local_gossip_titles(state):
+    """Title-only lookup by EXACT questID and faction from pinned ClassicUA.
+
+    This is independent of Spoken narrated Quest accept/progress/complete.
+    It never upgrades a title to a reviewed mapping/Quest narration. Exclude
+    AI-marked titles when the user's explicit import policy opts out.
+    """
+    allow_ai = state.policy.allows_ai_transations("classicua")
+    views, _ = state.dataset.faction_views(include_ai=allow_ai)
+    titles = {}
+    for faction in ("alliance", "horde"):
+        rows = {}
+        for quest_id, record in views[faction].items():
+            if type(quest_id) is not int or quest_id <= 0:
+                continue
+            if record.ai and not allow_ai:
+                continue
+            field = record.fields.get((1,))
+            if not field or type(field.node.value) is not str:
+                continue
+            title = field.node.value.strip()
+            if not title or len(title) > 500:
+                continue
+            # No unpinned third-party source file is trusted for this export.
+            if field.origin.file not in state.source.files:
+                raise ValueError("unverified_classicua_quest_title_source")
+            rows[quest_id] = title
+        titles[faction] = rows
+    return titles
+
+
+def import_reason_for_quest(state, quest_id):
+    """Metadata-only Quest diagnostic, with no source text exposed."""
+    if type(quest_id) is not int or quest_id <= 0:
+        raise ValueError("invalid_diagnostic_quest_id")
+    prefix = "q:" + str(quest_id) + ":"
+    targets = sorted(k for k, target in state.inventory.targets.items()
+                     if target.family == "quest" and k.startswith(prefix))
+    hints = [row for row in state._hints
+             if row["source_id"].startswith("quest:")
+             and row["source_id"].split(":")[2] == str(quest_id)]
+    refs = [row["target_id"] for store in
+            (state.machine_imports.file.data, state.translations.file.data)
+            for row in store.get("imports", [])
+            if row["target_id"].startswith(prefix)]
+    eligible = unique_one_to_one_hint_pairs(
+        state._hints, state.source.units, state.inventory,
+        allow_ai_transations=state.policy.allows_ai_transations("classicua"))
+    source_rows = []
+    for row in hints:
+        source_id = row["source_id"]
+        source_rows.append({
+            "source_event": source_id.split(":")[-1],
+            "faction": source_id.split(":")[1],
+            "candidate_count": len(row["candidates"]),
+            "eligible_strict_one_to_one": any(pair[0] == source_id for pair in eligible),
+            "candidate_contexts": [
+                {"identity": target_id,
+                 "contexts": len(state.inventory.contexts.get(target_id, ())),
+                 "factions": sorted({ctx.get("faction", "?") for ctx in
+                     state.inventory.contexts.get(target_id, ())}),
+                 "verified_english": target_id in state.original_index.original_english}
+                for target_id in row["candidates"] if target_id in state.inventory.targets],
+        })
+    return {"quest_id": quest_id,
+            "spoken_narrated_targets": len(targets),
+            "classicua_candidates": len(hints),
+            "candidate_reasons": sorted({row["reason"] for row in hints}),
+            "source_events": source_rows,
+            "auto_imported_targets": len(set(refs)),
+            "allow_ai_transations": state.policy.allows_ai_transations("classicua")}
+
+
+def unknown_faction_import_counts(state):
+    """Metadata-only counts of CURRENT imported records lacking Spoken faction.
+
+    Unknown is not evidence of either Horde or Alliance. These are private
+    local-test records, never an automatic human mapping approval. Count
+    target IDs (not source texts) after the importer has validated its ledgers.
+    """
+    summary = {"machine_provisional": 0, "human_reviewed": 0}
+    for label, ledger in (
+            ("machine_provisional", state.machine_imports.file.data),
+            ("human_reviewed", state.translations.file.data)):
+        seen = set()
+        for ref in ledger["imports"]:
+            target = ref["target_id"]
+            if target in seen:
+                raise ValueError("duplicate_quest_faction_import_target")
+            seen.add(target)
+            contexts = state.inventory.contexts.get(target, ())
+            if len(contexts) == 1 and contexts[0].get("faction") == "unknown":
+                summary[label] += 1
+    return summary
+
+
+def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles=None):
     if not re.fullmatch(r"[a-f0-9]{40}", pinned_spoken_sha):
         raise ValueError("invalid_spoken_pin")
     lines = [
@@ -213,6 +309,21 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
                 lines.append("            [" + lua_quote(case) + "] = {"
                              + lua_quote(pair[0]) + ", " + lua_quote(pair[1]) + "},")
             lines.append("        },")
+        lines.append("    },")
+    lines.append("}")
+    # Gossip has reliable per-row questID on WoW Forever. Titles are
+    # independently sourced, provisional, and NEVER counted as narration.
+    lines.append("SpokenUkrainian.GossipQuestTitles = {")
+    for faction, rows in sorted((gossip_titles or {}).items()):
+        if faction not in ("alliance", "horde") or type(rows) is not dict:
+            raise ValueError("invalid_gossip_title_faction")
+        lines.append("    [" + lua_quote(faction) + "] = {")
+        for quest_id, title in sorted(rows.items()):
+            if type(quest_id) is not int or quest_id <= 0 or type(title) is not str:
+                raise ValueError("invalid_gossip_title_entry")
+            if len(title) > 500:
+                raise ValueError("oversized_gossip_title")
+            lines.append("        [%d] = %s," % (quest_id, lua_quote(title)))
         lines.append("    },")
     lines.append("}")
     lines.append("SpokenUkrainian.QuestTranslations = {")
@@ -261,7 +372,7 @@ def template_entries(preview_lua):
             "## LoadOnDemand: 1\n",
             "## X-SpokenQuests-DataModule-Version: 1\n",
             "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\n"):
+            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\n"):
         if required not in quest_toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
     # Module must never invent sound files or call AddOn playback.
@@ -271,6 +382,11 @@ def template_entries(preview_lua):
             "MODIFIER_STATE_CHANGED", "hooksecurefunc", "GetQuestID",
             "IsShiftKeyDown", "QuestProgressText")):
         raise ValueError("missing_native_questframe_translation_contract")
+    gossip_code = entries["Spoken_Quests_UA/GossipQuestTitles.lua"].decode("utf-8")
+    if not all(symbol in gossip_code for symbol in (
+            "GossipAvailableQuestButtonMixin", "QuestFrameGreetingPanel",
+            "GetAvailableQuestInfo", "UnitFactionGroup", "IsShiftKeyDown")):
+        raise ValueError("missing_gossip_quest_title_contract")
     if not ('quests:Register("Spoken_Quests_UA"' in module
             and "SoundLengthLookupByFileName = {}" in module
             and "QUEST_DETAIL" in module):
@@ -333,8 +449,11 @@ def build(classicua, spoken):
                         for events in preview.values() for event in events)
     if not preview_count:
         raise ValueError("no_unambiguous_quest_imports_for_local_test_pack")
+    unknown_factions = unknown_faction_import_counts(state)
     forms = read_classicua_inflections(classicua, state.source.files)
-    entries = template_entries(render_quest_lua(preview, state.inventory.revision, forms))
+    titles = local_gossip_titles(state)
+    entries = template_entries(render_quest_lua(
+        preview, state.inventory.revision, forms, titles))
     artifact, digest = write_zip(entries)
     return {
         "artifact": artifact, "sha256": digest,
@@ -344,6 +463,9 @@ def build(classicua, spoken):
         "skipped_ambiguous_preview_variants": ambiguous,
         "machine_provisional": report["machine_one_to_one_imported"],
         "human_reviewed": report["human_reviewed_imported_total"],
+        "title_only_gossip_records": {k: len(v) for k, v in titles.items()},
+        "unknown_faction_imports": unknown_factions,
+        "quest_97279": import_reason_for_quest(state, 97279),
         "report": report,
     }
 
@@ -368,6 +490,11 @@ def main(argv=None):
     print("Skipped ambiguous voice/wording variants:",
           result["skipped_ambiguous_preview_variants"])
     print("Local test ZIP:", result["artifact"])
+    print("Title-only Gossip entries by faction:",
+          result["title_only_gossip_records"])
+    print("Imported records with unverified Spoken faction (machine vs reviewed):",
+          result["unknown_faction_imports"])
+    print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])
     print("SHA-256:", result["sha256"])
     print("NOT a release: no recorded audio and NO replacement of Spoken narrator captions.")
     return 0
