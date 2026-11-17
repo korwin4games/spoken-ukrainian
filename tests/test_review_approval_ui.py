@@ -256,9 +256,23 @@ class ReviewApprovalUITests(unittest.TestCase):
             self.assertTrue(json.load(response)["saved"])
         with urlopen(base + "/api/translations", timeout=5) as response:
             row = json.load(response)["versions"][0]
+        with self.assertRaises(HTTPError) as incomplete:
+            post("/api/translations/decide", json.dumps({"identity": row["id"],
+                 "decision": "approved", "reviewer": "Invented reviewer",
+                 "checks": CHECKS | {"rights": False}}).encode())
+        self.assertEqual(incomplete.exception.code, 400)
+        self.assertEqual(json.load(incomplete.exception.fp)["reason"],
+                         "explicit_content_attestation_required")
+        with urlopen(base + "/api/translations", timeout=5) as response:
+            self.assertEqual(json.load(response)["versions"][0]["status"], "pending")
         with post("/api/translations/decide", json.dumps({"identity": row["id"], "decision": "approved",
                   "reviewer": "Invented reviewer", "checks": CHECKS}).encode()) as response:
             self.assertTrue(json.load(response)["saved"])
+        with urlopen(base + "/api/translations", timeout=5) as response:
+            after_approval = json.load(response)["versions"][0]
+            self.assertEqual(after_approval["status"], "approved")
+            self.assertEqual(after_approval["id"], row["id"])
+            self.assertFalse(after_approval["imported"])
         with post("/api/translations/import", b'{}') as response:
             self.assertEqual(json.load(response)["imported"], 1)
         for route, body, expected in (("/api/translations/import?x=1", b'{}', 404),
