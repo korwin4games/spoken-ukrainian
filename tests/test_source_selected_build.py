@@ -33,6 +33,7 @@ class SourceSelectedBuildTests(unittest.TestCase):
             store.activate(candidate["id"], "human", trusted)
             state = Mock()
             state.inventory.revision = "a" * 40
+            state.source.revision = "b" * 40
             state.inventory.contexts = {}
             state.translation_action.return_value = {"report": {
                 "total_spoken_records": 1, "machine_one_to_one_imported": 1,
