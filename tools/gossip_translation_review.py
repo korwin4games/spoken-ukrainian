@@ -298,10 +298,9 @@ def create_batches(groups, spoken_rev, classicua_rev, directory, batch_size):
     if directory.is_symlink():
         raise ValueError("unsafe_gossip_batch_dir")
     directory.mkdir(parents=True, exist_ok=True)
-    for old in directory.glob("batch-*.json"):
-        if old.is_symlink():
-            raise ValueError("unsafe_gossip_batch_path")
-        old.unlink()
+    # Never delete/recreate earlier batches: they may contain unsent edits.
+    # Existing files are reused only when their pinned source content and
+    # contexts still match exactly; edited Ukrainian text is preserved.
     for offset in range(0, len(groups), batch_size):
         rows = [{"group_id": g["group_id"], "english_sha256": g["english_sha256"],
                  "context_sha256": g["context_sha256"], "english_original": g["english"],
@@ -309,8 +308,25 @@ def create_batches(groups, spoken_rev, classicua_rev, directory, batch_size):
                 for g in groups[offset:offset + batch_size]]
         bundle = {"schema_version": 1, "spoken_revision": spoken_rev,
                   "classicua_revision": classicua_rev, "entries": rows}
-        (directory / f"batch-{offset // batch_size + 1:04d}.json").write_text(
-            json.dumps(bundle, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        path = directory / f"batch-{offset // batch_size + 1:04d}.json"
+        if path.is_symlink():
+            raise ValueError("unsafe_gossip_batch_path")
+        if path.exists():
+            previous = strict_json(path.read_text(encoding="utf-8"))
+            if (type(previous) is not dict or set(previous) != set(bundle)
+                    or any(previous.get(key) != bundle[key] for key in
+                           ("schema_version", "spoken_revision", "classicua_revision"))
+                    or type(previous.get("entries")) is not list
+                    or len(previous["entries"]) != len(rows)):
+                raise ValueError("stale_gossip_batch_move_aside_before_regeneration")
+            for old_row, current in zip(previous["entries"], rows):
+                if (type(old_row) is not dict or set(old_row) != set(current)
+                        or any(old_row.get(key) != current[key] for key in current
+                               if key != "ukrainian_text")):
+                    raise ValueError("stale_gossip_batch_move_aside_before_regeneration")
+            continue
+        path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8")
     return (len(groups) + batch_size - 1) // batch_size
 
 
