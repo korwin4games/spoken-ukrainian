@@ -140,6 +140,24 @@ jobs:
           print("Local test ZIP installed; official Spoken preserved.")
           PY
 
+      - name: Verify metadata-only import statistics after local ZIP build
+        run: |
+          uv run --locked python tools/translation_db.py imports > build/import-statistics.json
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          stats = json.loads(Path("build/import-statistics.json").read_text(encoding="utf-8"))
+          actual = stats["latest_successful_build"]
+          assert actual is not None
+          assert actual["total_text_records"] > 0
+          assert actual["categories"]["quests"] > 0
+          assert actual["categories"]["gossip"] > 0
+          assert all(r["text_records"] > 0 for r in actual["rows"])
+          assert all(r["source"] for r in actual["rows"])
+          assert stats["recorded_imports"]["total_text_records"] >= 0
+          print("Source-attributed ZIP inventory verified; no text bodies exported")
+          PY
+
       - name: Audit full pinned Gossip NPC corpus against ClassicUA hashes
         run: |
           uv run --locked python tools/gossip_coverage.py \

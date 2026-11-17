@@ -45,6 +45,8 @@ The same **`Spoken_Quests_UA`** local-test addon also translates native NPC **Go
 
 **Source revision review (new):** SQLite retains immutable snapshots for each ClassicUA/other-source revision, supports old/new Ukrainian text diffs, flags conflicting providers, and requires an explicit five-check human review **plus separate active selection**. Manual selections stay pinned to the chosen source version and must match the current Spoken original/context. [Source revision workflow and local UI](docs/SOURCE_REVISION_REVIEW.md). This is only a local test build, not a public release.
 
+**Import statistics:** the SQLite-backed local Review UI now has a **Translation Import Statistics** table showing how many Quest moments, Gossip NPC wordings, common Gossip lines and Gossip Quest titles come from each translation source. It distinguishes recorded Review imports, active source selections and the actual contents of the latest successfully built private ZIP. [Definitions and CLI instructions](docs/IMPORT_STATISTICS.md).
+
 ## Architecture and translation flow
 
 Spoken Ukrainian prepares Ukrainian content **offline** for the **unmodified Spoken Player**. Discovering a translation does **not** approve its canonical Spoken identity, text quality, content rights or runtime compatibility.
