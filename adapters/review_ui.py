@@ -19,7 +19,7 @@ from adapters.local_review_store import LocalFile, strict_json
 from adapters.reviewed_bridge import approved_quest_bindings
 from adapters.translation_approvals import ReviewCandidate, TranslationApprovals
 from adapters.translation_sources import (AlternativeSourceStub, ClassicUAProvider,
-    OwnTranslatorMock, SourcePolicy, TranslationRequest, resolve_translation)
+    OwnTranslatorMock, SourcePolicy, TranslationRequest, discover_review_candidates)
 
 
 EVENT_POSITION = {event: position for position, event in QUEST_EVENTS.items()}
@@ -146,12 +146,12 @@ class LocalReviewState:
             # locale in the standalone UI and hence no offline text selection.
             if not self.policy.sources:
                 continue
-            result = resolve_translation(TranslationRequest(source_id, original, target), self.policy, registry)
-            if result.candidate is not None:
+            for candidate in discover_review_candidates(
+                    TranslationRequest(source_id, original, target), self.policy, registry):
                 unit = self.source.units[source_id]
                 observations.append(ReviewCandidate(target, source_id, original,
                     unit.context_sha256, target_context(self.inventory, target),
-                    unit.grammar_sha256, result.candidate))
+                    unit.grammar_sha256, candidate))
         return observations
 
     def translation_page(self):
