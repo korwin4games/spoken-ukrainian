@@ -47,7 +47,10 @@ function CreateFrame()
         end
     end
     function frame:IsShown() return self.visible ~= false end
-    function frame:Show() self.visible = true end
+    function frame:Show()
+        self.visible = true
+        for _, callback in ipairs(self.hooks.OnShow or {}) do callback(self) end
+    end
     function frame:Hide()
         self.visible = false
         for _, callback in ipairs(self.hooks.OnHide or {}) do callback(self) end
@@ -187,6 +190,21 @@ description:SetText("ClassicUA owns text")
 assert(description:GetText() == "ClassicUA owns text")
 mod(true); mod(false)
 assert(description:GetText() == "ClassicUA owns text")
+classicUA = false
+QuestFrame:Hide()
+questID = 42
+-- Some retail-derived clients set native FontStrings before their frame shows.
+moment("QUEST_DETAIL")
+title:SetText("Title written while hidden")
+description:SetText("Description written while hidden")
+assert(description:GetText() == "Description written while hidden")
+QuestFrame:Show()
+assert(title:GetText() == "Вигадана українська назва")
+assert(description:GetText() == "Вітаю, Гравець!")
+mod(true)
+assert(description:GetText() == "Description written while hidden")
+mod(false)
+assert(description:GetText() == "Вітаю, Гравець!")
 '''
         run_lua(lua)
 
