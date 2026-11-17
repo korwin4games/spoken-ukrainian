@@ -39,6 +39,14 @@ Read only what the task needs; do not use old planning notes as proof of current
 
 - The historical Places diagnostic `addons/SpokenCommunity_ukrainian-diagnostic` remains unchanged and maintains its source-lock hashes. No Release, CurseForge distribution, or installer modification is authorized.
 
+### Translation import statistics
+
+- `adapters/import_statistics.py` and `tools/import_build_inventory.py` keep metadata-only counts of **recorded reviewer imports** vs **actual successfully built ZIP contents**. Those are NOT the same measurement. Never count discovered/pending candidates as imported.
+- Attribute each actual ZIP text unit to a source and route: Quest moments counted by Quest ID/event, Gossip NPC/hash pairs, common fallback hashes and Gossip Quest titles separately; future modules must show zero until real code embeds them.
+- SQLite schema v4 stores immutable build snapshots and unit/source records, never English/Ukrainian text bodies. Only save after successful ZIP write; no public publication; validate source evidence as before.
+- GET `/api/import-stats` is localhost-only and returns metadata; the UI should refresh after successful review/import/selection actions without weakening existing CSRF, Host/Origin protections. Keep dynamic text rendered through `textContent`.
+- Documentation: `docs/IMPORT_STATISTICS.md`. CLI: `uv run --locked python tools/translation_db.py imports`.
+
 ### Source conflict review UI
 
 - The existing localhost UI adds a **Source Revision Review** section with authenticated GET `/api/source-reviews` and POST `/api/source-reviews/{decide,activate,clear}`. Keep Host/Origin, CSRF, strict JSON schema, request size and pinned source revalidation. UI displays dynamic strings through `textContent`, not `innerHTML`.

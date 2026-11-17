@@ -231,6 +231,33 @@
         </section>
       </div>
     </section>
+    <section class="review translation-section" aria-label="Translation Import Statistics">
+      <div class="review-heading">
+        <h2>Translation Import Statistics · SQLite</h2>
+        <button type="button" class="secondary" id="import-stats-refresh">Оновити статистику</button>
+      </div>
+      <p class="approval-note">Статистика відділяє імпортовані версії Review від фактично включених у локальний тестовий ZIP. Pending, відхилені та лише запропоновані варіанти не рахуються як імпорт. Source selections показані окремо, доки їх не включено в збірку.</p>
+      <p id="import-stats-status" class="stats" aria-live="polite">Завантаження статистики…</p>
+      <h3>Імпортовано через Review (поточні записи SQLite)</h3>
+      <p id="import-stats-review-totals" class="small"></p>
+      <table class="import-stats-table">
+        <thead><tr><th>Тип</th><th>Джерело</th><th>Спосіб</th><th>Текстів</th><th>Унікальних об'єктів</th></tr></thead>
+        <tbody id="import-stats-reviewed"></tbody>
+      </table>
+      <h3>Явно вибрані версії джерел (ще не обов'язково в ZIP)</h3>
+      <table class="import-stats-table">
+        <thead><tr><th>Тип</th><th>Джерело</th><th>Спосіб</th><th>Текстів</th><th>Унікальних об'єктів</th></tr></thead>
+        <tbody id="import-stats-selected"></tbody>
+      </table>
+      <h3>Фактично включено в останній успішний тестовий ZIP</h3>
+      <p id="import-stats-build-info" class="small"></p>
+      <p id="import-stats-build-totals" class="small"></p>
+      <table class="import-stats-table">
+        <thead><tr><th>Тип</th><th>Джерело</th><th>Спосіб</th><th>Текстів</th><th>Унікальних об'єктів</th></tr></thead>
+        <tbody id="import-stats-build"></tbody>
+      </table>
+    </section>
+
     <section class="review translation-section" aria-label="Source Revision Review">
       <div class="review-heading">
         <h2>Source Revision Review · ClassicUA / Source B</h2>

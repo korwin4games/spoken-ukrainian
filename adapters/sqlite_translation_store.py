@@ -145,7 +145,27 @@ def connection(path):
                 ON source_selection_events(domain, target_id, id);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (2);
+            CREATE TABLE IF NOT EXISTS build_import_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fingerprint TEXT NOT NULL UNIQUE,
+                artifact_sha256 TEXT NOT NULL,
+                spoken_revision TEXT NOT NULL,
+                classicua_revision TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS build_import_units (
+                snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id),
+                domain TEXT NOT NULL,
+                unit_key TEXT NOT NULL,
+                entity_key TEXT NOT NULL,
+                source TEXT NOT NULL,
+                route TEXT NOT NULL,
+                PRIMARY KEY (snapshot_id, domain, unit_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_build_import_source
+                ON build_import_units(snapshot_id, domain, source);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
+            INSERT OR IGNORE INTO schema_migrations(version) VALUES (4);
         """)
         os.chmod(path, 0o600)
         yield db

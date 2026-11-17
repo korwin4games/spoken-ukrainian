@@ -79,7 +79,7 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
 
 
 def create_handler(state, token, port, gossip_reviews=None,
-                   source_reviews=None, source_trusted=None):
+                   source_reviews=None, source_trusted=None, import_db_path=None):
     """Return request handler with strict host/origin and anti-CSRF policy."""
     allowed_host = f"127.0.0.1:{port}"
     allowed_origin = f"http://{allowed_host}"
@@ -199,6 +199,17 @@ def create_handler(state, token, port, gossip_reviews=None,
                 except (ValueError, TypeError, KeyError) as exc:
                     self._event("source_review.list", "failed", _reason(exc))
                     self._json(400, {"error": "invalid_source_review_query"})
+                return
+            if parts.path == "/api/import-stats" and not parts.query:
+                if import_db_path is None:
+                    self._json(404, {"error": "import_statistics_unavailable"})
+                    return
+                try:
+                    from adapters.import_statistics import report
+                    self._json(200, report(import_db_path))
+                except (ValueError, TypeError, KeyError, OSError) as exc:
+                    self._event("imports.stats", "failed", _reason(exc))
+                    self._json(400, {"error": "import_statistics_evidence_invalid"})
                 return
             if parts.path != "/api/queue":
                 self._json(404, {"error": "not_found"})
@@ -466,7 +477,8 @@ def main(argv=None):
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
             create_handler(state, secrets.token_urlsafe(32), args.port,
-                           gossip_reviews, source_reviews, source_trusted))
+                           gossip_reviews, source_reviews, source_trusted,
+                           os.environ.get(DB_ENV) or default_db_path()))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)
