@@ -529,6 +529,15 @@ def build(classicua, spoken):
     forms = read_classicua_inflections(classicua, state.source.files)
     titles = local_gossip_titles(state)
     gossip = local_gossip_texts(state)
+    # Explicitly imported HUMAN-reviewed Gossip translations only. A draft,
+    # machine proposal or merely approved version never enters the ZIP.
+    from tools.gossip_translation_review import load_reviewed_gossip
+    reviewed_gossip = load_reviewed_gossip(state, gossip, spoken)
+    for npc_id, rows in reviewed_gossip.items():
+        for digest, text in rows.items():
+            if digest in gossip["byNpc"].get(npc_id, {}) or digest in gossip["common"]:
+                raise ValueError("gossip_review_may_not_replace_classicua")
+            gossip["byNpc"].setdefault(npc_id, {})[digest] = text
     entries = template_entries(render_quest_lua(
         preview, state.inventory.revision, forms, titles),
         render_gossip_lua(gossip))
@@ -546,6 +555,10 @@ def build(classicua, spoken):
             "npc_ids": len(gossip["byNpc"]),
             "npc_hashes": sum(len(v) for v in gossip["byNpc"].values()),
             "common_hashes": len(gossip["common"]),
+        },
+        "reviewed_gossip_text_records": {
+            "npc_ids": len(reviewed_gossip),
+            "npc_hashes": sum(len(rows) for rows in reviewed_gossip.values()),
         },
         "unknown_faction_imports": unknown_factions,
         "quest_97279": import_reason_for_quest(state, 97279),
@@ -577,6 +590,8 @@ def main(argv=None):
           result["title_only_gossip_records"])
     print("ClassicUA exact-hash NPC Gossip lines (local provisional lookup):",
           result["gossip_text_records"])
+    print("Explicitly imported human-reviewed Gossip (private local ZIP only):",
+          result["reviewed_gossip_text_records"])
     print("Imported records with unverified Spoken faction (machine vs reviewed):",
           result["unknown_faction_imports"])
     print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])

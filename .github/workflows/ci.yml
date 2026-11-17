@@ -156,6 +156,26 @@ jobs:
           print("Gossip coverage audit OK")
           PY
 
+      - name: Validate private deduplicated Gossip translation queue
+        run: |
+          uv run --locked python tools/gossip_translation_review.py queue \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE" --batch-size 40
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          q = json.loads(Path("build/gossip-translation-queue.json").read_text(encoding="utf-8"))
+          s = q["summary"]
+          coverage = json.loads(Path("build/gossip-coverage.json").read_text(encoding="utf-8"))["summary"]
+          assert s["untranslated_npc_wordings_queued"] <= coverage["untranslated_distinct_npc_wordings"]
+          assert s["unique_english_texts_to_translate"] > 0
+          assert s["untranslated_npc_wordings_queued"] > s["unique_english_texts_to_translate"]
+          assert all(g["occurrence_count"] == len(g["contexts"]) for g in q["groups"])
+          assert Path("build/gossip-batches/batch-0001.json").exists()
+          print("Unique Gossip translation candidates:", s["unique_english_texts_to_translate"])
+          print("Private queue only; no model calls or approved imports.")
+          PY
+
       - name: Upload metadata-only Gossip coverage report
         uses: actions/upload-artifact@v4
         with:
