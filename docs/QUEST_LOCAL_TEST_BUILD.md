@@ -157,6 +157,59 @@ then use `/spokenuk preview on`: check the localized title above
 `Quest 4641` and that `{Ім'я}` / `{стать:...}` no longer appear.
 Run both with male and female characters if available.
 
+## Native QuestFrame translation (Issue #19)
+
+**ClassicUA is not needed as an installed AddOn** for translated NPC
+quest windows. The pinned ClassicUA repository remains an **offline build
+input** to `tools/build_ukrainian.py`, which always executes guarded 1:1
+auto-import before generating the private ZIP.
+
+With `Spoken_Ukrainian` + `Spoken_Quests_UA` loaded, the native
+QuestFrame attempts to show Ukrainian translations by default for the
+**exact imported Quest ID and moment**:
+
+| Native NPC field | Generated local data |
+| --- | --- |
+| QuestInfoTitleHeader | Audited ClassicUA title (same imported source Quest ID) |
+| QuestInfoDescriptionText | Imported `accept` body |
+| QuestInfoObjectivesText | Audited objective field (same imported source Quest ID) |
+| QuestProgressTitleText | Audited title |
+| QuestProgressText | Imported `progress` body |
+| QuestInfoRewardText | Imported `complete` body |
+
+**Hold Shift** while the quest window is visible to show the exact
+pre-translation text the game rendered in each field. **Release Shift**
+to restore Ukrainian immediately. The original text is cached per
+widget, Quest ID and event, reset on NPC window closure or quest
+transition. Untranslated, missing or ambiguous fields remain
+unmodified. No global WoW getter replacement or Spoken patching.
+
+The text is expanded with `SpokenUkrainian:ExpandQuestText()`;
+the local test preview `/spokenuk preview on` is still optional
+and separate. For safety when ClassicUA is installed and loaded,
+**ClassicUA owns QuestFrame** and these native-text hooks do not
+replace its strings.
+
+### Game verification after rebuilding
+
+1. Quit WoW and temporarily **disable ClassicUA AddOn**. Keep the
+   pinned ClassicUA Git checkout on your build machine; the build needs it.
+2. Build again and extract the two generated addon folders over your
+   existing folders under `Interface/AddOns/`.
+3. In game, do **not** enable the optional `/spokenuk preview on` yet.
+   Open an imported Quest NPC's acceptance dialog. Check the **native**
+   title, description and objectives are Ukrainian.
+4. Hold left Shift: all *translated* fields return to the English
+   original; release Shift: Ukrainian returns. Try right Shift and
+   repeat several times without reloading.
+5. Check progress and completion with the same hold/release behavior.
+   Visit a second quest and then an untranslated Quest ID: **no
+   text from the previous quest** should appear.
+6. If the native Quest window stays in English even though the private
+   ZIP has the Quest ID/event, record the ID/event and WoW
+   `/console scriptErrors 1` Lua error (if any); actual client
+   acceptance remains unverified until this manual test.
+
 ## Install and test in the real game
 
 1. Quit WoW Forever completely. Keep a backup of your
