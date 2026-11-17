@@ -112,14 +112,19 @@ class ReviewApprovalUITests(unittest.TestCase):
             {"name": "original_english", "save_translations": False},
         ]})
         state = self.unique_one_to_one_state(policy=policy)
-        empty = state.translation_action("auto_import_one_to_one",
-                                         {"source": "classicua"})
-        self.assertEqual(empty["imported"], 0)
-        self.assertEqual(empty["report"]["total_spoken_records"],
+        provisional = state.translation_action("auto_import_one_to_one",
+                                               {"source": "classicua"})
+        self.assertEqual(provisional["imported"], 1)
+        self.assertEqual(provisional["machine_imported"], 1)
+        self.assertEqual(provisional["auto_approved"], 0)
+        self.assertEqual(provisional["report"]["total_spoken_records"],
                          len(self.inventory.targets))
-        self.assertEqual(empty["report"]["untranslated_total"],
-                         len(self.inventory.targets))
-        self.assertEqual(empty["auto_approved"], 0)
+        self.assertEqual(provisional["report"]["machine_one_to_one_imported"], 1)
+        self.assertEqual(provisional["report"]["verified_source_to_target_bindings"], 0)
+        self.assertEqual(provisional["report"]["untranslated_total"],
+                         len(self.inventory.targets) - 1)
+        self.assertEqual(len(state.machine_imports.file.data["versions"]), 1)
+        # A subsequent independently reviewed human mapping takes precedence.
         state.approve_mapping(self.request)
         imported = state.translation_action("auto_import_one_to_one",
                                             {"source": "classicua"})
@@ -134,6 +139,8 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertEqual(report["by_source"][0]["source"], "classicua")
         self.assertEqual(report["by_source"][0]["imported_translations"], 1)
         self.assertEqual(report["verified_source_to_target_bindings"], 1)
+        self.assertEqual(report["machine_one_to_one_imported"], 0)
+        self.assertEqual(state.machine_imports.current_import_targets(), set())
         self.assertEqual(state.translation_action("auto_import_one_to_one",
                            {"source": "classicua"})["auto_approved"], 0)
         self.assertFalse(state.translation_action("auto_import_one_to_one",
