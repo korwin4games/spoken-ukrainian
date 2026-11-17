@@ -10,7 +10,7 @@ from tools import build_ukrainian as builder
 
 class GossipTextsTests(unittest.TestCase):
     def fixture_state(self, allow_ai=True):
-        fixture = Fixture().add(
+        fixture = Fixture(revision="a" * 40).add(
             "gossip", "classic",
             '{["!common"]={[991562674]="Спільна відповідь."},'
             '[42]={[3995595454]="Вітаю, {ім\'я}!",'
