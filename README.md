@@ -94,6 +94,7 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 | Stage 4A — real pinned Spoken inventory → source coverage dry-run | Implemented read-only public English text index and offline coverage CLI for verified originals; **0 real source joins, no Ukrainian packs** ([details](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Stage 4B — Quest mapping review workbench | Pinned source/target evidence queue, reject/defer, explicit Stage 3 two-reviewer approval gate; **0 real reviewed joins** ([procedure](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
 | Stage 4C — reviewed Quest candidate binding foundation | Synthetic-only audited effective ClassicUA field verification; **0 real identity joins or approved texts**, no CLI integration ([contract](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md)) |
+| Stage 4B.2 — local Quest Review UI | Loopback-only Mapping/Translation Review, independent proofs, persistent local versions/content decisions and explicit inert import; **no real approvals or activation** ([guide](docs/STAGE_4B_LOCAL_REVIEW_UI.md)) |
 | Ukrainian text/audio packs, updater and public releases | Not released |
 
 ## Build and test
@@ -145,6 +146,29 @@ Outputs: ignored `build/stage4b-review-queue.json` and a **filterable, spreadshe
 ### Reviewed Quest candidate bridge (Stage 4C foundation)
 
 `adapters/reviewed_bridge.py` adds **synthetic-tested**, offline binding of independently approved Stage 3 Quest identity mappings to exact audited ClassicUA effective fields. It rechecks the stored evidence, original/source fingerprints and configured source priority; a found Ukrainian field is still **pending content review**, not an approved translation. The normal Stage 4A command **does not activate this bridge**, and **no real human-approved joins exist yet**. See [Stage 4C contract](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md).
+
+### Local Quest review UI (Stage 4B.2)
+
+The **local browser UI** separates Mapping Review from Translation Review. Compare audited UA/EN and speaker/voice/faction variants; reject/defer mappings or submit a complete human-supplied Stage 3 `JoinProof` with **two independent reviewers**. Revalidated joins can supply pending translations. Edit into new versions, inspect provenance/history, and explicitly approve text/grammar/AI/rights. **Approval and import are separate actions**; import creates only an inert local snapshot, with no WoW activation. No real approvals are supplied by this PR.
+
+```sh
+python3 tools/review_ui_server.py \
+  --classicua /absolute/path/to/clean-pinned-ClassicUA \
+  --spoken /absolute/path/to/clean-pinned-spoken-wow
+```
+
+Open **http://127.0.0.1:8765/** on the same machine. The server binds only to loopback, makes no internet calls, and keeps private review data in ignored `build/`: metadata in `stage4b-decisions.json` and `stage3-ui-reviews.json`, reviewed text/history/import references in `translation-reviews.json`. Optional provider `store_locally` controls retention. Unchanged bytes/context may reuse approval after audited source updates; changed originals/text/context become stale, and edits are preserved. Existing schema-v2 decisions load unchanged; corrupt/older files require recovery and explicit re-review. See the [UI procedure and recovery guide](docs/STAGE_4B_LOCAL_REVIEW_UI.md) and [approval architecture](docs/TRANSLATION_APPROVALS.md).
+
+Explicit import (same optional paths/policy as your UI session):
+
+```sh
+python3 tools/review_ui_server.py \
+  --classicua /absolute/path/to/clean-pinned-ClassicUA \
+  --spoken /absolute/path/to/clean-pinned-spoken-wow \
+  --import-approved
+```
+
+Verification: `python3 tools/version.py check`, `python3 tools/build.py`, and `python3 -m unittest discover -s tests -v` (including local HTTP sockets).
 
 ### Audit a pinned ClassicUA checkout (Stage 2A)
 
