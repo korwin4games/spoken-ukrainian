@@ -236,6 +236,55 @@ def create_handler(state, token, port):
     return LocalHandler
 
 
+def startup_failure_hint(reason):
+    """Actionable, path-safe CLI diagnostics; never expose Git stderr or bodies."""
+    if reason in ("public_git_read_failed", "public_checkout_root_required"):
+        return (
+            "Spoken source path is not a readable Git checkout root. "
+            "Replace the example --spoken /absolute/path/to/spoken-wow with "
+            "the REAL local repository root (containing .git).\n"
+            "Check: git -C /your/real/spoken-wow rev-parse --show-toplevel\n"
+            "Check: git -C /your/real/spoken-wow rev-parse HEAD\n"
+            "Pinned Spoken HEAD: 3c896874e27ec9e07d51a3578c0b9fa8545c9ac7"
+        )
+    if reason == "public_revision_mismatch":
+        return (
+            "Spoken checkout HEAD differs from the pinned version. "
+            "Use a separate clean checkout at "
+            "3c896874e27ec9e07d51a3578c0b9fa8545c9ac7; "
+            "do not overwrite local uncommitted work."
+        )
+    if reason == "public_checkout_modified":
+        return (
+            "The pinned Spoken checkout contains modified tracked files. "
+            "Prepare a separate clean checkout; do not discard local changes."
+        )
+    if reason in ("classicua_checkout_path_missing", "spoken_checkout_path_missing"):
+        return (
+            "The supplied --classicua/--spoken path does not exist. "
+            "Paths beginning /absolute/path/to/ are placeholders. "
+            "Replace BOTH with actual absolute filesystem paths to Git checkouts."
+        )
+    if reason == "classicua_checkout_root_missing":
+        return ("ClassicUA path must be a real Git repository root (including .git). "
+                "Check: git -C /your/real/ClassicUA rev-parse HEAD; "
+                "pinned ClassicUA HEAD: 1770d208ad853d23d61105cf510d53804770d916")
+    if reason == "spoken_checkout_root_missing":
+        return ("Spoken path must be a real Git repository root (including .git). "
+                "Check: git -C /your/real/spoken-wow rev-parse HEAD")
+    return None
+
+
+def validate_source_paths(classicua, spoken):
+    """Detect sample paths before any opaque Git subprocess error."""
+    for label, candidate in (("classicua", classicua), ("spoken", spoken)):
+        if not candidate.is_dir():
+            raise ValueError(label + "_checkout_path_missing")
+        # .git can be a directory or a file in Git worktrees.
+        if not (candidate / ".git").exists():
+            raise ValueError(label + "_checkout_root_missing")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--classicua", type=Path, required=True)
@@ -259,6 +308,7 @@ def main(argv=None):
     if not 1024 <= args.port <= 65535:
         parser.error("--port must be between 1024 and 65535")
     try:
+        validate_source_paths(args.classicua, args.spoken)
         outputs = [guarded_decisions_path(p, ROOT / "build") for p in
                    (args.decisions, args.local_reviews, args.translations)]
         inputs = [ROOT / "sources.lock.json", args.policy]
@@ -292,7 +342,11 @@ def main(argv=None):
             ("127.0.0.1", args.port),
             create_handler(state, secrets.token_urlsafe(32), args.port))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
-        LOGGER.error("startup failed reason=%s", _reason(exc))
+        reason = _reason(exc)
+        LOGGER.error("startup failed reason=%s", reason)
+        hint = startup_failure_hint(reason)
+        if hint:
+            print("How to fix: " + hint, file=sys.stderr)
         print("review_ui_pinned_sources_or_local_bind_failed", file=sys.stderr)
         return 1
     LOGGER.info("startup succeeded; listening on localhost port %d", args.port)
