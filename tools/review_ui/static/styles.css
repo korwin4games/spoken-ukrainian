@@ -18,3 +18,6 @@ textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);borde
 .approval-note p{margin:9px 0}
 .approval-note input[type="checkbox"]{min-width:0;margin-right:6px}
 #mapping-approve{margin-top:12px}
+
+.approved-mappings{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.approved-item{border:1px solid #9fc6af;background:#e8f4eb;color:#245c3b;border-radius:7px;padding:6px 10px;font-size:12px;font-weight:650}
