@@ -29,6 +29,7 @@ class SourcePolicy:
     store_locally: tuple[tuple[str, bool], ...] = ()
     saved_sources: frozenset[str] = frozenset()
     auto_approve_sources: frozenset[str] = frozenset()
+    allow_ai_sources: frozenset[str] = frozenset()
 
     def __post_init__(self):
         if type(self.sources) is not tuple or any(type(x) is not str or x not in SOURCES for x in self.sources):
@@ -52,6 +53,10 @@ class SourcePolicy:
                 or not self.auto_approve_sources.issubset(self.saved_sources)
                 or not self.auto_approve_sources.issubset({"classicua"})):
             raise ValueError("invalid_auto_approval_policy")
+        if (type(self.allow_ai_sources) is not frozenset
+                or not self.allow_ai_sources.issubset(self.auto_approve_sources)
+                or not self.allow_ai_sources.issubset({"classicua"})):
+            raise ValueError("invalid_ai_translation_policy")
 
     def stores(self, provider):
         """Allow private review-ledger retention, preserving legacy defaults."""
@@ -64,6 +69,10 @@ class SourcePolicy:
     def auto_approves_one_to_one(self, source: str) -> bool:
         """Explicit opt-in for the audited, one-to-one local approval workflow."""
         return source in self.auto_approve_sources
+
+    def allows_ai_transations(self, source: str) -> bool:
+        """User opt-in for provisional machine Quest imports only (not approval)."""
+        return source in self.allow_ai_sources
 
     @classmethod
     def from_mapping(cls, value):
@@ -87,19 +96,22 @@ class SourcePolicy:
         if set(value) != {"schema_version", "sources"}:
             raise ValueError("invalid_translation_source_config_schema")
         required = {"name", "save_translations"}
-        accepted = required | {"auto_approve_one_to_one"}
+        accepted = required | {"auto_approve_one_to_one", "allow_ai_transations"}
         if any(type(item) is not dict or not required <= set(item)
                or set(item) - accepted
                or type(item["name"]) is not str
                or type(item["save_translations"]) is not bool
                or type(item.get("auto_approve_one_to_one", False)) is not bool
+               or type(item.get("allow_ai_transations", False)) is not bool
                for item in items):
             raise ValueError("invalid_translation_source_settings")
         flags = tuple((item["name"], item["save_translations"]) for item in items)
         saved = frozenset(item["name"] for item in items if item["save_translations"])
         automatic = frozenset(item["name"] for item in items
                               if item.get("auto_approve_one_to_one", False))
-        return cls(tuple(item["name"] for item in items), flags, saved, automatic)
+        ai_enabled = frozenset(item["name"] for item in items
+                               if item.get("allow_ai_transations", False))
+        return cls(tuple(item["name"] for item in items), flags, saved, automatic, ai_enabled)
 
 
 def load_source_policy(path):
