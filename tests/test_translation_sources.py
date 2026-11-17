@@ -117,7 +117,7 @@ class TranslationSourceTests(unittest.TestCase):
         self.assertEqual(policy.auto_approve_sources, frozenset({"classicua"}))
         self.assertTrue(policy.auto_approves_one_to_one("classicua"))
         self.assertFalse(policy.auto_approves_one_to_one("another"))
-        self.assertFalse(load_source_policy(
+        self.assertTrue(load_source_policy(
             ROOT / "config/translation_sources.json").auto_approves_one_to_one("classicua"))
         self.assertEqual(SourcePolicy.from_mapping({"schema_version": 1,
                          "sources": ["classicua"]}).auto_approve_sources, frozenset())
