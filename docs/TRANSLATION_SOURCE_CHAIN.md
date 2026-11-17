@@ -13,12 +13,14 @@
 
 The current adapter is [`adapters/translation_sources.py`](../adapters/translation_sources.py), using read-only already-audited ClassicUA effective fields provided by its caller. Single-record and batch resolution both stop at the first real candidate; a mock is skipped, and English fallback is selected only for records still unresolved when reached. Translation candidate field SHA-256 must match the actual in-memory UTF-8 text bytes. [Tests](../tests/test_translation_sources.py) use invented text. It does not download/modify upstream repositories or execute Lua.
 
+**Storage opt-in:** schema v2 supports per-source `save_translations: true/false` with the same provider order and semantics. Historic schema v1 lists remain supported with all storage flags disabled. The enabled setting is **declarative**: the current offline resolver never writes translations. A separate, independently reviewed importer will eventually save only provenance/rights-cleared, canonically mapped content under `translations/ukUA/imported/<provider>/`; no real joins currently qualify. Future ClassicUA revisions require effective-data diff, explicit review and no silent overwrite of our curated translations. Do not enable persistence of English fallback. See [translation storage policy](TRANSLATION_STORAGE_POLICY.md).
+
 ### Configurable priority examples
 
 Default:
 
 ```json
-{"schema_version":1,"sources":["classicua","another","own_translator","original_english"]}
+{"schema_version":2,"sources":[{"name":"classicua","save_translations":true},{"name":"another","save_translations":false},{"name":"own_translator","save_translations":true},{"name":"original_english","save_translations":false}]}
 ```
 
 Own-first:
