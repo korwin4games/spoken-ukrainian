@@ -32,7 +32,7 @@ ARCHIVE = DIST / "Spoken_Ukrainian_Quest_Local_Test.zip"
 ADDON_FOLDERS = ("Spoken_Ukrainian", "Spoken_Quests_UA")
 TEMPLATE_FILES = {
     "Spoken_Ukrainian": ("Spoken_Ukrainian.toc", "Core.lua"),
-    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua"),
+    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
 QUEST_SOURCE = re.compile(r"quest:(horde|alliance):([1-9][0-9]*):(accept|progress|complete)\Z")
@@ -72,7 +72,7 @@ def current_quest_texts(state):
     version_by_id = {v["id"]: v for v in reviewed["versions"]}
     machine_by_id = {v["id"]: v for v in machine["versions"]}
     texts = {}
-    title_candidates = defaultdict(set)
+    supporting_fields = defaultdict(lambda: {"title": set(), "objective": set()})
     source_views = None
     for imports, versions, human in (
             (machine["imports"], machine_by_id, False),
@@ -109,11 +109,12 @@ def current_quest_texts(state):
                 if source_views is None:
                     source_views, _ = state.dataset.faction_views(include_ai=True)
                 record = source_views[source_match.group(1)].get(int(source_match.group(2)))
-                title_leaf = record.fields.get((1,)) if record else None
-                if title_leaf and isinstance(title_leaf.node.value, str):
-                    title = title_leaf.node.value.strip()
-                    if title and len(title) <= 500:
-                        title_candidates[int(source_match.group(2))].add(title)
+                for key, slot, limit in (("title", 1, 500), ("objective", 3, MAX_TEXT)):
+                    leaf = record.fields.get((slot,)) if record else None
+                    if leaf and isinstance(leaf.node.value, str):
+                        value = leaf.node.value.strip()
+                        if value and len(value) <= limit:
+                            supporting_fields[int(source_match.group(2))][key].add(value)
 
     # The preview only has QuestID and event from public WoW functions.
     # It cannot choose between different NPC voice / wording variants;
@@ -133,11 +134,12 @@ def current_quest_texts(state):
             "text": rows[0]["text"],
             "reviewed": all(row["reviewed"] for row in rows),
         }
-    # If different source factions supplied incompatible Quest titles,
-    # omit the title rather than showing an incorrect localized heading.
-    for quest, titles in title_candidates.items():
-        if quest in result and len(titles) == 1:
-            result[quest]["title"] = next(iter(titles))
+    # Conflicting source factions stay ambiguous: omit unsupported fields.
+    for quest, fields in supporting_fields.items():
+        if quest in result:
+            for key, candidates in fields.items():
+                if len(candidates) == 1:
+                    result[quest][key] = next(iter(candidates))
     return result, len(texts), skipped
 
 
@@ -218,8 +220,9 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
         if type(quest) is not int or quest < 1:
             raise ValueError("invalid_quest_id")
         lines.append("    [%d] = {" % quest)
-        if type(events.get("title")) is str and events["title"].strip():
-            lines.append("        title = " + lua_quote(events["title"]) + ",")
+        for field_name in ("title", "objective"):
+            if type(events.get(field_name)) is str and events[field_name].strip():
+                lines.append("        " + field_name + " = " + lua_quote(events[field_name]) + ",")
         for event in ("accept", "progress", "complete"):
             if event in events:
                 row = events[event]
@@ -258,11 +261,16 @@ def template_entries(preview_lua):
             "## LoadOnDemand: 1\n",
             "## X-SpokenQuests-DataModule-Version: 1\n",
             "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nModule.lua\n"):
+            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\n"):
         if required not in quest_toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
     # Module must never invent sound files or call AddOn playback.
     module = entries["Spoken_Quests_UA/Module.lua"].decode("utf-8")
+    frame_code = entries["Spoken_Quests_UA/NativeQuestFrame.lua"].decode("utf-8")
+    if not all(symbol in frame_code for symbol in (
+            "MODIFIER_STATE_CHANGED", "hooksecurefunc", "GetQuestID",
+            "IsShiftKeyDown", "QuestProgressText")):
+        raise ValueError("missing_native_questframe_translation_contract")
     if not ('quests:Register("Spoken_Quests_UA"' in module
             and "SoundLengthLookupByFileName = {}" in module
             and "QUEST_DETAIL" in module):
