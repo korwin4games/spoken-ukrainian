@@ -71,6 +71,29 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertNotIn("invented wording", mapping_disk)
         self.assertNotIn("Вигаданий переклад.", mapping_disk)
 
+    def test_auto_approval_requires_reviewed_identity_and_one_to_one(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True},
+            {"name": "original_english", "save_translations": False},
+        ]})
+        state = self.new_state(policy=policy)
+        # Quest ID/title intersections alone cannot approve anything.
+        self.assertEqual(state.translation_action("refresh", {})["auto_approved"], 0)
+        self.assertEqual(state.translation_page()["versions"], [])
+        state.approve_mapping(self.request)
+        result = state.translation_action("refresh", {})
+        self.assertEqual(result["auto_approved"], 1)
+        row = state.translation_page()["versions"][0]
+        self.assertEqual(row["status"], "auto_approved_1to1")
+        self.assertEqual(row["decisions"][0]["checks"]["text"], False)
+        self.assertFalse(row["imported"])
+        imported = state.translation_action("import", {})
+        self.assertEqual(imported["imported"], 1)
+        self.assertFalse(imported["activated"])
+        self.assertTrue(state.translation_page()["versions"][0]["imported"])
+        self.assertEqual(state.translation_page()["auto_approve_one_to_one"], ["classicua"])
+
     def test_mapping_requires_independent_reviewers_and_exact_proof(self):
         for change in ({"mapping_reviewer": self.request["proof"]["evidence_reviewer"]},
                        {"proof": self.request["proof"] | {"facts": {}}},
