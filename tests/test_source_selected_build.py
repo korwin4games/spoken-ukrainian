@@ -56,7 +56,8 @@ class SourceSelectedBuildTests(unittest.TestCase):
                 "tools.gossip_translation_review.load_reviewed_gossip", return_value={}), patch(
                 "tools.gossip_coverage.read_pinned_corpus", return_value=source), patch.object(
                 builder, "import_reason_for_quest", return_value={"quest_id": 97279}), patch.object(
-                builder, "write_zip", side_effect=write_zip):
+                builder, "write_zip", side_effect=write_zip), patch(
+                "tools.import_build_inventory.collect_build_rows", return_value=[]):
                 result = builder.build(Path("/unused/classicua"), Path("/unused/spoken"))
             lua = captured["Spoken_Quests_UA/GossipTranslations.lua"].decode("utf-8")
             self.assertIn("Альтернативний переклад", lua)
