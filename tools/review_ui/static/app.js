@@ -103,6 +103,7 @@ function renderDetail() {
     });
     ui.options.replaceChildren();
     ui.facts.replaceChildren();
+    document.getElementById("mapping-context").replaceChildren();
     return;
   }
   setText(ui.sourceId, item.source_id);
@@ -138,6 +139,15 @@ function renderDetail() {
     ui.options.appendChild(button);
   });
   ui.facts.replaceChildren();
+  const contextSelect = document.getElementById("mapping-context");
+  contextSelect.replaceChildren();
+  (option.variants || []).forEach((variant, index) => {
+    const entry = make("option", "", "Контекст #" + (index + 1) +
+      " · NPC " + (variant.npc_id ?? "—") + " · Voice " + (variant.voice ?? "—") +
+      " · Gender " + (variant.player_gender ?? "—"));
+    entry.value = String(index);
+    contextSelect.appendChild(entry);
+  });
   const keys = [
     ["npc_id", "NPC"], ["npc_type", "NPC type"], ["voice", "Voice"],
     ["faction", "Faction"], ["player_gender", "Gender"],
@@ -288,19 +298,53 @@ async function reviewPost(route, payload) {
   if (!response.ok) throw new Error("evidence_or_storage_conflict");
   return response.json();
 }
+function resetMappingAttestations() {
+  document.getElementById("mapping-inspected").checked = false;
+  document.getElementById("mapping-independent").checked = false;
+}
+ui.queue.addEventListener("click", resetMappingAttestations);
+ui.options.addEventListener("click", resetMappingAttestations);
+document.getElementById("mapping-context").addEventListener("change", resetMappingAttestations);
 document.getElementById("mapping-approve").addEventListener("click", async function() {
   try {
-    const request = JSON.parse(document.getElementById("mapping-proof").value);
     const item = selectCurrent(), option = selectedOption();
-    if (!item || !option || request.source_id !== item.source_id || request.target_id !== option.target_id) {
-      throw new Error("selected_pair_required");
+    const evidenceReviewer = document.getElementById("mapping-evidence-reviewer").value.trim();
+    const mappingReviewer = document.getElementById("mapping-reviewer").value.trim();
+    const inspected = document.getElementById("mapping-inspected").checked;
+    const independent = document.getElementById("mapping-independent").checked;
+    const contextIndex = Number(document.getElementById("mapping-context").value);
+    const facts = option?.variants?.[contextIndex];
+    const required = ["npc_id", "npc_type", "voice", "faction",
+      "player_gender", "wording_sha256", "source", "quest_id"];
+    if (!item || !option || !option.english_verified || !facts ||
+        !required.every(key => Object.hasOwn(facts, key)) ||
+        !evidenceReviewer || !mappingReviewer ||
+        evidenceReviewer === mappingReviewer || !inspected || !independent) {
+      throw new Error("independent_inspection_required");
     }
+    const request = {
+      schema_version: 1, source_id: item.source_id, target_id: option.target_id,
+      mapping_reviewer: mappingReviewer,
+      proof: {
+        source_context_sha256: item.source_context_sha256,
+        target_context_sha256: option.target_context_sha256,
+        facts: Object.fromEntries(required.map(key => [key, facts[key]])),
+        source_reference: item.source_reference,
+        source_blob_sha256: item.source_blob_sha256,
+        target_reference: option.target_reference,
+        target_blob_sha256: option.target_blob_sha256,
+        evidence_reviewer: evidenceReviewer,
+        greeting: false,
+      },
+    };
+    if (!window.confirm("Підтвердити, що два незалежні реальні reviewer перевірили цю точну пару?")) return;
     await reviewPost("/api/mapping/approve", request);
+    resetMappingAttestations();
     await loadPage();
     setText(ui.feedback, "Mapping схвалено через Stage 3. Переклад ще не схвалено.");
     await loadTranslations();
   } catch (_) {
-    setText(ui.feedback, "Mapping не збережено. Перевірте повний JoinProof, незалежність reviewer, пару та докази.");
+    setText(ui.feedback, "Mapping не схвалено. Перевірте джерела, повний контекст та двох незалежних reviewer.");
   }
 });
 const translations = {rows: [], selected: null, busy: false};
