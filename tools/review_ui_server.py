@@ -344,6 +344,7 @@ def main(argv=None):
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)
+        print("review_ui_startup_error: " + reason, file=sys.stderr)
         hint = startup_failure_hint(reason)
         if hint:
             print("How to fix: " + hint, file=sys.stderr)
