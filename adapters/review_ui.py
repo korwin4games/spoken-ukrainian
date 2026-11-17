@@ -234,6 +234,13 @@ class LocalReviewState:
                 "source_revision": self.source.revision,
                 "spoken_revision": self.inventory.revision,
                 "items": items,
+                "approved_mappings": [
+                    {"source_id": review.decision.source_id,
+                     "target_id": review.decision.target_id,
+                     "mapping_status": "approved"}
+                    for review in self.reviews
+                    if review.decision.source_id.startswith("quest:" + faction + ":")
+                ],
             }
 
     def decide(self, source_id, target_id, decision, reason, reviewer):
