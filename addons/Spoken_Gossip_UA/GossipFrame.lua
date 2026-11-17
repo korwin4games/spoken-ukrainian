@@ -91,7 +91,7 @@ local function Refresh(widget, snapshot)
     end
 end
 
-local function Capture(widget, english, owner, kind, prefix, tail)
+local function Capture(widget, english, owner, kind)
     if not widget or type(widget.SetText) ~= "function"
             or type(english) ~= "string" or english == "" then return end
     snapshots[widget] = nil
@@ -126,9 +126,7 @@ end
 
 local function OnReplySetup(row, info)
     if type(info) ~= "table" or type(info.name) ~= "string" or not row then return end
-    OnNPCText(row, info.name, row)
-    local snap = snapshots[row]
-    if snap then snap.kind = "reply" end
+    Capture(row, info.name, row, "reply")
 end
 
 local function HookGreetingText()
