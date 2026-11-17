@@ -52,16 +52,62 @@ class TranslationSourceTests(unittest.TestCase):
     def test_config_default_and_examples(self):
         actual = load_source_policy(ROOT / "config/translation_sources.json")
         self.assertEqual(actual.sources, ("classicua", "another", "own_translator", "original_english"))
+        self.assertEqual(actual.saved_sources, frozenset({"classicua", "own_translator"}))
+        self.assertTrue(actual.should_save("classicua"))
+        self.assertTrue(actual.should_save("own_translator"))
+        self.assertFalse(actual.should_save("another"))
+        self.assertFalse(actual.should_save("original_english"))
         self.assertEqual(load_source_policy(ROOT / "config/examples/english-only.json").sources,
                          ("original_english",))
         self.assertEqual(load_source_policy(ROOT / "config/examples/client-language.json").sources, ())
         self.assertEqual(SourcePolicy.from_mapping({}).sources, ())
+        self.assertEqual(SourcePolicy.from_mapping({}).saved_sources, frozenset())
+        self.assertEqual(SourcePolicy.from_mapping({
+            "schema_version": 1, "sources": ["classicua"]
+        }).saved_sources, frozenset())
+        self.assertEqual(SourcePolicy.from_mapping({
+            "schema_version": 2, "sources": []
+        }).sources, ())
+
+    def test_v2_save_flag_validation_and_legacy_backwards_compatibility(self):
+        p = SourcePolicy.from_mapping({
+            "schema_version": 2,
+            "sources": [
+                {"name": "classicua", "save_translations": True},
+                {"name": "another", "save_translations": False},
+            ],
+        })
+        self.assertEqual(p.sources, ("classicua", "another"))
+        self.assertEqual(p.saved_sources, frozenset({"classicua"}))
+        self.assertEqual(SourcePolicy(("classicua",)).saved_sources, frozenset())
+        bad_settings = [
+            {"name": "classicua"},
+            {"name": "classicua", "save_translations": "true"},
+            {"name": "classicua", "save_translations": 1},
+            {"name": "classicua", "save_translations": False, "extra": 1},
+            "classicua",
+            {"name": "original_english", "save_translations": True},
+        ]
+        for value in bad_settings:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                SourcePolicy.from_mapping({"schema_version": 2, "sources": [value]})
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            SourcePolicy.from_mapping({
+                "schema_version": 2, "sources": [
+                    {"name": "classicua", "save_translations": True},
+                    {"name": "classicua", "save_translations": False},
+                ],
+            })
+        with self.assertRaisesRegex(ValueError, "invalid_translation_save_policy"):
+            SourcePolicy(("classicua",), frozenset({"another"}))
+        with self.assertRaisesRegex(ValueError, "invalid_translation_save_policy"):
+            SourcePolicy(("original_english",), frozenset({"original_english"}))
 
     def test_config_bad_duplicate_unknown_version_and_shape(self):
         invalid = [
             {"schema_version": 1, "sources": ["classicua", "classicua"]},
             {"schema_version": 1, "sources": ["invalid"]},
-            {"schema_version": 2, "sources": []},
+            {"schema_version": 3, "sources": []},
             {"schema_version": True, "sources": []},
             {"schema_version": 1, "sources": "classicua"},
             {"schema_version": 1, "sources": [False]},
@@ -82,6 +128,8 @@ class TranslationSourceTests(unittest.TestCase):
 
     def test_batch_sources_only_receive_remaining_records(self):
         report = self.run_batch(["classicua", "another", "own_translator", "original_english"])
+        # Lookup remains read-only even with per-source opt-in settings.
+        self.assertFalse(hasattr(report, "saved_translations"))
         self.assertEqual(len(self.classic.calls), 4)
         self.assertEqual(len(self.another.calls), 2)
         self.assertEqual(len(self.mock.calls), 2)
