@@ -36,6 +36,7 @@ class BuildUkrainianTests(unittest.TestCase):
             "Spoken_Ukrainian/Core.lua",
             "Spoken_Quests_UA/Spoken_Quests_UA.toc",
             "Spoken_Quests_UA/Module.lua",
+            "Spoken_Quests_UA/NativeQuestFrame.lua",
             "Spoken_Quests_UA/Translations.lua",
         })
         self.assertIn(b"Spoken_Ukrainian, ", entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"]
