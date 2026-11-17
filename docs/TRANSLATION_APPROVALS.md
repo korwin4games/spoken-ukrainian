@@ -81,9 +81,12 @@ This local filesystem locking implementation targets Linux/POSIX (no new package
 
 ## Sources, updates and comparison
 
-The configured ordered allow-list remains authoritative. Quest discovery uses
-`resolve_translation`: first real candidate wins, mocks do not consume records,
-explicit English terminates lookup. `another` is still a stub; `own_translator`
+The configured ordered allow-list remains authoritative. Quest review discovery uses
+`discover_review_candidates`: every real provider candidate up to the explicit
+English boundary is visible for independent approval; mocks do not count.
+The runtime-oriented `resolve_translation` still stops at the first candidate.
+This split is essential: an unapproved higher-priority version must never hide
+an eligible approved lower-priority version. `another` is still a stub; `own_translator`
 is still mock-only. Empty policy invokes no providers. The standalone UI cannot
 read WoW's client locale, so empty policy offers no offline translation candidates
 and does not invent English fallback or localized text.
@@ -112,6 +115,8 @@ A pending higher-priority candidate cannot replace a current approved lower one.
 Equivalent content from another provider can reuse approval only with the same
 canonical/source binding, verified original, exact translated bytes, base field,
 rights state, grammar and identity contexts; every provenance is retained.
+The UI's end-to-end synthetic test verifies that a pending higher-priority
+ClassicUA candidate does not conceal an approved lower-priority candidate.
 Tests of a second real provider use synthetic data: the running Quest UI currently
 has only the ClassicUA real provider and preserves its existing source resolver.
 There is no automatic retry of rejected discoveries through lower providers.
