@@ -78,7 +78,7 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
     return state
 
 
-def create_handler(state, token, port):
+def create_handler(state, token, port, gossip_reviews=None):
     """Return request handler with strict host/origin and anti-CSRF policy."""
     allowed_host = f"127.0.0.1:{port}"
     allowed_origin = f"http://{allowed_host}"
@@ -151,6 +151,25 @@ def create_handler(state, token, port):
                     self._event("translation.list", "failed", _reason(exc))
                     self._json(400, {"error": "translation_evidence_revalidation_failed"})
                 return
+            if parts.path == "/api/gossip":
+                if gossip_reviews is None:
+                    self._json(404, {"error": "gossip_review_unavailable"})
+                    return
+                try:
+                    params = parse_qs(parts.query, keep_blank_values=True)
+                    if (set(params) - {"offset", "limit"}
+                            or any(len(values) != 1 for values in params.values())):
+                        raise ValueError("invalid_gossip_review_query")
+                    offset_str = params.get("offset", ["0"])[0]
+                    limit_str = params.get("limit", ["12"])[0]
+                    if (not offset_str.isascii() or not offset_str.isdecimal()
+                            or not limit_str.isascii() or not limit_str.isdecimal()):
+                        raise ValueError("invalid_gossip_review_query")
+                    self._json(200, gossip_reviews.page(int(offset_str), int(limit_str)))
+                except (ValueError, TypeError, KeyError) as exc:
+                    self._event("gossip.list", "failed", _reason(exc))
+                    self._json(400, {"error": "invalid_gossip_review_query"})
+                return
             if parts.path != "/api/queue":
                 self._json(404, {"error": "not_found"})
                 return
@@ -180,7 +199,8 @@ def create_handler(state, token, port):
             route = urlsplit(self.path).path
             routes = {"/api/decisions", "/api/mapping/approve", "/api/translations/refresh",
                       "/api/translations/edit", "/api/translations/decide", "/api/translations/import",
-                      "/api/translations/auto_import_one_to_one"}
+                      "/api/translations/auto_import_one_to_one",
+                      "/api/gossip/propose", "/api/gossip/decide", "/api/gossip/import"}
             if route not in routes or "?" in self.path:
                 self._json(404, {"error": "not_found"})
                 return
@@ -211,7 +231,10 @@ def create_handler(state, token, port):
                      "/api/translations/edit": "translation.edit",
                      "/api/translations/decide": "translation.decision",
                      "/api/translations/import": "translation.import",
-                     "/api/translations/auto_import_one_to_one": "translation.auto_import_one_to_one"}[route]
+                     "/api/translations/auto_import_one_to_one": "translation.auto_import_one_to_one",
+                     "/api/gossip/propose": "gossip.propose",
+                     "/api/gossip/decide": "gossip.decision",
+                     "/api/gossip/import": "gossip.import"}[route]
             self._event(event, "requested")
             try:
                 payload = strict_json(self.rfile.read(length))
@@ -223,6 +246,35 @@ def create_handler(state, token, port):
                     result = state.decide(**payload)
                 elif route == "/api/mapping/approve":
                     result = state.approve_mapping(payload)
+                elif route.startswith("/api/gossip/"):
+                    if gossip_reviews is None:
+                        raise ValueError("gossip_review_unavailable")
+                    # Re-audit current pinned inputs before every mutating action.
+                    state.revalidate_inputs()
+                    if route == "/api/gossip/propose":
+                        if set(payload) != {"group_id", "english_sha256",
+                                            "context_sha256", "ukrainian_text", "provider"}:
+                            raise ValueError("invalid_gossip_proposal_request")
+                        from tools.gossip_translation_review import GossipReviews
+                        proposal = {key: payload[key] for key in
+                                    ("group_id", "english_sha256",
+                                     "context_sha256", "ukrainian_text")}
+                        added = gossip_reviews.propose([proposal], payload["provider"])
+                        result = {"added": added,
+                                  "version_id": gossip_reviews.file.data["versions"][-1]["id"],
+                                  "activated": False}
+                    elif route == "/api/gossip/decide":
+                        if set(payload) != {"version_id", "decision", "reviewer", "checks"}:
+                            raise ValueError("invalid_gossip_decision_request")
+                        result = {"status": gossip_reviews.decide(
+                            payload["version_id"], payload["decision"],
+                            payload["reviewer"], payload["checks"]),
+                            "activated": False}
+                    else:
+                        if payload:
+                            raise ValueError("invalid_gossip_import_request")
+                        result = {"imported": gossip_reviews.import_approved(),
+                                  "activated": False}
                 else:
                     result = state.translation_action(route.rsplit("/", 1)[1], payload)
                 self._event(event, "succeeded")
@@ -337,10 +389,21 @@ def main(argv=None):
             print(format_import_table(result["report"]))
             print(json.dumps(result, sort_keys=True))
             return 0
+        # Gossip has its own exact-hash identity, review ledger and opt-in import
+        # gate; it must never be treated as Quest Stage 3 mapping approval.
+        from tools.gossip_coverage import read_pinned_corpus
+        from tools.build_ukrainian import local_gossip_texts
+        from tools.gossip_translation_review import discover_groups, GossipReviews
+        gossip_groups, _ = discover_groups(
+            read_pinned_corpus(args.spoken, state.inventory.revision),
+            local_gossip_texts(state),
+            state.inventory.revision, state.source.revision)
+        gossip_reviews = GossipReviews(
+            gossip_groups, state.inventory.revision, state.source.revision)
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
-            create_handler(state, secrets.token_urlsafe(32), args.port))
+            create_handler(state, secrets.token_urlsafe(32), args.port, gossip_reviews))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)
@@ -352,7 +415,7 @@ def main(argv=None):
         return 1
     LOGGER.info("startup succeeded; listening on localhost port %d", args.port)
     print(f"Spoken_Quests offline translation review/import UI: http://127.0.0.1:{args.port}/", flush=True)
-    print("Offline-only (not a WoW AddOn): Quest content only; 1:1 machine imports are provisional. No game installation.", flush=True)
+    print("Offline-only (not a WoW AddOn): Quest and Gossip review; Gossip requires explicit human approval and import. No game installation.", flush=True)
     try:
         with server:
             server.serve_forever()

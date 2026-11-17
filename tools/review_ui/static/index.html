@@ -165,6 +165,72 @@
         <button id="translation-deferred" type="button" class="secondary">Defer translation</button>
       </div>
     </section>
+    <section class="review translation-section" aria-label="Gossip Translation Review">
+      <div class="review-heading">
+        <h2>Gossip Translation Review · NPC</h2>
+        <button type="button" class="primary" id="gossip-import">Імпортувати схвалені (локально)</button>
+      </div>
+      <p class="approval-note">Одна повторювана англійська репліка = один кандидат; нижче показані ВСІ її NPC-контексти.
+        Новий переклад завжди зберігається як <strong>pending</strong>, а не approved.
+        Імпорт відбувається лише окремою дією після п'яти ручних підтверджень.
+        Працює лише з точно закріпленими Spoken і ClassicUA; не змінює офіційні аддони чи озвучення.</p>
+      <div class="toolbar" aria-label="Gossip pagination">
+        <div id="gossip-stats" class="stats">Завантаження Gossip…</div>
+        <div class="toolbar-end">
+          <button type="button" class="secondary" id="gossip-prev">← Попередні</button>
+          <span class="small" id="gossip-page"></span>
+          <button type="button" class="secondary" id="gossip-next">Наступні →</button>
+          <button type="button" class="secondary" id="gossip-refresh">Оновити</button>
+        </div>
+      </div>
+      <div class="layout">
+        <aside class="queue" aria-label="Gossip candidates">
+          <div class="panel-heading"><h3>Повторювані репліки першими</h3></div>
+          <div id="gossip-items" class="queue-items" aria-live="polite"></div>
+        </aside>
+        <section class="review" aria-label="Review Gossip translation">
+          <div class="review-heading">
+            <div><span class="eyebrow">КАНДИДАТ GOSSIP</span><h3 id="gossip-group">—</h3></div>
+            <span id="gossip-status" class="status">Pending</span>
+          </div>
+          <div class="comparison">
+            <article class="language-card">
+              <div class="language-header"><span class="language-code en">EN</span><h4>Spoken · оригінал</h4></div>
+              <pre id="gossip-english" class="story-text">Оберіть репліку</pre>
+            </article>
+            <article class="language-card">
+              <div class="language-header"><span class="language-code">UA</span><h4>Пропозиція перекладу</h4></div>
+              <textarea id="gossip-ukrainian" rows="7" maxlength="60000" placeholder="Введіть український переклад"></textarea>
+              <div class="actions"><button type="button" id="gossip-propose" class="secondary">Зберегти як нову pending-версію</button></div>
+            </article>
+          </div>
+          <div class="option-panel">
+            <h4>Усі NPC-контексти для перевірки</h4>
+            <p class="small">Перевірте, що цей переклад однаково підходить КОЖНОМУ NPC нижче.</p>
+            <pre id="gossip-contexts" class="gossip-contexts"></pre>
+          </div>
+          <div class="decision-panel">
+            <label for="gossip-versions">Версії й історія (status / imported)</label>
+            <select id="gossip-versions" class="gossip-version-select"></select>
+            <label for="gossip-reviewer">Content reviewer</label>
+            <input id="gossip-reviewer" maxlength="120" autocomplete="off" placeholder="Ідентифікатор рев'ювера">
+            <fieldset class="gossip-checks"><legend>Особисто перевірив(-ла) саме цю версію</legend>
+              <label><input type="checkbox" id="gossip-check-text"> Переклад передає зміст оригіналу</label>
+              <label><input type="checkbox" id="gossip-check-grammar"> Граматика й змінні WoW не пошкоджені</label>
+              <label><input type="checkbox" id="gossip-check-ai"> AI-походження та його обмеження перевірені</label>
+              <label><input type="checkbox" id="gossip-check-rights"> Права й attribution перевірені</label>
+              <label><input type="checkbox" id="gossip-check-all_contexts"> Переклад коректний для ВСІХ NPC-контекстів</label>
+            </fieldset>
+            <div class="actions">
+              <button type="button" id="gossip-approved" class="primary">Approve</button>
+              <button type="button" id="gossip-rejected" class="danger">Reject</button>
+              <button type="button" id="gossip-deferred" class="secondary">Defer</button>
+            </div>
+            <p id="gossip-feedback" class="feedback" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+      </div>
+    </section>
     <footer>Локальні тексти й рішення зберігаються тільки в ігнорованому build/. Не відкривайте цей UI через публічний proxy.</footer>
   </div>
 </body>

@@ -341,9 +341,19 @@ class ReviewApprovalUITests(unittest.TestCase):
             {"Content-Type": "application/json", "Origin": base, "X-Review-Token": "token", "Transfer-Encoding": "chunked"},
             {"Content-Type": "application/json", "Origin": base, "X-Review-Token": "token", "Host": "evil.example"},
         ):
-            with self.assertRaises(HTTPError) as error:
+            try:
                 post("/api/translations/import", b'{}', headers)
-            self.assertIn(error.exception.code, (400, 403))
+            except HTTPError as error:
+                self.assertIn(error.code, (400, 403))
+            except OSError as error:
+                # Early rejection of a chunked request can close the socket
+                # before urllib finishes sending its body (BrokenPipeError).
+                # This is a safe fail-closed behavior, not server acceptance.
+                if headers.get("Transfer-Encoding") != "chunked":
+                    raise
+                self.assertIn("Broken pipe", str(error))
+            else:
+                self.fail("invalid HTTP headers were accepted")
         for body in (b'{}', b'{"schema_version":1,"schema_version":1}',
                      json.dumps(self.request | {"proof": {}}).encode()):
             with self.assertRaises(HTTPError) as error:

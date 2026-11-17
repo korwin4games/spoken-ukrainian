@@ -81,7 +81,7 @@ jobs:
       - name: Run tests
         run: uv run --locked python -m unittest discover -s tests -v
 
-      - name: Build local-test Spoken Ukrainian Quest pack (mandatory 1:1 auto-import)
+      - name: Build local-test Spoken Ukrainian Quest module including Gossip (mandatory 1:1 auto-import)
         run: |
           uv run --locked python tools/build_ukrainian.py \
             --classicua "$CLASSICUA_SOURCE" \
@@ -97,6 +97,10 @@ jobs:
               assert "Spoken_Quests_UA/Translations.lua" in names
               assert "Spoken_Quests_UA/Module.lua" in names
               assert "Spoken_Quests_UA/GossipQuestTitles.lua" in names
+              assert "Spoken_Quests_UA/GossipFrame.lua" in names
+              assert "Spoken_Quests_UA/GossipTranslations.lua" in names
+              assert not any(name.startswith("Spoken_Gossip_UA/") for name in names)
+              assert "SpokenUkrainian.GossipTexts = {" in z.read("Spoken_Quests_UA/GossipTranslations.lua").decode("utf-8")
               corpus = z.read("Spoken_Quests_UA/Translations.lua").decode("utf-8")
               assert "SpokenUkrainian.GossipQuestTitles = {" in corpus
               assert "[97279] = \"Загублена зброя\"" in corpus
@@ -127,8 +131,60 @@ jobs:
           assert (base / "Spoken_Ukrainian/Spoken_Ukrainian.toc").is_file()
           assert (base / "Spoken_Quests_UA/Translations.lua").is_file()
           assert (base / "Spoken_Quests_UA/NativeQuestFrame.lua").is_file()
+          assert (base / "Spoken_Quests_UA/GossipFrame.lua").is_file()
+          assert (base / "Spoken_Quests_UA/GossipTranslations.lua").is_file()
+          assert not (base / "Spoken_Gossip_UA").exists()
           print("Local test ZIP installed; official Spoken preserved.")
           PY
+
+      - name: Audit full pinned Gossip NPC corpus against ClassicUA hashes
+        run: |
+          uv run --locked python tools/gossip_coverage.py \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE"
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("build/gossip-coverage.json").read_text(encoding="utf-8"))
+          s = r["summary"]
+          assert s["total_gossip_npcs"] > 0
+          assert s["total_gossip_npcs"] == s["covered_gossip_npcs"] + s["untranslated_gossip_npcs"]
+          assert s["covered_distinct_npc_wordings"] == (
+              s["wordings_matched_by_npc_hash"] + s["wordings_matched_by_common_hash"])
+          assert s["total_distinct_npc_wordings"] == (
+              s["covered_distinct_npc_wordings"] + s["untranslated_distinct_npc_wordings"])
+          print("Gossip coverage audit OK")
+          PY
+
+      - name: Validate private deduplicated Gossip translation queue
+        run: |
+          uv run --locked python tools/gossip_translation_review.py queue \
+            --classicua "$CLASSICUA_SOURCE" \
+            --spoken "$SPOKEN_SOURCE" --batch-size 40
+          uv run --locked python - <<'PY'
+          import json
+          from pathlib import Path
+          q = json.loads(Path("build/gossip-translation-queue.json").read_text(encoding="utf-8"))
+          s = q["summary"]
+          coverage = json.loads(Path("build/gossip-coverage.json").read_text(encoding="utf-8"))["summary"]
+          assert s["untranslated_npc_wordings_queued"] <= coverage["untranslated_distinct_npc_wordings"]
+          assert s["unique_english_texts_to_translate"] > 0
+          assert s["untranslated_npc_wordings_queued"] > s["unique_english_texts_to_translate"]
+          assert all(g["occurrence_count"] == len(g["contexts"]) for g in q["groups"])
+          assert Path("build/gossip-batches/batch-0001.json").exists()
+          print("Unique Gossip translation candidates:", s["unique_english_texts_to_translate"])
+          print("Private queue only; no model calls or approved imports.")
+          PY
+
+      - name: Upload metadata-only Gossip coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-gossip-coverage
+          path: |
+            spoken-ukrainian/build/gossip-coverage.json
+            spoken-ukrainian/build/gossip-untranslated-npcs.csv
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Validate real pinned Spoken source-coverage dry-run
         run: uv run --locked python tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE"

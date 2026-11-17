@@ -32,7 +32,7 @@ ARCHIVE = DIST / "Spoken_Ukrainian_Quest_Local_Test.zip"
 ADDON_FOLDERS = ("Spoken_Ukrainian", "Spoken_Quests_UA")
 TEMPLATE_FILES = {
     "Spoken_Ukrainian": ("Spoken_Ukrainian.toc", "Core.lua"),
-    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"),
+    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua", "GossipFrame.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
 QUEST_SOURCE = re.compile(r"quest:(horde|alliance):([1-9][0-9]*):(accept|progress|complete)\Z")
@@ -286,6 +286,76 @@ def unknown_faction_import_counts(state):
     return summary
 
 
+def local_gossip_texts(state):
+    """Only effective, pinned ClassicUA NPC/hash text entries for local testing.
+
+    ClassicUA gossip hashes identify normalized English display wording.
+    They are not Spoken line IDs and do NOT create approved Spoken mappings.
+    Ignore dynamic "!code" patterns because they cannot be verified by an
+    exact English hash; absence of a match means keep native English.
+    """
+    allow_ai = state.policy.allows_ai_transations("classicua")
+    result = {"byNpc": {}, "common": {}}
+    records = state.dataset.records.get("gossip", {})
+    for key, record in sorted(records.items(), key=lambda item: str(item[0])):
+        if key == "!common":
+            dest = result["common"]
+        elif type(key) is int and key > 0:
+            dest = {}
+        else:
+            continue
+        if record.ai and not allow_ai:
+            continue
+        for slot, leaf in record.fields.items():
+            if (len(slot) != 1 or type(slot[0]) is not int or slot[0] <= 0
+                    or slot[0] >= 4294967291):
+                continue
+            text = leaf.node.value
+            if type(text) is not str or not text.strip() or len(text) > MAX_TEXT:
+                continue
+            if (state.source.files.get(leaf.origin.file) != leaf.origin.sha256
+                    or leaf.origin.revision != state.source.revision):
+                raise ValueError("unverified_classicua_gossip_source")
+            digest = slot[0]
+            if digest in dest and dest[digest] != text:
+                raise ValueError("conflicting_classicua_gossip_hash")
+            dest[digest] = text
+        if type(key) is int and dest:
+            result["byNpc"][key] = dest
+    return result
+
+
+def render_gossip_lua(gossip):
+    """UTF-8 Lua data table, packed into private ignored ZIP only."""
+    if type(gossip) is not dict or set(gossip) != {"byNpc", "common"}:
+        raise ValueError("invalid_gossip_lookup")
+    lines = [
+        "-- GENERATED local test from pinned ClassicUA Gossip hash translations.",
+        "-- Not an approved Spoken Gossip text mapping; no audio files included.",
+        "SpokenUkrainian = SpokenUkrainian or {}",
+        "SpokenUkrainian.GossipTexts = {",
+        "    byNpc = {",
+    ]
+    for npcID, rows in sorted(gossip["byNpc"].items()):
+        if type(npcID) is not int or npcID <= 0 or type(rows) is not dict:
+            raise ValueError("invalid_gossip_npc_id")
+        lines.append("        [%d] = {" % npcID)
+        for digest, value in sorted(rows.items()):
+            if type(digest) is not int or not 0 < digest < 4294967291:
+                raise ValueError("invalid_gossip_text_hash")
+            lines.append("            [%d] = %s," % (digest, lua_quote(value)))
+        lines.append("        },")
+    lines.append("    },")
+    lines.append("    common = {")
+    for digest, value in sorted(gossip["common"].items()):
+        if type(digest) is not int or not 0 < digest < 4294967291:
+            raise ValueError("invalid_gossip_common_hash")
+        lines.append("        [%d] = %s," % (digest, lua_quote(value)))
+    lines.append("    },")
+    lines.append("}")
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
 def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles=None):
     if not re.fullmatch(r"[a-f0-9]{40}", pinned_spoken_sha):
         raise ValueError("invalid_spoken_pin")
@@ -345,7 +415,7 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
-def template_entries(preview_lua):
+def template_entries(preview_lua, gossip_lua=None):
     entries = {}
     for folder in ADDON_FOLDERS:
         directory = ROOT / "addons" / folder
@@ -372,9 +442,13 @@ def template_entries(preview_lua):
             "## LoadOnDemand: 1\n",
             "## X-SpokenQuests-DataModule-Version: 1\n",
             "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\n"):
+            "Translations.lua\nGossipTranslations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\nGossipFrame.lua\n"):
         if required not in quest_toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
+    if not all(symbol in entries["Spoken_Quests_UA/GossipFrame.lua"].decode("utf-8")
+               for symbol in ("GossipGreetingTextMixin", "GossipOptionButtonMixin",
+                              "QuestFrameGreetingPanel_OnShow", "IsShiftKeyDown", "EnglishHash")):
+        raise ValueError("missing_gossip_native_translation_contract")
     # Module must never invent sound files or call AddOn playback.
     module = entries["Spoken_Quests_UA/Module.lua"].decode("utf-8")
     frame_code = entries["Spoken_Quests_UA/NativeQuestFrame.lua"].decode("utf-8")
@@ -392,6 +466,8 @@ def template_entries(preview_lua):
             and "QUEST_DETAIL" in module):
         raise ValueError("missing_quest_pack_registration")
     entries["Spoken_Quests_UA/Translations.lua"] = preview_lua
+    entries["Spoken_Quests_UA/GossipTranslations.lua"] = (
+        render_gossip_lua({"byNpc": {}, "common": {}}) if gossip_lua is None else gossip_lua)
     return entries
 
 
@@ -452,8 +528,19 @@ def build(classicua, spoken):
     unknown_factions = unknown_faction_import_counts(state)
     forms = read_classicua_inflections(classicua, state.source.files)
     titles = local_gossip_titles(state)
+    gossip = local_gossip_texts(state)
+    # Explicitly imported HUMAN-reviewed Gossip translations only. A draft,
+    # machine proposal or merely approved version never enters the ZIP.
+    from tools.gossip_translation_review import load_reviewed_gossip
+    reviewed_gossip = load_reviewed_gossip(state, gossip, spoken)
+    for npc_id, rows in reviewed_gossip.items():
+        for digest, text in rows.items():
+            if digest in gossip["byNpc"].get(npc_id, {}) or digest in gossip["common"]:
+                raise ValueError("gossip_review_may_not_replace_classicua")
+            gossip["byNpc"].setdefault(npc_id, {})[digest] = text
     entries = template_entries(render_quest_lua(
-        preview, state.inventory.revision, forms, titles))
+        preview, state.inventory.revision, forms, titles),
+        render_gossip_lua(gossip))
     artifact, digest = write_zip(entries)
     return {
         "artifact": artifact, "sha256": digest,
@@ -464,6 +551,15 @@ def build(classicua, spoken):
         "machine_provisional": report["machine_one_to_one_imported"],
         "human_reviewed": report["human_reviewed_imported_total"],
         "title_only_gossip_records": {k: len(v) for k, v in titles.items()},
+        "gossip_text_records": {
+            "npc_ids": len(gossip["byNpc"]),
+            "npc_hashes": sum(len(v) for v in gossip["byNpc"].values()),
+            "common_hashes": len(gossip["common"]),
+        },
+        "reviewed_gossip_text_records": {
+            "npc_ids": len(reviewed_gossip),
+            "npc_hashes": sum(len(rows) for rows in reviewed_gossip.values()),
+        },
         "unknown_faction_imports": unknown_factions,
         "quest_97279": import_reason_for_quest(state, 97279),
         "report": report,
@@ -492,6 +588,10 @@ def main(argv=None):
     print("Local test ZIP:", result["artifact"])
     print("Title-only Gossip entries by faction:",
           result["title_only_gossip_records"])
+    print("ClassicUA exact-hash NPC Gossip lines (local provisional lookup):",
+          result["gossip_text_records"])
+    print("Explicitly imported human-reviewed Gossip (private local ZIP only):",
+          result["reviewed_gossip_text_records"])
     print("Imported records with unverified Spoken faction (machine vs reviewed):",
           result["unknown_faction_imports"])
     print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])

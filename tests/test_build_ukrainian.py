@@ -39,6 +39,8 @@ class BuildUkrainianTests(unittest.TestCase):
             "Spoken_Quests_UA/NativeQuestFrame.lua",
             "Spoken_Quests_UA/GossipQuestTitles.lua",
             "Spoken_Quests_UA/Translations.lua",
+            "Spoken_Quests_UA/GossipFrame.lua",
+            "Spoken_Quests_UA/GossipTranslations.lua",
         })
         self.assertIn(b"Spoken_Ukrainian, ", entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"]
                       .replace(b"Spoken_Ukrainian\n", b"Spoken_Ukrainian, "))
@@ -222,6 +224,7 @@ class BuildUkrainianTests(unittest.TestCase):
         def fake_zip(entries):
             order.append("zip")
             self.assertIn("Spoken_Quests_UA/Translations.lua", entries)
+            self.assertIn("Spoken_Quests_UA/GossipTranslations.lua", entries)
             return Path("dist/test.zip"), "b" * 64
         with patch.object(builder, "validate_source_paths"), patch.object(
                 builder, "build_state", return_value=state), patch.object(
@@ -230,6 +233,8 @@ class BuildUkrainianTests(unittest.TestCase):
                 return_value={"machine_provisional": 0, "human_reviewed": 0}), patch.object(
                 builder, "read_classicua_inflections", return_value={}), patch.object(
                 builder, "local_gossip_titles", return_value={"horde": {}, "alliance": {}}), patch.object(
+                builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {}}), patch(
+                "tools.gossip_translation_review.load_reviewed_gossip", return_value={}), patch.object(
                 builder, "import_reason_for_quest", return_value={"quest_id": 97279}), patch.object(
                 builder, "write_zip", side_effect=fake_zip):
             built = builder.build(Path("/unused/classicua"), Path("/unused/spoken"))

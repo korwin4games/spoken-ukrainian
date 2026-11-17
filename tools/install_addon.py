@@ -21,7 +21,8 @@ DEFAULT_ARCHIVE = ROOT / "dist" / "Spoken_Ukrainian_Quest_Local_Test.zip"
 EXPECTED = {
     "Spoken_Ukrainian": {"Spoken_Ukrainian.toc", "Core.lua"},
     "Spoken_Quests_UA": {
-        "Spoken_Quests_UA.toc", "Translations.lua", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"
+        "Spoken_Quests_UA.toc", "Translations.lua", "GossipTranslations.lua",
+        "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua", "GossipFrame.lua"
     },
 }
 MAX_TOTAL_BYTES = 96 * 1024 * 1024

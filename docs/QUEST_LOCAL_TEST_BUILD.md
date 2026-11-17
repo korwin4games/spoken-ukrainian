@@ -12,8 +12,8 @@ modifying Blizzard's files or global quest getters.
 | AddOn folder (must match TOC) | WoW AddOns title | Purpose |
 | --- | --- | --- |
 | `Spoken_Ukrainian` | **Spoken Ukrainian** | Core namespace and opt-in preview command. Depends on official `Spoken`. |
-| `Spoken_Quests_UA` | **Spoken Ukrainian: Quests** | Official `Spoken_Quests` **data-module** format v1, language `ukUA`, plus local opt-in standalone Quest preview. Depends on official `Spoken_Quests` and our `Spoken_Ukrainian`. |
-| `Spoken_Quests` | Official Spoken Quests | **Unmodified external dependency**, not bundled. Also owns Gossip, which is not translated by the Quest-only importer. |
+| `Spoken_Quests_UA` | **Spoken Ukrainian: Quests** | One addon with native QuestFrame, Gossip quest titles, **NPC Gossip greetings and reply choices**, plus local opt-in standalone Quest preview. Depends on official `Spoken_Quests` and our `Spoken_Ukrainian`. |
+| `Spoken_Quests` | Official Spoken Quests | **Unmodified external dependency**, not bundled. Our native Gossip UI helper does not change Spoken Gossip narration or captions. |
 | `SpokenCommunity_ukrainian-diagnostic` | Existing Places diagnostic | Separate existing addon, preserved unchanged; not part of this ZIP. |
 
 `Spoken_Quests_UA` is **LoadOnDemand**, is discovered by
@@ -232,6 +232,19 @@ Read that report before attributing an absent body to any one cause.
    **Quest 97279 diagnostics** in the build log. Do not infer narrated
    translation coverage from a translated Gossip title.
 
+## Native Gossip NPC text and reply options (local test)
+
+`Spoken_Quests_UA` contains **all** Ukrainian Quest/Gossip helpers: `GossipQuestTitles.lua` translates quest titles by exact Quest ID and faction; `GossipFrame.lua` translates **NPC greeting text** (`GossipGreetingTextMixin`) and **player reply options** (`GossipOptionButtonMixin`) by verified **NPC ID + exact normalized English-text hash**. The generated `GossipTranslations.lua` is written only to the private ignored ZIP, not committed to Git. The pinned ClassicUA effective `gossip` records are read with per-field source-hash checks; heuristic `!code` matches are excluded. Shared `!common` hashes are eligible only in the context of a real NPC. These ClassicUA hashes **are not canonical Spoken Gossip IDs** and confer no Stage 3 approval.
+
+Gossip translation modifies only native, currently displayed text widgets via guarded `hooksecurefunc` hooks; it does not modify Blizzard/Spoken globals, supply audio or translate Spoken's own narrator captions. Hold **Shift** to see the captured English original; release it to restore Ukrainian. Missing source text, absent NPC GUID, a different NPC, missing hash or loaded ClassicUA all fail safely to the game's normal text. No third addon `Spoken_Gossip_UA` is needed.
+
+**Manual in-game checks (pending):**
+
+1. Close WoW, build and install the local test ZIP with pinned sources, then enable the two Ukrainian addons and disable ClassicUA in-game.
+2. Open a known NPC with a pinned ClassicUA Gossip greeting and response entry. Verify Ukrainian NPC speech and the translated reply button; not every NPC/reply is covered. Test an untranslated NPC and option: original English must remain.
+3. Hold Shift while Gossip is open; confirm exact English and original icon/prefix, then release to restore Ukrainian. Test repeated dialogues, switching to another NPC, window close and `/reload` for stale text or missing glyphs.
+4. Repeat with ClassicUA enabled; only ClassicUA should control those native text widgets. Quest accept/progress/complete and Gossip quest-title behavior must remain intact. Save screenshots and Lua errors. **Lua fixtures and CI are not proof of a real WoW Forever acceptance test.**
+
 ## Native QuestFrame translation (Issue #19)
 
 **ClassicUA is not needed as an installed AddOn** for translated NPC
@@ -355,7 +368,11 @@ to inspect the original English text.
      Spoken_Quests_UA/
        Spoken_Quests_UA.toc
        Translations.lua
+       GossipTranslations.lua
        Module.lua
+       NativeQuestFrame.lua
+       GossipQuestTitles.lua
+       GossipFrame.lua
    ```
 
    **No extra nesting** such as `AddOns/Spoken_Ukrainian_Quest_Local_Test/Spoken_Ukrainian/`.
@@ -403,8 +420,7 @@ to inspect the original English text.
   rather than guessing using NPC title/fuzzy text.
 - Two different translations for one QuestID + event remain ambiguous
   and are omitted rather than selecting an arbitrary voice variant.
-- Gossip is **not** included. Places, Readables, Bosses and Compendium UI
-  are separate workstreams.
+- Native **Gossip greetings and reply choices** are included **inside** `Spoken_Quests_UA` for private testing; only exact NPC ID + source-text hashes are translated. Dynamic `!code` cases, missing texts and canonical Spoken Gossip mappings remain unresolved. Places, Readables, Bosses and Compendium UI are separate workstreams.
 - Do not publish or upload the `dist/` ZIP or any generated corpus
   without independently reviewed mapping/content and authorized release
   approval. The historical diagnostic ZIP remains unchanged.
