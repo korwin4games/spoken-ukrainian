@@ -169,6 +169,87 @@ class TranslationApprovalTests(unittest.TestCase):
         for policy in (disabled, SourcePolicy(()), SourcePolicy(("original_english",))):
             self.assertEqual(self.store.import_approved(self.obs, policy)["imported"], 0)
 
+    def auto_policy(self):
+        return SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True},
+            {"name": "original_english", "save_translations": False},
+        ]})
+
+    def test_auto_approve_one_to_one_saves_private_version_not_runtime(self):
+        policy = self.auto_policy()
+        report = self.store.observe(self.obs, policy)
+        self.assertEqual(report, {"auto_approved": 1, "saved": True})
+        row = self.store.file.data["versions"][0]
+        self.assertEqual(row["decisions"], [{
+            "decision": "auto_approved_1to1",
+            "reviewer": "policy:verified_one_to_one",
+            "checks": {"text": False, "grammar": False, "ai": True, "rights": True},
+        }])
+        self.assertEqual(self.store.page(self.obs, policy)["versions"][0]["status"],
+                         "auto_approved_1to1")
+        self.assertEqual(self.store.file.data["imports"], [])
+        self.assertIn("Вигаданий текст.", self.path.read_text(encoding="utf-8"))
+        self.assertEqual(self.store.observe(self.obs, policy)["auto_approved"], 0)
+        result = self.store.import_approved(self.obs, policy)
+        self.assertEqual(result["imported"], 1)
+        self.assertFalse(result["activated"])
+        self.assertTrue(self.store.page(self.obs, policy)["versions"][0]["imported"])
+        # Toggling off auto approval removes eligibility even if the private
+        # ledger remembers the auditable automatic decision.
+        disabled = SourcePolicy(("classicua", "original_english"))
+        self.assertEqual(self.store.import_approved(self.obs, disabled)["imported"], 0)
+        self.assertFalse(self.store.page(self.obs, disabled)["versions"][0]["imported"])
+
+    def test_one_to_one_ambiguity_and_rights_do_not_auto_approve(self):
+        policy = self.auto_policy()
+        another_target = [self.obs[0], replace(self.obs[0], target_id="q:43:accept")]
+        self.assertEqual(self.store.observe(another_target, policy)["auto_approved"], 0)
+        self.assertTrue(all(not r["decisions"] for r in self.store.file.data["versions"]))
+        self.assertEqual(self.store.import_approved(another_target, policy)["imported"], 0)
+        self.assertEqual(self.store.page(another_target, policy)["versions"][0]["status"], "pending")
+        # Another candidate for same target, from a different source identity,
+        # means this is not a one-to-one pair.
+        with tempfile.TemporaryDirectory() as d:
+            store = TranslationApprovals(Path(d) / "build" / "translations.json", Path(d) / "build")
+            same_target = [self.obs[0], replace(self.obs[0], source_id="quest:horde:43:accept")]
+            self.assertEqual(store.observe(same_target, policy)["auto_approved"], 0)
+            self.assertEqual(store.import_approved(same_target, policy)["imported"], 0)
+        # A private provider candidate with rights still pending cannot be
+        # promoted by the automatic pathway.
+        with tempfile.TemporaryDirectory() as d:
+            store = TranslationApprovals(Path(d) / "build" / "translations.json", Path(d) / "build")
+            pending = [replace(self.obs[0], candidate=replace(self.obs[0].candidate,
+                                   rights_status="pending"))]
+            self.assertEqual(store.observe(pending, policy)["auto_approved"], 0)
+            self.assertEqual(store.import_approved(pending, policy)["imported"], 0)
+
+    def test_auto_approval_does_not_override_manual_or_changed_source(self):
+        policy = self.auto_policy()
+        self.store.observe(self.obs, policy)
+        edited = self.store.edit(self.store.file.data["versions"][0]["id"],
+                                 "Власна редакція.", "Invented editor",
+                                 self.obs, policy)
+        self.assertEqual(next(r for r in self.store.file.data["versions"]
+                              if r["id"] == edited)["decisions"], [])
+        changed = [observation("Новий текст від джерела.")]
+        self.assertEqual(self.store.observe(changed, policy)["auto_approved"], 0)
+        states = {r["status"] for r in self.store.page(changed, policy)["versions"]}
+        self.assertEqual(states, {"stale", "pending"})
+        self.assertEqual(self.store.import_approved(changed, policy)["imported"], 0)
+
+    def test_auto_approval_record_cannot_claim_human_checks(self):
+        policy = self.auto_policy()
+        self.store.observe(self.obs, policy)
+        base = deepcopy(self.store.file.data)
+        for change in ({"reviewer": "fake human"},
+                       {"checks": dict.fromkeys(CHECKS, True)},
+                       {"decision": "approved"}):
+            row = deepcopy(base)
+            row["versions"][0]["decisions"][0].update(change)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_ledger(row)
+
     def test_atomic_conflict_and_corrupt_duplicate_unknown_schema_fail_closed(self):
         identity = self.collect()
         other = TranslationApprovals(self.path, self.base)
