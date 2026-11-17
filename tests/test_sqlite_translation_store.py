@@ -51,6 +51,9 @@ class SQLiteStorageTests(unittest.TestCase):
             self.assertEqual(legacy_path.read_bytes(), original)
             restarted = LocalFile(legacy_path, self.build, legacy, self.check_document)
             self.assertEqual(len(restarted.data["versions"]), 2)
+            restarted.save({"schema_version": 1,
+                            "versions": [{"id": "synthetic"}, {"id": "new"}, {"id": "newer"}],
+                            "imports": []})
             self.assertEqual(self.db.stat().st_mode & 0o777, 0o600)
             self.assertEqual(len(list(self.db.parent.glob("*.sqlite3"))), 1)
             # A stale writer must NOT overwrite a later transaction.
