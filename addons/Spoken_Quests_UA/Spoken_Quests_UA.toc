@@ -14,3 +14,4 @@
 
 Translations.lua
 Module.lua
+NativeQuestFrame.lua
