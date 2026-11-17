@@ -10,6 +10,12 @@
 
 Spoken Ukrainian готує український контент **офлайн** для **незміненого Spoken Player**. Знайдений переклад ще **не означає** схвалений canonical ID, якісний текст, право на публікацію або сумісність із грою.
 
+### Нові пріоритети реалізації (листопад 2026)
+
+**Спочатку:** (P0) історії **Places**, (P1) **Books and Notes** (`Spoken_Readables`), (P2) історії **Bosses**, (P3) елементи **інтерфейсу Compendium** (заголовки, вкладки, кнопки, фільтри, пошук і повідомлення), (P4) **Quests/Gossip**. Попередні інструменти перевірки зберігаємо.
+
+Compendium — спільне вікно `Spoken`, **не п'ятий модуль**. Після перекладу контенту Places, Readables і Bosses окремо повернемося до його елементів керування. ClassicUA містить **назви локацій**, але не готові повні оповіді Places. Аддон [UA VoiceOver: Books & Lore](https://www.curseforge.com/wow/addons/ua-voiceover-books-lore) заявляє близько 900 українських історій і понад 1000 озвучених сторінок — це **перспективне, але ще не перевірене джерело**. Див. [roadmap](docs/PRODUCT_PRIORITIES_2026_11.md) та [аудит Places](docs/PLACES_SOURCE_AUDIT.md).
+
 ### Чотири затверджені модулі
 
 | Офіційний модуль | Український контент |
@@ -95,6 +101,7 @@ Spoken Ukrainian готує український контент **офлайн
 | Stage 4B — Workbench перевірки Quest mapping | Черга з перевірених джерел, відхилення/відкладення, Stage 3 JoinProof від двох reviewer; **0 реальних схвалених відповідностей** ([процедура](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
 | Stage 4C — основа перевіреної прив'язки Quest | Лише синтетичні тести перевірки ефективних полів ClassicUA; **0 реальних mapping і схвалених текстів**, без CLI ([контракт](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md)) |
 | Stage 4B.2 — локальний Quest Review UI | Окремі Mapping/Translation Review, незалежні proofs, локальні версії/рішення та явний інертний імпорт; **без реальних схвалень або активації** ([інструкція](docs/STAGE_4B_LOCAL_REVIEW_UI.md)) |
+| **Поточний пріоритет** | **Places → Readables (книги/нотатки) → Bosses → Compendium UI → Quests/Gossip** ([roadmap](docs/PRODUCT_PRIORITIES_2026_11.md)) |
 | Українські текстові й аудіопакети, оновлювач і публічні релізи | Ще не випущено |
 
 ## Збирання та тестування
