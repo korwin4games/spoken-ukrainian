@@ -1,6 +1,5 @@
 """Synthetic coverage/report regression tests; no real source text is copied."""
 from contextlib import redirect_stdout
-from dataclasses import dataclass
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
@@ -9,6 +8,10 @@ from unittest.mock import Mock, patch
 import tempfile
 import unittest
 
+from adapters.auto_one_to_one import MachineOneToOneStore, machine_candidates
+from adapters.mapping import candidates
+from adapters.spoken.text_index import TextIndex
+from test_stage3 import Fixture, synthetic_inventory
 from adapters.import_summary import (
     format_import_table, import_summary, unique_one_to_one_hint_pairs)
 from adapters.translation_approvals import ReviewCandidate, TranslationApprovals
@@ -67,7 +70,8 @@ class ImportSummaryTests(unittest.TestCase):
             self.assertEqual(summary["coverage_percent"], 33.33)
             self.assertEqual(summary["by_source"][0], {
                 "source": "classicua", "candidate_translations": 1,
-                "imported_translations": 1})
+                "imported_translations": 1,
+                "machine_provisional_imports": 0})
             self.assertFalse(summary["saved_to_git"])
             self.assertFalse(summary["activated"])
             table = format_import_table(summary)
@@ -90,6 +94,66 @@ class ImportSummaryTests(unittest.TestCase):
             self.assertEqual(approvals.observe([ob], auto_policy(),
                 one_to_one_pairs=frozenset())["auto_approved"], 0)
             self.assertEqual(approvals.import_approved([ob], auto_policy())["imported"], 0)
+
+    def test_provisional_machine_import_survives_restart_and_blocks_upstream_changes(self):
+        fixture = Fixture().add("quest_horde", "classic",
+                                '{[42]={nil,"Вигаданий переклад."}}')
+        inv = synthetic_inventory()
+        english = TextIndex({"q:42:accept": "invented wording"}, (), {})
+        source = fixture.inventory()
+        hints = candidates(source.units, inv)
+        rows = machine_candidates(fixture.dataset, source, inv, english, hints)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["decision"], "machine_1to1_provisional")
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d) / "build"
+            store = MachineOneToOneStore(base / "machine.json", base)
+            result = store.run(rows)
+            self.assertEqual(result["imported"], 1)
+            self.assertEqual(result["new_machine_1to1"], 1)
+            self.assertEqual(store.run(rows)["changed"], False)
+            self.assertEqual(base.joinpath("machine.json").stat().st_mode & 0o777, 0o600)
+            reopened = MachineOneToOneStore(base / "machine.json", base)
+            self.assertEqual(reopened.current_import_targets(), {"q:42:accept"})
+            human = TranslationApprovals(base / "reviews.json", base)
+            report = import_summary(inv, [], auto_policy(), human, hints,
+                                    source.units, machine_targets=reopened.current_import_targets())
+            self.assertEqual(report["total_spoken_records"], 1)
+            self.assertEqual(report["machine_one_to_one_imported"], 1)
+            self.assertEqual(report["imported_total"], 1)
+            self.assertEqual(report["untranslated_total"], 0)
+            self.assertEqual(report["by_source"][0]["machine_provisional_imports"], 1)
+            # New upstream wording is a pending version, never silently
+            # overwritten or re-approved (existing auto import becomes stale).
+            updated = Fixture().add("quest_horde", "classic",
+                                    '{[42]={nil,"Новий вигаданий переклад."}}')
+            newsource = updated.inventory()
+            newrows = machine_candidates(updated.dataset, newsource, inv, english,
+                                         candidates(newsource.units, inv))
+            changed = reopened.run(newrows)
+            self.assertEqual(changed["imported"], 0)
+            self.assertEqual(len(reopened.file.data["versions"]), 2)
+            self.assertEqual({r["decision"] for r in reopened.file.data["versions"]},
+                             {"machine_1to1_provisional", "pending_update"})
+            self.assertEqual(reopened.current_import_targets(), set())
+
+    def test_machine_import_rejects_shared_faction_and_manual_override(self):
+        f = Fixture().add("quest_both", "classic",
+                          '{[42]={nil,"Вигаданий текст."}}')
+        inv = synthetic_inventory()
+        originals = TextIndex({"q:42:accept": "invented wording"}, (), {})
+        self.assertEqual(machine_candidates(f.dataset, f.inventory(), inv, originals,
+                                            candidates(f.inventory().units, inv)), [])
+        unique = Fixture().add("quest_horde", "classic",
+                               '{[42]={nil,"Вигаданий текст."}}')
+        rows = machine_candidates(unique.dataset, unique.inventory(), inv, originals,
+                                  candidates(unique.inventory().units, inv))
+        self.assertEqual(len(rows), 1)
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d) / "build"
+            store = MachineOneToOneStore(base / "machine.json", base)
+            self.assertEqual(store.run(rows, blocked_targets={"q:42:accept"})["imported"], 0)
+            self.assertEqual(store.file.data["versions"], [])
 
     def test_cli_bulk_flag_prints_table_and_selects_explicit_classicua(self):
         summary = {
