@@ -13,11 +13,11 @@ Spoken checkout containing the exact locked revision. The normal location is
 No dependency download or network request is part of these commands.
 
 ```sh
-python3 tools/version.py check
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 # Optional focused repeat:
-python3 -m unittest discover -s tests -p test_stage2b.py -v
+uv run --locked python -m unittest discover -s tests -p test_stage2b.py -v
 ```
 
 Final full result: **88 tests passed**, no skips or expected-failure markers:
