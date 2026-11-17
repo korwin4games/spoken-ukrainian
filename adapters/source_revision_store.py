@@ -251,6 +251,13 @@ class SourceReviewStore:
                     (candidate["domain"], candidate["target_id"],
                      candidate["english_sha256"], candidate["context_sha256"],
                      candidate_id, reviewer))
+                db.execute("""INSERT INTO source_selection_events
+                    (domain, target_id, english_sha256, context_sha256,
+                     candidate_id, action, reviewer)
+                    VALUES (?, ?, ?, ?, ?, 'activate', ?)""",
+                    (candidate["domain"], candidate["target_id"],
+                     candidate["english_sha256"], candidate["context_sha256"],
+                     candidate_id, reviewer))
                 db.commit()
             except BaseException:
                 db.rollback()
@@ -273,6 +280,15 @@ class SourceReviewStore:
                     WHERE domain = ? AND target_id = ?""", key).fetchone()
                 if not row or not row[0]:
                     raise ValueError("unknown_source_selection")
+                selected = db.execute("""SELECT domain, target_id,
+                    english_sha256, context_sha256, candidate_id
+                    FROM source_active_selections WHERE domain = ? AND target_id = ?""",
+                    key).fetchall()
+                db.executemany("""INSERT INTO source_selection_events
+                    (domain, target_id, english_sha256, context_sha256,
+                     candidate_id, action, reviewer)
+                    VALUES (?, ?, ?, ?, ?, 'clear', ?)""",
+                    [(*row, reviewer) for row in selected])
                 db.execute("""DELETE FROM source_active_selections
                     WHERE domain = ? AND target_id = ?""", key)
                 db.commit()
@@ -280,6 +296,18 @@ class SourceReviewStore:
                 db.rollback()
                 raise
         return {"target_id": target_id, "selected": False}
+
+    def selection_history(self, domain, target_id):
+        if domain not in DOMAINS or type(target_id) is not str or not target_id:
+            raise ValueError("invalid_source_selection_history_query")
+        with connection(self.db_path) as db:
+            rows = db.execute("""SELECT candidate_id, action, reviewer, created_at
+                FROM source_selection_events
+                WHERE domain = ? AND target_id = ? ORDER BY id""",
+                (domain, target_id)).fetchall()
+        return [{"candidate_id": candidate_id, "action": action,
+                 "reviewer": reviewer, "created_at": date}
+                for candidate_id, action, reviewer, date in rows]
 
     def active(self, trusted, domain=None):
         """Fail closed if any selected context or human approval has become stale."""
