@@ -6,6 +6,27 @@
 
 > **Стан розробки:** реєстрацію української мови та оригінальний **діагностичний текстовий пакет Places** реалізовано й перевірено вручну у Forever. Адаптер джерел ClassicUA також готовий. Повноцінні українські пакети завдань, діалогів, книг, описів локацій та історій босів **ще не випущено**.
 
+## Python-оточення: uv
+
+Для роботи з Python-інструментами використовуємо [uv](https://docs.astral.sh/uv/) та **Python 3.12**. У репозиторії є `pyproject.toml`, `.python-version` і закріплений `uv.lock`; це **не Python-пакет**, а відтворюване оточення для CLI. Встанови uv за [офіційною інструкцією](https://docs.astral.sh/uv/getting-started/installation/), потім у корені репозиторію:
+
+```bash
+uv sync --locked
+uv run --locked python -m unittest discover -s tests -v
+uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+**Встановлення білда в WoW Forever без ручного розпакування:**
+
+```bash
+uv run --locked python tools/install_addon.py --addons "/шлях/до/WoW/Interface/AddOns" --dry-run
+uv run --locked python tools/install_addon.py --addons "/шлях/до/WoW/Interface/AddOns"
+```
+
+Замінити шлях потрібно на **реальну директорію AddOns**. Скрипт перевіряє SHA-256 та структуру ZIP, замінює **лише** `Spoken_Ukrainian` і `Spoken_Quests_UA`, зберігає попередні версії в прихованій `.spoken-ukrainian-backups/` і не змінює офіційні аддони. Перед встановленням **повністю закрий гру**. `--dry-run` не змінює файли. [Детальніше](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv).
+
+Без uv також можна використовувати `python3` замість `uv run --locked python`.
+
 ## Локальний тестовий білд Spoken Ukrainian (Quests)
 
 Проєкт створює **два окремі встановлювані аддони**: базовий `Spoken_Ukrainian` із назвою **Spoken Ukrainian** та Quest-модуль `Spoken_Quests_UA` (**Spoken Ukrainian: Quests**). Офіційні `Spoken` і `Spoken_Quests` не змінюються. **При кожному білді автоматично запускається автоімпорт ClassicUA 1:1**; відсутні/некоректні pinned checkouts або відсутність однозначних Quest-перекладів зупиняють збірку.
