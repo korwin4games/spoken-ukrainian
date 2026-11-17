@@ -300,10 +300,19 @@ class TranslationApprovals:
             result.append({"target_id": target, "version_id": chosen["id"]})
         return result
 
-    def import_approved(self, observations, policy):
+    def import_approved(self, observations, policy, *, one_to_one_pairs=None):
         data = deepcopy(self.file.data)
         self.merge_provenance(data, observations, policy)
-        data["imports"] = self.eligible(observations, policy)
+        selected = self.eligible(observations, policy)
+        if one_to_one_pairs is not None:
+            versions = {row["id"]: row for row in data["versions"]}
+            # A previously machine-approved version may only remain imported
+            # while its global source→target cardinality stays 1:1.
+            selected = [item for item in selected
+                        if status(versions[item["version_id"]]) != AUTO_DECISION
+                        or (versions[item["version_id"]]["source_id"],
+                            item["target_id"]) in one_to_one_pairs]
+        data["imports"] = selected
         changed = data != self.file.data
         self._save(data)
         return {"imported": len(data["imports"]), "changed": changed, "activated": False}
