@@ -125,6 +125,18 @@ class GossipReviewTests(unittest.TestCase):
             self.assertEqual(batch["spoken_revision"], A)
             self.assertEqual(batch["classicua_revision"], B)
             self.assertIn("english_original", batch["entries"][0])
+            # Rebuilding the queue MUST NOT wipe translated draft batches.
+            batch["entries"][0]["ukrainian_text"] = "Збережений локальний чернетковий переклад"
+            original = path / "batch-0001.json"
+            original.write_text(json.dumps(batch, ensure_ascii=False), encoding="utf-8")
+            self.assertEqual(create_batches(groups, A, B, path, 1), 2)
+            self.assertEqual(json.loads(original.read_text())["entries"][0]["ukrainian_text"],
+                             "Збережений локальний чернетковий переклад")
+            batch["entries"][0]["context_sha256"] = "c" * 64
+            original.write_text(json.dumps(batch, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError,
+                                        "stale_gossip_batch_move_aside_before_regeneration"):
+                create_batches(groups, A, B, path, 1)
 
 if __name__ == "__main__":
     unittest.main()
