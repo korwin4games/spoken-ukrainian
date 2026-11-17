@@ -26,7 +26,7 @@ The pinned Spoken revision is `3c896874e27ec9e07d51a3578c0b9fa8545c9ac7`. Counts
 
 **Bosses:** **297** canonical IDs, **0** included in the current Stage 4A original-English text index. The pinned upstream has original boss story data, but it needs independent canonical reconciliation and provenance/rights review. The Compendium story renderer is selected by client language on `enUS`; simply installing Ukrainian pack text is not proof it displays in Ukrainian. ClassicUA NPC names are not original authored boss stories.
 
-**Quests/Gossip:** Existing Stage 3 reviewed-join requirements, Stage 4B workbench and Stage 4C synthetic bridge remain in the repository; the local Quest Review UI PR can be finished independently, but its review queue is no longer the immediate content-translation critical path.
+**Quests/Gossip:** Existing Stage 3 reviewed-join requirements, Stage 4B workbench and Stage 4C synthetic bridge remain in the repository; the local Quest Review UI and its private approval ledger were merged into `main` via PR #14. They remain supporting workflows, not the immediate Places/Readables/Bosses translation critical path. No real approvals are implied.
 
 See [Stage 2B tests](STAGE_2B_COMPATIBILITY.md), [approved module scope](APPROVED_MODULES_AND_FALLBACK.md), and [upstream requirements](UPSTREAM_REQUIREMENTS.md).
 
@@ -36,7 +36,7 @@ See [Stage 2B tests](STAGE_2B_COMPATIBILITY.md), [approved module scope](APPROVE
 2. **Readables (P1).** ClassicUA already provides translated item and object page texts, while UA VoiceOver claims 1000+ voiced translated pages. Inspect the actual sources, use stable page ID/owner/page-chain evidence, and avoid merging different versions of a document. Resolve missing-file audio safety and independent Compendium text language with upstream. **Acceptance:** a reviewed multi-page Ukrainian book or note displayed safely under supported UI contracts.
 3. **Bosses (P2).** Independently verify pinned boss-story originals and authorship, obtain or prepare cleared Ukrainian stories, validate canonical map/key identity, and resolve the pinned client's selected-language story rendering with upstream. **Acceptance:** one reviewed Ukrainian boss story actually displayed on the normal client with a safe English/silence path.
 4. **Compendium *interface chrome* (P3).** Inventory stable localized UI keys and prepare Ukrainian titles, tabs, buttons, filters, search and messages; preserve placeholders. Confirm general-purpose upstream opt-in UI language selection for an ordinary English-client account or explicitly document its unavailability. **Acceptance:** an independently reviewed catalogue and, once supported, visibly Ukrainian controls; do not misrepresent \`ukUA\` content packs as changing client-locale UI.
-5. **Quests/Gossip (P4).** Resume already-developed Stage 3 mapping, Stage 4B reviewers and Stage 4C candidate binding. Existing PR #14 remains available independently, but is no longer a blocker for Places/Readables/Bosses.
+5. **Quests/Gossip (P4).** Resume already-developed Stage 3 mapping, Stage 4B reviewers and Stage 4C candidate binding. PR #14 is already merged into `main`; preserve its existing review, candidate-retention and explicit inert import gates without making them prerequisites for Places/Readables/Bosses.
 
 ## Non-goals and safeguards
 
