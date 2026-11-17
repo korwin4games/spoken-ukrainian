@@ -13,12 +13,14 @@
 
 The current adapter is [`adapters/translation_sources.py`](../adapters/translation_sources.py), using read-only already-audited ClassicUA effective fields provided by its caller. Single-record and batch resolution both stop at the first real candidate; a mock is skipped, and English fallback is selected only for records still unresolved when reached. Translation candidate field SHA-256 must match the actual in-memory UTF-8 text bytes. [Tests](../tests/test_translation_sources.py) use invented text. It does not download/modify upstream repositories or execute Lua.
 
+**Storage opt-in:** schema v2 provides per-source `save_translations` booleans. Historical schema v1 and its optional `store_locally` map remain supported. In v2 the flag controls the existing **private Review UI ledger under ignored `build/`** and separately opts into a **future reviewed Git translation store** under `translations/ukUA/imported/<provider>/`. This change does not implement a Git text writer, bulk import or automated upstream updater. Every imported version must retain reviewed identity, provenance and rights; ClassicUA updates require effective-data comparisons, human review and no silent overwrite of curated text. See [storage policy](TRANSLATION_STORAGE_POLICY.md).
+
 ### Configurable priority examples
 
 Default:
 
 ```json
-{"schema_version":1,"sources":["classicua","another","own_translator","original_english"]}
+{"schema_version":2,"sources":[{"name":"classicua","save_translations":true},{"name":"another","save_translations":false},{"name":"own_translator","save_translations":true},{"name":"original_english","save_translations":false}]}
 ```
 
 Own-first:
@@ -59,8 +61,8 @@ resolution, review discovery enumerates **all real providers** up to the
 explicit English fallback boundary, so a pending higher-priority candidate
 cannot hide an approved lower-priority one. Source priority still determines
 which *eligible approved* translation is selected for inert import.
-The optional schema-v1 `store_locally` map controls retention per enabled provider
-(default true); for example `"store_locally":{"classicua":false}` permits only
+The legacy schema-v1 `store_locally` map controls retention per enabled provider
+(default true); schema-v2 uses per-source `save_translations` for the same local review gate. for example `"store_locally":{"classicua":false}` permits only
 in-memory review of that provider. Stub/mock behavior and Stage 4A reporting do
 not change. Editing, equivalent-version approval reuse and deterministic inert
 import live in a separate private approval ledger; unapproved candidates cannot

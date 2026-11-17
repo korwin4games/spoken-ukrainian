@@ -33,8 +33,13 @@ The default offline provider order is configured in [`config/translation_sources
 
 ```json
 {
-  "schema_version": 1,
-  "sources": ["classicua", "another", "own_translator", "original_english"]
+  "schema_version": 2,
+  "sources": [
+    {"name": "classicua", "save_translations": true},
+    {"name": "another", "save_translations": false},
+    {"name": "own_translator", "save_translations": true},
+    {"name": "original_english", "save_translations": false}
+  ]
 }
 ```
 
@@ -45,7 +50,9 @@ The default offline provider order is configured in [`config/translation_sources
 | `own_translator` | Non-publishable mock | Does **not** count as a translation or consume a record |
 | `original_english` | Explicit fallback | Select original English for still-unresolved records; never count as Ukrainian |
 
-You can **reorder or remove** any entry. `["own_translator", "classicua", "original_english"]` changes priority (the translator is still a mock); `["original_english"]` selects English only. **`{"schema_version":1,"sources":[]}` or `{}` means the genuine WoW client language**, with no provider calls; an actual `deDE` client is not forced to English. The offline caller must supply the client locale. Omitting `original_english` does not silently reinsert it. A missing or invalid config file is an error.
+You can **reorder or remove** source objects. For example, putting `own_translator` before `classicua` changes priority (the translator is still a mock); leaving only `original_english` selects English only. **`{"schema_version":2,"sources":[]}` or `{}` means the genuine WoW client language**, with no provider calls; an actual `deDE` client is not forced to English. The offline caller must supply the client locale. Older schema v1 name arrays remain supported, with all save flags disabled. Omitting `original_english` does not silently reinsert it. A missing or invalid config file is an error.
+
+**The `save_translations` flag is per provider** and opts verified translations into a future Git-backed storage workflow (`translations/ukUA/`). It does not save anything during source discovery: canonical ID, rights and content checks remain mandatory. External imports will live under `imported/<source>/`, separate from manually curated translations, and later source changes will be proposed for review rather than overwriting our edits. `own_translator` is still a mock; its flag currently saves nothing. [Storage/update policy](docs/TRANSLATION_STORAGE_POLICY.md).
 
 ### Sequential processing and coverage
 

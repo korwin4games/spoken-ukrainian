@@ -102,7 +102,9 @@ and does not invent English fallback or localized text.
 ```
 
 Absent entries default to `true`; only enabled providers may appear and values
-must be booleans. `false` permits in-memory viewing/discovery but prevents local
+must be booleans.
+
+The newer **schema v2** config represents each provider as `{ "name": "classicua", "save_translations": true }`. The boolean controls the same private Review UI storage permission as schema-v1 `store_locally` and additionally opts in to a **future** Git-backed curated translation store. No Git-backed writer exists yet. Schema v1 remains supported without changing its private-ledger default; no schema-v1 provider is implicitly opted into Git storage. See [translation storage policy](TRANSLATION_STORAGE_POLICY.md). `false` permits in-memory viewing/discovery but prevents local
 storage, editing, approval and import of that provider's candidate. It does not
 automatically erase previously stored history: stop the server and remove private
 files if local retention must end. Configuration changes require a server restart.

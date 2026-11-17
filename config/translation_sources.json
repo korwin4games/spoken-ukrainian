@@ -1,9 +1,21 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "sources": [
-    "classicua",
-    "another",
-    "own_translator",
-    "original_english"
+    {
+      "name": "classicua",
+      "save_translations": true
+    },
+    {
+      "name": "another",
+      "save_translations": false
+    },
+    {
+      "name": "own_translator",
+      "save_translations": true
+    },
+    {
+      "name": "original_english",
+      "save_translations": false
+    }
   ]
 }

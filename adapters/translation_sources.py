@@ -19,8 +19,15 @@ CLIENT_LOCALE = re.compile(r"[a-z]{2}[A-Z]{2}\Z")
 
 @dataclass(frozen=True)
 class SourcePolicy:
+    """Ordered lookup and independently controlled source retention.
+
+    Existing schema-v1 store_locally controls the private review ledger under
+    build/. Schema-v2 save_translations adds future reviewed Git-store eligibility
+    while keeping that local approval workflow operational.
+    """
     sources: tuple[str, ...]
     store_locally: tuple[tuple[str, bool], ...] = ()
+    saved_sources: frozenset[str] = frozenset()
 
     def __post_init__(self):
         if type(self.sources) is not tuple or any(type(x) is not str or x not in SOURCES for x in self.sources):
@@ -33,26 +40,55 @@ class SourcePolicy:
                        or type(p[1]) is not bool for p in self.store_locally)
                 or len(dict(self.store_locally)) != len(self.store_locally)):
             raise ValueError("invalid_provider_storage_policy")
+        if (type(self.saved_sources) is not frozenset
+                or any(type(name) is not str for name in self.saved_sources)
+                or not self.saved_sources.issubset(self.sources)
+                or "original_english" in self.saved_sources):
+            raise ValueError("invalid_translation_save_policy")
 
     def stores(self, provider):
+        """Allow private review-ledger retention, preserving legacy defaults."""
         return dict(self.store_locally).get(provider, True)
+
+    def should_save(self, source: str) -> bool:
+        """Git-backed curated storage opt-in only, never an approval or write."""
+        return source in self.saved_sources
 
     @classmethod
     def from_mapping(cls, value):
         if type(value) is dict and value == {}:
             return cls(())
-        if (type(value) is not dict or not {"schema_version", "sources"} <= set(value)
-                or set(value) - {"schema_version", "sources", "store_locally"}):
+        if (type(value) is not dict or not {"schema_version", "sources"} <= set(value)):
             raise ValueError("invalid_translation_source_config_schema")
-        if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+        version = value["schema_version"]
+        if type(version) is not int or version not in (1, 2):
             raise ValueError("unsupported_translation_source_config_version")
-        if type(value["sources"]) is not list:
+        items = value["sources"]
+        if type(items) is not list:
             raise ValueError("translation_sources_must_be_array")
-        storage = value.get("store_locally", {})
-        if type(storage) is not dict:
-            raise ValueError("invalid_provider_storage_policy")
-        return cls(tuple(value["sources"]), tuple(sorted(storage.items())))
-
+        if version == 1:
+            if set(value) - {"schema_version", "sources", "store_locally"}:
+                raise ValueError("invalid_translation_source_config_schema")
+            storage = value.get("store_locally", {})
+            if type(storage) is not dict:
+                raise ValueError("invalid_provider_storage_policy")
+            # Legacy private review-ledger retention remains configurable,
+            # but does not opt a source into the future Git-backed store.
+            return cls(tuple(items), tuple(sorted(storage.items())))
+        if set(value) != {"schema_version", "sources"}:
+            raise ValueError("invalid_translation_source_config_schema")
+        if any(type(item) is not dict
+               or set(item) != {"name", "save_translations"}
+               or type(item["name"]) is not str
+               or type(item["save_translations"]) is not bool
+               for item in items):
+            raise ValueError("invalid_translation_source_settings")
+        # Schema v2 save_translations also drives the already-implemented
+        # private review-ledger retention gate (policy.stores), preventing
+        # disabled sources from being saved there.
+        flags = tuple((item["name"], item["save_translations"]) for item in items)
+        eligible = frozenset(item["name"] for item in items if item["save_translations"])
+        return cls(tuple(item["name"] for item in items), flags, eligible)
 
 def load_source_policy(path):
     try:
