@@ -42,7 +42,9 @@ def review_file(records):
 
 
 def load_reviews(data, *, source_inventories=None):
-    if set(data) != {'schema_version', 'decisions'} or data['schema_version'] != 1:
+    if (type(data) is not dict or set(data) != {'schema_version', 'decisions'}
+            or type(data['schema_version']) is not int or data['schema_version'] != 1
+            or type(data['decisions']) is not list):
         raise ValueError('unsupported_review_schema')
     result = []
     seen = set()

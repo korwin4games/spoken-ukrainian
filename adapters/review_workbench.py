@@ -127,7 +127,7 @@ def build_workbench(source: SourceInventory, inventory, *,
     approved_ids = {r["source_id"] for r in assessed if r["mapping_status"] == "approved"}
     if len(approved_ids) != sum(r["mapping_status"] == "approved" for r in assessed):
         raise ValueError("duplicate_approved_source_join")
-    if any((r["source_id"], r["target_id"]) in decision_by_pair
+    if any(decision_by_pair.get((r["source_id"], r["target_id"]), {}).get("decision") == "rejected"
            for r in assessed if r["mapping_status"] == "approved"):
         raise ValueError("conflicting_approved_and_manual_decision")
 

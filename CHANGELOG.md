@@ -7,8 +7,15 @@ or GitHub Release has been published.
 
 ## [Unreleased]
 
+### Local review workflow
+
+- Extend PR #14 with separate Quest Mapping/Translation Review, explicit independently attested Stage 3 mapping approval, local text editing/version history, four-part content approval and deterministic explicit inert import. No real approvals, packs, runtime activation, TTS or source pin changes.
+- Add a strict private schema-v1 translation ledger under ignored `build/`, atomic/fsynced writes, concurrent-writer detection, provider provenance and optional `store_locally` policy. Reuse approval only for equivalent original/text/context; preserve edits and reject stale/conflicting imports.
+- Document reviewer workflow, source updates, schema compatibility, local recovery and exact UI/import/test commands in both READMEs and architecture guides; extend synthetic workflow and HTTP security tests.
+
 ### Added
 
+- Add a loopback-only Stage 4B.2 Quest review browser UI with audited ClassicUA vs verified Spoken English text side by side, variant metadata, evidence-bound reject/defer actions, local HTTP security checks and synthetic tests. No automatic identity/content approvals, published translated content, TTS or addon changes.
 - Add a metadata-only, spreadsheet-safe Stage 4B.1 CSV review worksheet (one row per Quest target/voice variant), with synthetic regression tests and a short-lived real pinned-source CI artifact for the first 40 Horde source units; no translation bodies or automatic reviews.
 - Introduce a Stage 4C **synthetic-only** reviewed Quest identity → audited effective ClassicUA source-field bridge, preserving first-source priority and strict separation between Stage 3 mapping approval and Ukrainian text approval. No real mapping joins, CLI activation, packs or releases.
 - Stage 4B pinned Quest canonical-ID mapping review workbench: metadata-only 40-record Horde/Alliance review queue, deterministic evidence/variant hints, strict manual reject/defer decisions, and explicit two-reviewer Stage 3 JoinProof approval with revalidation. Synthetic tests and real-checkout CI; no real approvals, Ukrainian packs or release actions.

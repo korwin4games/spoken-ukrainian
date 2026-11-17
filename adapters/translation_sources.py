@@ -20,24 +20,38 @@ CLIENT_LOCALE = re.compile(r"[a-z]{2}[A-Z]{2}\Z")
 @dataclass(frozen=True)
 class SourcePolicy:
     sources: tuple[str, ...]
+    store_locally: tuple[tuple[str, bool], ...] = ()
 
     def __post_init__(self):
         if type(self.sources) is not tuple or any(type(x) is not str or x not in SOURCES for x in self.sources):
             raise ValueError("unknown_translation_source")
         if len(set(self.sources)) != len(self.sources):
             raise ValueError("duplicate_translation_source")
+        if (type(self.store_locally) is not tuple
+                or any(type(p) is not tuple or len(p) != 2
+                       or type(p[0]) is not str or p[0] not in self.sources
+                       or type(p[1]) is not bool for p in self.store_locally)
+                or len(dict(self.store_locally)) != len(self.store_locally)):
+            raise ValueError("invalid_provider_storage_policy")
+
+    def stores(self, provider):
+        return dict(self.store_locally).get(provider, True)
 
     @classmethod
     def from_mapping(cls, value):
         if type(value) is dict and value == {}:
             return cls(())
-        if type(value) is not dict or set(value) != {"schema_version", "sources"}:
+        if (type(value) is not dict or not {"schema_version", "sources"} <= set(value)
+                or set(value) - {"schema_version", "sources", "store_locally"}):
             raise ValueError("invalid_translation_source_config_schema")
         if type(value["schema_version"]) is not int or value["schema_version"] != 1:
             raise ValueError("unsupported_translation_source_config_version")
         if type(value["sources"]) is not list:
             raise ValueError("translation_sources_must_be_array")
-        return cls(tuple(value["sources"]))
+        storage = value.get("store_locally", {})
+        if type(storage) is not dict:
+            raise ValueError("invalid_provider_storage_policy")
+        return cls(tuple(value["sources"]), tuple(sorted(storage.items())))
 
 
 def load_source_policy(path):
@@ -230,6 +244,33 @@ def resolve_translation(request: TranslationRequest, policy: SourcePolicy,
         if item.state == CandidateState.NEEDS_REVIEW:
             return SourceResolution(tuple(candidates), name, request.original_sha256, tuple(attempted))
     return SourceResolution(tuple(candidates), None, request.original_sha256, tuple(attempted))
+
+
+def discover_review_candidates(request: TranslationRequest, policy: SourcePolicy,
+                               registry: Mapping[str, TranslationProvider]) -> tuple[TranslationCandidate, ...]:
+    """Enumerate all real candidates for human review, without changing runtime priority.
+
+    This deliberately differs from resolve_translation: an unapproved result
+    from an earlier provider must not conceal an already-approved later result.
+    Explicit English ends discovery; mocks never become reviewable candidates.
+    """
+    if not policy.sources:
+        return ()
+    results = []
+    for name in policy.sources:
+        if name == "original_english":
+            break
+        provider = registry.get(name)
+        if provider is None or not callable(getattr(provider, "lookup", None)):
+            raise ValueError("enabled_translation_provider_not_registered:" + name)
+        item = provider.lookup(request)
+        if item is None:
+            continue
+        if not isinstance(item, TranslationCandidate) or item.provider != name or item.publishable:
+            raise ValueError("translation_provider_result_invalid:" + name)
+        if item.state == CandidateState.NEEDS_REVIEW:
+            results.append(item)
+    return tuple(results)
 
 
 @dataclass(frozen=True)
