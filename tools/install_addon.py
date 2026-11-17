@@ -23,6 +23,7 @@ EXPECTED = {
     "Spoken_Quests_UA": {
         "Spoken_Quests_UA.toc", "Translations.lua", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"
     },
+    "Spoken_Gossip_UA": {"Spoken_Gossip_UA.toc", "Translations.lua", "GossipFrame.lua"},
 }
 MAX_TOTAL_BYTES = 96 * 1024 * 1024
 MAX_FILE_BYTES = 80 * 1024 * 1024
