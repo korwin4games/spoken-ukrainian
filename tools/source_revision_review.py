@@ -173,6 +173,10 @@ def read_private_snapshot(path, trusted):
         if row["source_ref"] == "provide-audited-reference":
             raise ValueError("source_review_requires_real_provenance")
         rows.append({k: row[k] for k in FIELDS})
+    # A blank new template must never irreversibly reserve a provider/revision
+    # as an empty immutable snapshot, preventing the actual import later.
+    if not rows:
+        raise ValueError("source_review_import_contains_no_translations")
     return {"provider": data["provider"], "revision": data["revision"],
             "records": rows}
 
