@@ -159,6 +159,52 @@ then use `/spokenuk preview on`: check the localized title above
 `Quest 4641` and that `{Ім'я}` / `{стать:...}` no longer appear.
 Run both with male and female characters if available.
 
+## Test findings: Cyrillic title glyphs, Gossip and Quest 97279
+
+The decorative default WoW **Quest heading** font can omit Ukrainian
+glyphs (і/ї/є/ґ). When displaying a *translated* title,
+`NativeQuestFrame.lua` temporarily uses the **existing quest body font
+file** (proven to display Ukrainian) with the native heading's size
+and flags. **Holding Shift restores the exact original heading font**
+and English text; releasing Shift restores both Ukrainian and its font.
+No fonts are bundled and no global font objects are modified.
+
+Quest-option titles in **Gossip** and **QuestFrameGreetingPanel** are
+different UI surfaces from the Quest description. The separate
+`GossipQuestTitles.lua` handles their public, exact `questID` hooks
+(`GossipAvailableQuestButtonMixin`, `GossipActiveQuestButtonMixin`,
+`GetAvailableQuestInfo`, `GetActiveQuestID`) and supports Shift.
+For safety, it yields to installed ClassicUA, uses **character faction**
+and leaves unknown IDs unchanged.
+
+**Title-only export is NOT the Spoken narration importer.** The
+builder extracts only title field [1] from pinned, audited ClassicUA
+effective faction views, respecting `allow_ai_transations`. This title
+data is held only in the ignored **local-test ZIP** and is not
+reviewed/approved narrated dialogue. A Quest can have a translated
+Gossip title but no translated NPC description if it lacks a suitable
+Spoken canonical target. In particular, Quest **97279** may have a
+title but not a narrator translation. Every build now reports
+metadata-only diagnosis for Quest 97279: number of actual narrated
+targets, ClassicUA candidate reasons, and how many entered the importer.
+Read that report before attributing an absent body to any one cause.
+
+### Quick game retest
+
+1. Disable the ClassicUA AddOn **in game**; the clean, pinned
+   ClassicUA Git checkout is still required for building.
+2. Rebuild the ZIP using uv and run the safe `tools/install_addon.py`.
+   Restart WoW Forever.
+3. Open **Your Place in the World (4641)**: Ukrainian title should not
+   contain square/missing glyphs; while Shift is held, the original
+   decorative font and English title should return.
+4. Open **Gornеk**: available quests including **Wayward Weapons
+   (97279)** should have Ukrainian titles where a title exists in
+   ClassicUA, independent of audio/narration. Shift shows English.
+5. Open **97279** itself: if the body is still English, inspect the
+   **Quest 97279 diagnostics** in the build log. Do not infer narrated
+   translation coverage from a translated Gossip title.
+
 ## Native QuestFrame translation (Issue #19)
 
 **ClassicUA is not needed as an installed AddOn** for translated NPC
