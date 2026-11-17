@@ -16,7 +16,7 @@ local function HidePreview()
 end
 SU.HideQuestPreview = HidePreview
 
-local function ShowPreview(questID, event, entry)
+local function ShowPreview(questID, event, entry, localizedTitle)
     if not shown then
         local frame = CreateFrame("Frame", nil, UIParent)
         frame:SetWidth(640)
@@ -55,9 +55,14 @@ local function ShowPreview(questID, event, entry)
         frame.Scroll = scroll
         shown = frame
     end
-    shown.Info:SetText("Quest " .. questID .. " · " .. event
+    local title = localizedTitle
+    if (type(title) ~= "string" or title == "") and type(GetTitleText) == "function" then
+        title = GetTitleText() -- Native-client fallback; no title guessing.
+    end
+    local label = type(title) == "string" and title ~= "" and (SU:ExpandQuestText(title) .. " · ") or ""
+    shown.Info:SetText(label .. "Quest " .. questID .. " · " .. event
         .. (entry.reviewed and " · human-reviewed" or " · machine 1:1 (provisional)"))
-    shown.Content:SetText(entry.text)
+    shown.Content:SetText(SU:ExpandQuestText(entry.text))
     shown.ScrollBody:SetHeight(math.max(1, shown.Content:GetStringHeight() + 12))
     shown.Scroll:SetVerticalScroll(0)
     shown:Show()
@@ -82,7 +87,7 @@ listener:SetScript("OnEvent", function(self, event)
     local parts = translations[id]
     local entry = parts and parts[events[event]]
     if entry and type(entry.text) == "string" and entry.text ~= "" then
-        ShowPreview(id, events[event], entry)
+        ShowPreview(id, events[event], entry, parts.title)
     else
         HidePreview()
     end
