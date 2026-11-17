@@ -224,6 +224,25 @@ class TranslationApprovalTests(unittest.TestCase):
             self.assertEqual(store.observe(pending, policy)["auto_approved"], 0)
             self.assertEqual(store.import_approved(pending, policy)["imported"], 0)
 
+    def test_enabling_policy_can_promote_existing_undecided_single_version(self):
+        self.assertEqual(self.store.observe(self.obs, self.policy)["auto_approved"], 0)
+        self.assertEqual(self.store.file.data["versions"][0]["decisions"], [])
+        enabled = self.auto_policy()
+        self.assertEqual(self.store.observe(self.obs, enabled)["auto_approved"], 1)
+        self.assertEqual(len(self.store.file.data["versions"]), 1)
+        self.assertEqual(self.store.observe(self.obs, enabled)["auto_approved"], 0)
+        # A deliberate prior human decision is never erased by enabling policy.
+        with tempfile.TemporaryDirectory() as directory:
+            store = TranslationApprovals(Path(directory) / "build" / "t.json",
+                                         Path(directory) / "build")
+            store.observe(self.obs, self.policy)
+            key = store.file.data["versions"][0]["id"]
+            store.decide(key, "deferred", "Invented reviewer",
+                         dict.fromkeys(CHECKS, False), self.obs, self.policy)
+            self.assertEqual(store.observe(self.obs, enabled)["auto_approved"], 0)
+            self.assertEqual(store.file.data["versions"][0]["decisions"][-1]["decision"],
+                             "deferred")
+
     def test_auto_approval_does_not_override_manual_or_changed_source(self):
         policy = self.auto_policy()
         self.store.observe(self.obs, policy)
