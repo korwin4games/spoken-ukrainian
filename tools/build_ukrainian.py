@@ -22,6 +22,8 @@ sys.path.insert(0, str(ROOT))
 from adapters.auto_one_to_one import validate_machine_ledger
 from adapters.translation_approvals import _validate_ledger
 from adapters.spoken import PublicSource
+from adapters.classicua.source import GitSource
+from adapters.classicua.lua import parse_file, Table
 from tools.review_ui_server import build_state, validate_source_paths, _reason
 from adapters.import_summary import format_import_table
 
@@ -34,6 +36,7 @@ TEMPLATE_FILES = {
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
 MAX_TEXT = 60000
+UKRAINIAN_CASES = ("н", "р", "д", "з", "о", "м", "к")
 
 
 def lua_quote(value):
@@ -113,7 +116,48 @@ def current_quest_texts(state):
     return result, len(texts), skipped
 
 
-def render_quest_lua(preview, pinned_spoken_sha):
+def read_classicua_inflections(classicua_path, source_files):
+    """Read exact audited ClassicUA grammatical forms for a local preview.
+
+    These are embedded only in the user's private ZIP. No ClassicUA Lua
+    executes: the pinned data files are parsed as literal tables.
+    """
+    reader = GitSource(classicua_path)
+    result = {}
+    for kind in ("race", "class"):
+        path = "entries/" + kind + ".lua"
+        text = reader.read(path)
+        if reader.hashes[path] != source_files.get(path):
+            raise ValueError("classicua_grammar_source_hash_changed")
+        node, mode = parse_file(text, kind, path)
+        if mode != "initialize" or not isinstance(node.value, Table):
+            raise ValueError("invalid_classicua_grammar_table")
+        groups = {}
+        for key, record in node.value.effective().items():
+            if (type(key) is not str or not key
+                    or not isinstance(record.value.value, Table)):
+                raise ValueError("invalid_classicua_grammar_entry")
+            forms = {}
+            for case, values in record.value.value.effective().items():
+                if case not in UKRAINIAN_CASES or not isinstance(values.value.value, Table):
+                    continue
+                seq = values.value.value.effective()
+                male, female = seq.get(1), seq.get(2)
+                if (male is None or female is None or
+                        any(type(item.value.value) is not str or not item.value.value.strip()
+                            or len(item.value.value) > 128 for item in (male, female))):
+                    raise ValueError("invalid_classicua_gender_forms")
+                forms[case] = (male.value.value, female.value.value)
+            if "н" not in forms:
+                raise ValueError("missing_classicua_nominative")
+            groups[key] = forms
+        if not groups:
+            raise ValueError("missing_classicua_grammar_entries")
+        result[kind] = groups
+    return result
+
+
+def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
     if not re.fullmatch(r"[a-f0-9]{40}", pinned_spoken_sha):
         raise ValueError("invalid_spoken_pin")
     lines = [
@@ -123,6 +167,22 @@ def render_quest_lua(preview, pinned_spoken_sha):
         "SpokenUkrainian = SpokenUkrainian or {}",
         "SpokenUkrainian.QuestTranslations = {",
     ]
+    # Private test build: embed ClassicUA declined race/class names.
+    lines.append("SpokenUkrainian.Inflections = {")
+    for kind, groups in sorted((inflections or {}).items()):
+        if kind not in ("class", "race") or type(groups) is not dict:
+            raise ValueError("invalid_build_inflection_group")
+        lines.append("    [" + lua_quote(kind) + "] = {")
+        for key, forms in sorted(groups.items()):
+            lines.append("        [" + lua_quote(key) + "] = {")
+            for case, pair in sorted(forms.items()):
+                if case not in UKRAINIAN_CASES or len(pair) != 2:
+                    raise ValueError("invalid_build_inflection_case")
+                lines.append("            [" + lua_quote(case) + "] = {"
+                             + lua_quote(pair[0]) + ", " + lua_quote(pair[1]) + "},")
+            lines.append("        },")
+        lines.append("    },")
+    lines.append("}")
     for quest, events in sorted(preview.items()):
         if type(quest) is not int or quest < 1:
             raise ValueError("invalid_quest_id")
@@ -231,7 +291,8 @@ def build(classicua, spoken):
     preview_count = sum(map(len, preview.values()))
     if not preview_count:
         raise ValueError("no_unambiguous_quest_imports_for_local_test_pack")
-    entries = template_entries(render_quest_lua(preview, state.inventory.revision))
+    forms = read_classicua_inflections(classicua, state.source.files)
+    entries = template_entries(render_quest_lua(preview, state.inventory.revision, forms))
     artifact, digest = write_zip(entries)
     return {
         "artifact": artifact, "sha256": digest,
