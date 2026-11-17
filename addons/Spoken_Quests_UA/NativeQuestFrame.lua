@@ -83,7 +83,8 @@ end
 -- and restore the exact native font whenever English is shown or UI closes.
 -- No external fonts, global font objects or official AddOn files are changed.
 local function TextFont()
-    for _, widget in ipairs({QuestInfoDescriptionText, QuestProgressText, GameFontNormal}) do
+    for _, name in ipairs({"QuestInfoDescriptionText", "QuestProgressText", "GameFontNormal"}) do
+        local widget = _G[name]
         if widget and type(widget.GetFont) == "function" then
             local path = widget:GetFont()
             if type(path) == "string" and path ~= "" then return path end
