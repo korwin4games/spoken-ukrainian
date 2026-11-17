@@ -110,6 +110,7 @@ class BuildUkrainianTests(unittest.TestCase):
         with patch.object(builder, "validate_source_paths"), patch.object(
                 builder, "build_state", return_value=state), patch.object(
                 builder, "current_quest_texts", return_value=(preview, 1, 0)), patch.object(
+                builder, "read_classicua_inflections", return_value={}), patch.object(
                 builder, "write_zip", side_effect=fake_zip):
             built = builder.build(Path("/unused/classicua"), Path("/unused/spoken"))
         self.assertEqual(order, ["import", "zip"])
