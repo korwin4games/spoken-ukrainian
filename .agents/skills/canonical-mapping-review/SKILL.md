@@ -8,7 +8,7 @@ description: Work on Stage 3 source-to-canonical-Spoken ID crosswalks, independe
 ## Orient to the pinned evidence
 
 1. Read `AGENTS.md`, `docs/STAGE_3_SPECIFICATION.md`, `docs/STAGE_3_IMPLEMENTATION.md`, `docs/CLASSICUA_PERMISSION.md`, and the relevant `docs/COMPATIBILITY_MATRIX.md` module sections.
-2. Inspect `adapters/crosswalk.py`, `adapters/mapping.py`, `adapters/spoken/evidence.py`, `adapters/review_workbench.py`, `tools/stage4b_workbench.py`, `docs/STAGE_4B_REVIEW_WORKBENCH.md`, source provenance code, and `tests/test_crosswalk.py` / `tests/test_stage3.py` / `tests/test_review_workbench.py`.
+2. Inspect `adapters/crosswalk.py`, `adapters/mapping.py`, `adapters/spoken/evidence.py`, `adapters/review_workbench.py`, `adapters/review_ui.py`, `tools/stage4b_workbench.py`, `tools/review_ui_server.py`, `docs/STAGE_4B_REVIEW_WORKBENCH.md`, `docs/STAGE_4B_LOCAL_REVIEW_UI.md`, source provenance code, and `tests/test_crosswalk.py` / `tests/test_stage3.py` / `tests/test_review_workbench.py`.
 3. Use exact pinned Spoken and ClassicUA commits, supplemental public evidence manifests and clean local checkouts. Do not alter upstream, run untrusted Lua, call private APIs or advance pins silently.
 
 ## Identity is not translation
@@ -18,6 +18,11 @@ description: Work on Stage 3 source-to-canonical-Spoken ID crosswalks, independe
 - Gossip: prove NPC/object, **greeting vs menu option**, original moment and voice. Numeric ClassicUA hashes and Spoken `g:` IDs use different algorithms; known aliases do not justify guesswork.
 - Readables: require book/owner, original first page, exact ordered/sparse chain and per-page canonical `b:` ID. Item ID, title and page ordinal are not pageText IDs.
 - Places and Bosses: preserve existing `z:`, `s:` or `boss:` target references, but ClassicUA terminology is **not** authored zone lore or boss stories.
+
+## Local reviewer interface
+
+- The Stage 4B.2 HTTP interface is **local-only**: audit source and pinned original before in-memory side-by-side text display; UI actions are strictly reject/defer in v2 decision schema. Maintain 127.0.0.1 binding, same-origin/CSRF validation, no public hosting, no text serialization or logs.
+- **No UI approvals**: even a positive match needs a separate independently attested two-reviewer `JoinProof` via existing Stage 3 workflow. Do not treat reviewer ID entry as authenticated identity or publication approval.
 
 ## Candidate review queue
 

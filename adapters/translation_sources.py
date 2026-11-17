@@ -19,12 +19,14 @@ CLIENT_LOCALE = re.compile(r"[a-z]{2}[A-Z]{2}\Z")
 
 @dataclass(frozen=True)
 class SourcePolicy:
-    """Ordered provider lookup plus opt-in future storage eligibility.
+    """Ordered lookup and independently controlled source retention.
 
-    Saving never happens during resolution: a discovered candidate is NOT
-    evidence of an approved source-to-Spoken join, text or redistribution.
+    Existing schema-v1 store_locally controls the private review ledger under
+    build/. Schema-v2 save_translations adds future reviewed Git-store eligibility
+    while keeping that local approval workflow operational.
     """
     sources: tuple[str, ...]
+    store_locally: tuple[tuple[str, bool], ...] = ()
     saved_sources: frozenset[str] = frozenset()
 
     def __post_init__(self):
@@ -32,21 +34,31 @@ class SourcePolicy:
             raise ValueError("unknown_translation_source")
         if len(set(self.sources)) != len(self.sources):
             raise ValueError("duplicate_translation_source")
+        if (type(self.store_locally) is not tuple
+                or any(type(p) is not tuple or len(p) != 2
+                       or type(p[0]) is not str or p[0] not in self.sources
+                       or type(p[1]) is not bool for p in self.store_locally)
+                or len(dict(self.store_locally)) != len(self.store_locally)):
+            raise ValueError("invalid_provider_storage_policy")
         if (type(self.saved_sources) is not frozenset
                 or any(type(name) is not str for name in self.saved_sources)
                 or not self.saved_sources.issubset(self.sources)
                 or "original_english" in self.saved_sources):
             raise ValueError("invalid_translation_save_policy")
 
+    def stores(self, provider):
+        """Allow private review-ledger retention, preserving legacy defaults."""
+        return dict(self.store_locally).get(provider, True)
+
     def should_save(self, source: str) -> bool:
-        """Policy only; never authorizes writing a candidate or publishing."""
+        """Git-backed curated storage opt-in only, never an approval or write."""
         return source in self.saved_sources
 
     @classmethod
     def from_mapping(cls, value):
         if type(value) is dict and value == {}:
             return cls(())
-        if type(value) is not dict or set(value) != {"schema_version", "sources"}:
+        if (type(value) is not dict or not {"schema_version", "sources"} <= set(value)):
             raise ValueError("invalid_translation_source_config_schema")
         version = value["schema_version"]
         if type(version) is not int or version not in (1, 2):
@@ -55,18 +67,28 @@ class SourcePolicy:
         if type(items) is not list:
             raise ValueError("translation_sources_must_be_array")
         if version == 1:
-            # Previously supported list-of-names configs remain readable;
-            # no persistence is implied for historical policies.
-            return cls(tuple(items))
+            if set(value) - {"schema_version", "sources", "store_locally"}:
+                raise ValueError("invalid_translation_source_config_schema")
+            storage = value.get("store_locally", {})
+            if type(storage) is not dict:
+                raise ValueError("invalid_provider_storage_policy")
+            # Legacy private review-ledger retention remains configurable,
+            # but does not opt a source into the future Git-backed store.
+            return cls(tuple(items), tuple(sorted(storage.items())))
+        if set(value) != {"schema_version", "sources"}:
+            raise ValueError("invalid_translation_source_config_schema")
         if any(type(item) is not dict
                or set(item) != {"name", "save_translations"}
                or type(item["name"]) is not str
                or type(item["save_translations"]) is not bool
                for item in items):
             raise ValueError("invalid_translation_source_settings")
-        return cls(tuple(item["name"] for item in items),
-                   frozenset(item["name"] for item in items if item["save_translations"]))
-
+        # Schema v2 save_translations also drives the already-implemented
+        # private review-ledger retention gate (policy.stores), preventing
+        # disabled sources from being saved there.
+        flags = tuple((item["name"], item["save_translations"]) for item in items)
+        eligible = frozenset(item["name"] for item in items if item["save_translations"])
+        return cls(tuple(item["name"] for item in items), flags, eligible)
 
 def load_source_policy(path):
     try:
@@ -258,6 +280,33 @@ def resolve_translation(request: TranslationRequest, policy: SourcePolicy,
         if item.state == CandidateState.NEEDS_REVIEW:
             return SourceResolution(tuple(candidates), name, request.original_sha256, tuple(attempted))
     return SourceResolution(tuple(candidates), None, request.original_sha256, tuple(attempted))
+
+
+def discover_review_candidates(request: TranslationRequest, policy: SourcePolicy,
+                               registry: Mapping[str, TranslationProvider]) -> tuple[TranslationCandidate, ...]:
+    """Enumerate all real candidates for human review, without changing runtime priority.
+
+    This deliberately differs from resolve_translation: an unapproved result
+    from an earlier provider must not conceal an already-approved later result.
+    Explicit English ends discovery; mocks never become reviewable candidates.
+    """
+    if not policy.sources:
+        return ()
+    results = []
+    for name in policy.sources:
+        if name == "original_english":
+            break
+        provider = registry.get(name)
+        if provider is None or not callable(getattr(provider, "lookup", None)):
+            raise ValueError("enabled_translation_provider_not_registered:" + name)
+        item = provider.lookup(request)
+        if item is None:
+            continue
+        if not isinstance(item, TranslationCandidate) or item.provider != name or item.publishable:
+            raise ValueError("translation_provider_result_invalid:" + name)
+        if item.state == CandidateState.NEEDS_REVIEW:
+            results.append(item)
+    return tuple(results)
 
 
 @dataclass(frozen=True)

@@ -13,7 +13,7 @@
 
 The current adapter is [`adapters/translation_sources.py`](../adapters/translation_sources.py), using read-only already-audited ClassicUA effective fields provided by its caller. Single-record and batch resolution both stop at the first real candidate; a mock is skipped, and English fallback is selected only for records still unresolved when reached. Translation candidate field SHA-256 must match the actual in-memory UTF-8 text bytes. [Tests](../tests/test_translation_sources.py) use invented text. It does not download/modify upstream repositories or execute Lua.
 
-**Storage opt-in:** schema v2 supports per-source `save_translations: true/false` with the same provider order and semantics. Historic schema v1 lists remain supported with all storage flags disabled. The enabled setting is **declarative**: the current offline resolver never writes translations. A separate, independently reviewed importer will eventually save only provenance/rights-cleared, canonically mapped content under `translations/ukUA/imported/<provider>/`; no real joins currently qualify. Future ClassicUA revisions require effective-data diff, explicit review and no silent overwrite of our curated translations. Do not enable persistence of English fallback. See [translation storage policy](TRANSLATION_STORAGE_POLICY.md).
+**Storage opt-in:** schema v2 provides per-source `save_translations` booleans. Historical schema v1 and its optional `store_locally` map remain supported. In v2 the flag controls the existing **private Review UI ledger under ignored `build/`** and separately opts into a **future reviewed Git translation store** under `translations/ukUA/imported/<provider>/`. This change does not implement a Git text writer, bulk import or automated upstream updater. Every imported version must retain reviewed identity, provenance and rights; ClassicUA updates require effective-data comparisons, human review and no silent overwrite of curated text. See [storage policy](TRANSLATION_STORAGE_POLICY.md).
 
 ### Configurable priority examples
 
@@ -52,6 +52,22 @@ Changing the config requires rerunning the offline build/preparation workflow wh
 | **Final** | **950 candidates** | **50 English-only** | **1,000** |
 
 Every object appears **once** in the final result; its metadata includes canonical Spoken ID, assigned source (if any), status and non-text SHA-256. The report separates `total`, `translation_candidates_pending_review`, `approved_translations`, `untranslated_no_source`, `original_english_fallback`, `client_language` and per-source counts including `remaining_for_next_source`. Mock output is excluded from translated counts. Until reviewed, the report's `approved_translations` is **0**, irrespective of candidate volume. Raw translated and original text never appear in the report.
+
+### Local review persistence
+
+The Quest Review UI uses a separate all-candidates discovery function over
+independently reviewed Quest bindings. Unlike runtime/Stage 4A first-match
+resolution, review discovery enumerates **all real providers** up to the
+explicit English fallback boundary, so a pending higher-priority candidate
+cannot hide an approved lower-priority one. Source priority still determines
+which *eligible approved* translation is selected for inert import.
+The legacy schema-v1 `store_locally` map controls retention per enabled provider
+(default true); schema-v2 uses per-source `save_translations` for the same local review gate. for example `"store_locally":{"classicua":false}` permits only
+in-memory review of that provider. Stub/mock behavior and Stage 4A reporting do
+not change. Editing, equivalent-version approval reuse and deterministic inert
+import live in a separate private approval ledger; unapproved candidates cannot
+replace eligible approved content. See [approval architecture](TRANSLATION_APPROVALS.md)
+for eligibility, complete schema, source-update limits and recovery.
 
 ### Independent real-world constraints
 

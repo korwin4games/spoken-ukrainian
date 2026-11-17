@@ -101,6 +101,7 @@ Spoken Ukrainian готує український контент **офлайн
 | Stage 4A — реальний індекс Spoken → звіт за джерелами | Реалізовано читання перевірених англійських текстів із закріплених джерел і офлайн-CLI; **0 схвалених зіставлень, немає українських пакетів** ([деталі](docs/STAGE_4A_INVENTORY_COVERAGE.md)) |
 | Stage 4B — Workbench перевірки Quest mapping | Черга з перевірених джерел, відхилення/відкладення, Stage 3 JoinProof від двох reviewer; **0 реальних схвалених відповідностей** ([процедура](docs/STAGE_4B_REVIEW_WORKBENCH.md)) |
 | Stage 4C — основа перевіреної прив'язки Quest | Лише синтетичні тести перевірки ефективних полів ClassicUA; **0 реальних mapping і схвалених текстів**, без CLI ([контракт](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md)) |
+| Stage 4B.2 — локальний Quest Review UI | Окремі Mapping/Translation Review, незалежні proofs, локальні версії/рішення та явний інертний імпорт; **без реальних схвалень або активації** ([інструкція](docs/STAGE_4B_LOCAL_REVIEW_UI.md)) |
 | Українські текстові й аудіопакети, оновлювач і публічні релізи | Ще не випущено |
 
 ## Збирання та тестування
@@ -149,6 +150,29 @@ python3 tools/stage4b_workbench.py \
 ### Перевірена прив'язка Quest-перекладів (основа Stage 4C)
 
 `adapters/reviewed_bridge.py` реалізує **синтетично протестоване** офлайн-зв'язування незалежно схвалених Stage 3 Quest mappings із точними ефективними полями ClassicUA. Повторно перевіряються докази, SHA-256 тексту та пріоритет джерел; знайдений український текст залишається **кандидатом на окрему перевірку**, а не схваленим перекладом. Звичайна команда Stage 4A **не використовує цей модуль**, і **реальних схвалених відповідностей досі нуль**. Див. [Stage 4C](docs/STAGE_4C_REVIEWED_QUEST_BRIDGE.md).
+
+### Локальний Quest Review UI (Stage 4B.2)
+
+**Локальний вебінтерфейс** розділяє Mapping Review і Translation Review. Порівнюйте перевірені UA/EN та speaker/voice/faction, відхиляйте/відкладайте mappings або подавайте повний людський Stage 3 `JoinProof` із **двома незалежними reviewer**. Перевірені joins дають pending-переклади. Редагуйте нові версії, переглядайте provenance/історію та окремо схвалюйте текст/граматику/AI/права. **Approval та імпорт — окремі дії**; імпорт створює лише інертний локальний snapshot без активації у WoW. Реальних схвалень у цьому PR немає.
+
+```sh
+python3 tools/review_ui_server.py \
+  --classicua /absolute/path/to/clean-pinned-ClassicUA \
+  --spoken /absolute/path/to/clean-pinned-spoken-wow
+```
+
+Відкрийте **http://127.0.0.1:8765/** на цьому ж комп'ютері. Сервер слухає лише loopback, не звертається до Інтернету й зберігає приватні дані в ігнорованому `build/`: метадані у `stage4b-decisions.json` та `stage3-ui-reviews.json`, локальні тексти/історію/import references у `translation-reviews.json`. Необов'язковий `store_locally` керує зберіганням провайдера. Незмінні байти/контекст можуть зберегти approval після аудиту оновлених джерел; змінені текст/оригінал/контекст стають stale, ручні правки залишаються в історії. Наявні v2 рішення сумісні; пошкоджені/старі файли потребують відновлення й явного повторного review. [Процедура UI та recovery](docs/STAGE_4B_LOCAL_REVIEW_UI.md), [архітектура approvals](docs/TRANSLATION_APPROVALS.md).
+
+Явний імпорт (ті самі необов'язкові шляхи/політика, що й у UI):
+
+```sh
+python3 tools/review_ui_server.py \
+  --classicua /absolute/path/to/clean-pinned-ClassicUA \
+  --spoken /absolute/path/to/clean-pinned-spoken-wow \
+  --import-approved
+```
+
+Перевірка: `python3 tools/version.py check`, `python3 tools/build.py` та `python3 -m unittest discover -s tests -v` (включно з локальними HTTP sockets).
 
 ### Аудит закріпленої ревізії ClassicUA (Stage 2A)
 

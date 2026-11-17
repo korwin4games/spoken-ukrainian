@@ -1,6 +1,6 @@
 # Translation storage and source update policy
 
-**Status: design and validated configuration only.** This document defines how opted-in source text will eventually be persisted after independently checked source-to-Spoken mapping. **No source-copy writer, upstream update watcher, Git auto-commit, runtime pack integration or approved real mapping is implemented by this PR.** Changing the option does not itself write any files.
+**Status: design and validated configuration only.** This document defines how opted-in source text will eventually be persisted after independently checked source-to-Spoken mapping. **No Git-backed curated translation writer, upstream update watcher, Git auto-commit, runtime pack integration or approved real mapping is implemented by this PR.** PR #14 already supplies an explicit, private local Review UI approval ledger under ignored `build/`; schema v2 also controls whether each provider may be retained there. Changing the option alone does not write files.
 
 ## Configuration
 
@@ -18,12 +18,12 @@
 }
 ```
 
-- `save_translations: true` **opts a provider into a future reviewed storage workflow**, it is not automatic approval or an immediate disk write.
-- `false` keeps provider lookup available in its configured order but excludes it from our persistent translation corpus.
+- `save_translations: true` **permits the existing explicit private review-ledger retention** and opts a provider into a **future** Git-backed curated workflow. It is not automatic approval, an immediate write, or a public release.
+- `false` keeps provider lookup available in its configured order but blocks private review-ledger retention for that source and excludes it from the future Git-backed corpus. Existing saved history is not auto-deleted.
 - `original_english` can never be marked saveable: it is a fallback, not a Ukrainian translation.
 - The existing `own_translator` is **mock-only**. Its opted-in flag will have no effect until a real provider and explicit review contract exist. `another` is a stub and is not opted in.
-- Schema v1 (ordered list of source names) remains readable with *all save flags false*. `sources: []` and `{}` still use the actual client locale with zero provider calls. Versions, types, unknown keys, duplicates, missing flags and saving English are rejected, not guessed.
-- Source priority decides **which candidate is considered**. Storage eligibility only governs **whether that chosen candidate may later enter our local review/store workflow**; it does not change provider priority, bypass reviews, choose runtime locale, or guarantee publication.
+- Schema v1 (ordered list of source names, optionally with `store_locally`) remains readable: private ledger retention uses its existing defaults and flags, while future Git storage eligibility is disabled. `sources: []` and `{}` still use the actual client locale with zero provider calls. Versions, types, unknown keys, duplicates, missing flags and saving English are rejected, not guessed.
+- Runtime source priority selects the first real candidate; the existing Review UI can discover multiple reviewable source candidates before its English boundary. Storage eligibility governs **which review candidates may be retained in the local ledger and later the Git store**; it does not change provider priority, bypass reviews, choose runtime locale, or guarantee publication.
 
 ## Planned repository layout
 

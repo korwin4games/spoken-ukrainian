@@ -79,6 +79,10 @@ class TranslationSourceTests(unittest.TestCase):
         })
         self.assertEqual(p.sources, ("classicua", "another"))
         self.assertEqual(p.saved_sources, frozenset({"classicua"}))
+        self.assertTrue(p.stores("classicua"))
+        self.assertFalse(p.stores("another"))
+        self.assertTrue(SourcePolicy.from_mapping({"schema_version": 1, "sources": ["classicua"]}).stores("classicua"))
+        self.assertFalse(SourcePolicy.from_mapping({"schema_version": 1, "sources": ["classicua"], "store_locally": {"classicua": False}}).stores("classicua"))
         self.assertEqual(SourcePolicy(("classicua",)).saved_sources, frozenset())
         bad_settings = [
             {"name": "classicua"},
@@ -99,9 +103,9 @@ class TranslationSourceTests(unittest.TestCase):
                 ],
             })
         with self.assertRaisesRegex(ValueError, "invalid_translation_save_policy"):
-            SourcePolicy(("classicua",), frozenset({"another"}))
+            SourcePolicy(("classicua",), (), frozenset({"another"}))
         with self.assertRaisesRegex(ValueError, "invalid_translation_save_policy"):
-            SourcePolicy(("original_english",), frozenset({"original_english"}))
+            SourcePolicy(("original_english",), (), frozenset({"original_english"}))
 
     def test_config_bad_duplicate_unknown_version_and_shape(self):
         invalid = [
