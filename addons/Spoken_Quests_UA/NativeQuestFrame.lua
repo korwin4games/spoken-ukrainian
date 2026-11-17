@@ -10,7 +10,7 @@ local translations = assert(SU.QuestTranslations, "Spoken Ukrainian Quest data m
 local registered = {}
 local originals = {}
 local writing = {}
-local activeID, activeMoment
+local activeID, activeMoment, pendingMoment
 local frame
 local nativeFields = {
     {name = "QuestInfoTitleHeader", events = {accept = true, complete = true},
@@ -133,9 +133,29 @@ local function Clear()
     end
 end
 
+local function ScanCurrent()
+    if not activeID or not activeMoment or activeID ~= LiveID()
+            or not WindowVisible() then return end
+    HookFields()
+    -- Catch a widget whose native SetText preceded the event or OnShow.
+    for _, field in ipairs(nativeFields) do
+        local widget = _G[field.name]
+        if widget and registered[widget] and field.events[activeMoment] then
+            local existing = originals[widget]
+            if existing and existing.id == activeID
+                    and existing.moment == activeMoment then
+                Apply(widget, existing)
+            elseif not existing and type(widget.GetText) == "function" then
+                HandleText(widget, widget:GetText(), field)
+            end
+        end
+    end
+end
+
 local function OnMoment(moment)
     -- Obtain the actual ID from the live NPC frame, not from a nearby
     -- tooltip, zone map or previous Spoken preview. Fail closed otherwise.
+    pendingMoment = moment
     local id = LiveID()
     if not id or ClassicUAIsActive() then
         Clear()
@@ -144,20 +164,7 @@ local function OnMoment(moment)
     end
     if activeID ~= id or activeMoment ~= moment then Clear() end
     activeID, activeMoment = id, moment
-    HookFields()
-    -- Quest UI normally calls SetText after this event. If the text was
-    -- already set, a second guarded scan handles the first frame safely.
-    for _, field in ipairs(nativeFields) do
-        local widget = _G[field.name]
-        if widget and registered[widget] and field.events[moment] then
-            local existing = originals[widget]
-            if existing and existing.id == id and existing.moment == moment then
-                Apply(widget, existing)
-            elseif not existing and WindowVisible() and type(widget.GetText) == "function" then
-                HandleText(widget, widget:GetText(), field)
-            end
-        end
-    end
+    ScanCurrent()
 end
 
 local function RefreshShift()
@@ -180,7 +187,7 @@ listener:SetScript("OnEvent", function(self, event, ...)
         RefreshShift()
     elseif event == "QUEST_FINISHED" then
         Clear()
-        activeID, activeMoment = nil, nil
+        activeID, activeMoment, pendingMoment = nil, nil, nil
     else
         HookFields()
     end
@@ -191,9 +198,21 @@ local function HookQuestFrameHide()
         return
     end
     frame = QuestFrame
+    frame:HookScript("OnShow", function()
+        -- Some Blizzard QuestFrame revisions set text while the frame is
+        -- hidden. Resolve a pending moment only once its real QuestID exists.
+        if pendingMoment and not ClassicUAIsActive() then
+            local id = LiveID()
+            if id and (id ~= activeID or pendingMoment ~= activeMoment) then
+                Clear()
+                activeID, activeMoment = id, pendingMoment
+            end
+            ScanCurrent()
+        end
+    end)
     frame:HookScript("OnHide", function()
         Clear()
-        activeID, activeMoment = nil, nil
+        activeID, activeMoment, pendingMoment = nil, nil, nil
     end)
 end
 
