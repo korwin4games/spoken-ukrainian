@@ -19,6 +19,45 @@ Community Pack**. This checklist does **not** claim a live WoW Forever test.
 rename `Spoken_Quests` to `Spoken_Ukrainian_Quests`: that is a different
 AddOn identity and breaks the intended upstream integration.
 
+## Troubleshooting: `public_git_read_failed` at startup
+
+The importer reads pinned **local Git checkouts** with `git -C`; it
+does not fetch GitHub sources on demand. Example paths such as
+`/absolute/path/to/ClassicUA` and `/absolute/path/to/spoken-wow`
+are **placeholders**: replace them with *real* paths on your computer.
+
+Verify each repo before starting:
+
+```sh
+git -C /your/real/spoken-wow rev-parse --show-toplevel
+git -C /your/real/spoken-wow rev-parse HEAD
+git -C /your/real/spoken-wow status --short
+git -C /your/real/ClassicUA rev-parse --show-toplevel
+git -C /your/real/ClassicUA rev-parse HEAD
+git -C /your/real/ClassicUA status --short
+```
+
+The root path must be a directory with `.git` (or a Git worktree's
+`.git` file). Both checkouts must have clean tracked files and
+their **HEAD** at the exact pins:
+
+- Spoken: `3c896874e27ec9e07d51a3578c0b9fa8545c9ac7`
+- ClassicUA: `1770d208ad853d23d61105cf510d53804770d916`
+
+For example, **only if** the two source repositories were cloned
+as sibling directories of `spoken-ukrainian`, these flags are
+`--classicua ../ClassicUA --spoken ../spoken-wow`. A ZIP unpacked
+without `.git` is not sufficient. Use clean additional checkouts
+for the pinned commits rather than resetting or discarding changes
+from an existing working copy.
+
+The CLI now prints targeted hints for missing paths, non-Git folders
+and unreadable Spoken checkouts instead of only
+`review_ui_pinned_sources_or_local_bind_failed`. If a valid Git root
+has the wrong pinned SHA, the program reports
+`public_revision_mismatch`; switching to a clean pinned checkout
+is necessary.
+
 ## Step-by-step — verify the **offline** Quest importer
 
 1. Use the PR #17 branch with *exact pinned* Spoken and ClassicUA
