@@ -13,7 +13,7 @@ Community Pack**. This checklist does **not** claim a live WoW Forever test.
 | Official Spoken module | `Spoken_Quests` | Installed upstream Spoken module. **Never rename, fork, patch, or replace it.** It owns both Quests and Gossip. |
 | Quest import/review UI | **Quest Translation Import · Spoken_Quests (offline)** | Local browser tool (Python HTTP server) for ClassicUA Quest `accept`, `progress`, `complete` text. No Gossip implementation. |
 | Quest CLI | `tools/review_ui_server.py --auto-import-one-to-one` | Offline import of audited unique Quest candidates to ignored `build/` storage, with summary counts across the entire Spoken inventory. |
-| **Future** Ukrainian Quest pack | `SpokenCommunity_ukUA_Quests` — **proposed, not created** | Separate installable community-pack folder/TOC, **only after** verifying the upstream public Quest language/text contract and packaging rights. Do not mistake this proposed name for a working AddOn. |
+| **Current local-test** Ukrainian Quest pack | `Spoken_Quests_UA` — built under `dist/` by `tools/build_ukrainian.py` | Installs beside unmodified official `Spoken_Quests`, registers as a language Community Pack, and displays provisional translations in a separate opt-in Quest preview. **Not** a released pack and **not** native Spoken captions. |
 | Existing playable diagnostic | `SpokenCommunity_ukrainian-diagnostic` | **Places** diagnostic: depends on `Spoken_Places`, registers one invented Ukrainian Elwynn Forest lore entry. It does not import ClassicUA or implement Quests. **Keep unchanged.** |
 
 `ukUA` is a Spoken content language; it must not spoof the real WoW
