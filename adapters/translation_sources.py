@@ -19,13 +19,28 @@ CLIENT_LOCALE = re.compile(r"[a-z]{2}[A-Z]{2}\Z")
 
 @dataclass(frozen=True)
 class SourcePolicy:
+    """Ordered provider lookup plus opt-in future storage eligibility.
+
+    Saving never happens during resolution: a discovered candidate is NOT
+    evidence of an approved source-to-Spoken join, text or redistribution.
+    """
     sources: tuple[str, ...]
+    saved_sources: frozenset[str] = frozenset()
 
     def __post_init__(self):
         if type(self.sources) is not tuple or any(type(x) is not str or x not in SOURCES for x in self.sources):
             raise ValueError("unknown_translation_source")
         if len(set(self.sources)) != len(self.sources):
             raise ValueError("duplicate_translation_source")
+        if (type(self.saved_sources) is not frozenset
+                or any(type(name) is not str for name in self.saved_sources)
+                or not self.saved_sources.issubset(self.sources)
+                or "original_english" in self.saved_sources):
+            raise ValueError("invalid_translation_save_policy")
+
+    def should_save(self, source: str) -> bool:
+        """Policy only; never authorizes writing a candidate or publishing."""
+        return source in self.saved_sources
 
     @classmethod
     def from_mapping(cls, value):
@@ -33,11 +48,24 @@ class SourcePolicy:
             return cls(())
         if type(value) is not dict or set(value) != {"schema_version", "sources"}:
             raise ValueError("invalid_translation_source_config_schema")
-        if type(value["schema_version"]) is not int or value["schema_version"] != 1:
+        version = value["schema_version"]
+        if type(version) is not int or version not in (1, 2):
             raise ValueError("unsupported_translation_source_config_version")
-        if type(value["sources"]) is not list:
+        items = value["sources"]
+        if type(items) is not list:
             raise ValueError("translation_sources_must_be_array")
-        return cls(tuple(value["sources"]))
+        if version == 1:
+            # Previously supported list-of-names configs remain readable;
+            # no persistence is implied for historical policies.
+            return cls(tuple(items))
+        if any(type(item) is not dict
+               or set(item) != {"name", "save_translations"}
+               or type(item["name"]) is not str
+               or type(item["save_translations"]) is not bool
+               for item in items):
+            raise ValueError("invalid_translation_source_settings")
+        return cls(tuple(item["name"] for item in items),
+                   frozenset(item["name"] for item in items if item["save_translations"]))
 
 
 def load_source_policy(path):
