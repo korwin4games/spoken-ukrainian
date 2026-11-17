@@ -7,7 +7,7 @@
 Both source repositories must be clean, local and pinned to `sources.lock.json` and `tests/stage3_sources.json`. Stage 2A resolves effective ClassicUA data with actual `classic → sod → forever` load/override rules, and Stage 3 provides verified canonical Spoken target IDs. Existing `adapters.mapping.candidates()` generates conservative Quest ID/event hints; it never assumes matching names or hash values prove identity.
 
 ```sh
-python3 tools/stage4b_workbench.py \
+uv run --locked python tools/stage4b_workbench.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --faction horde --limit 40
@@ -30,7 +30,7 @@ Spreadsheet clients can sort/filter the CSV. The exporter quotes values and prev
 Only a real human should record a decision after inspecting pinned context. The following IDs and reviewer are **illustrative** and must be replaced with actual queue values:
 
 ```sh
-python3 tools/stage4b_workbench.py \
+uv run --locked python tools/stage4b_workbench.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --source-id 'quest:horde:42:accept' \
@@ -70,7 +70,7 @@ The local `--approve-request` JSON has this structure:
 **This is a nonworking illustrative template, not real proof.** For a Quest, replace `facts` with exactly one independently checked target context containing `npc_id`, `npc_type`, `voice`, `faction`, `wording_sha256`, `source`, `quest_id`, and `player_gender`. All hashes/refs must come from the independently pinned audit and public inventory. The software validates internal consistency, but it cannot establish that humans actually examined an external reference.
 
 ```sh
-python3 tools/stage4b_workbench.py \
+uv run --locked python tools/stage4b_workbench.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --approve-request /private/local/real-join-request.json \

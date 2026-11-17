@@ -3,6 +3,7 @@ import argparse
 from datetime import date
 from pathlib import Path
 import re
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
@@ -79,6 +80,23 @@ def check(root=ROOT, tag=None):
         raise ValueError('Newest dated changelog section must match VERSION; prepare the new section without rewriting historical entries')
     if tag is not None and tag != 'v' + current:
         raise ValueError('Version tag must equal v' + current)
+    # VERSION remains canonical. uv's PEP 621 metadata and lockfile are
+    # secondary mirrors, both checked on every project version validation.
+    pyproject = root / 'pyproject.toml'
+    if pyproject.exists():
+        info = tomllib.loads(pyproject.read_text(encoding='utf-8'))
+        if info.get('project', {}).get('version') != current:
+            raise ValueError('pyproject.toml project.version must match VERSION')
+        lockfile = root / 'uv.lock'
+        if not lockfile.is_file():
+            raise ValueError('uv.lock missing for uv-managed project')
+        lock = tomllib.loads(lockfile.read_text(encoding='utf-8'))
+        project_name = info['project']['name']
+        projects = [pkg for pkg in lock.get('package', [])
+                    if pkg.get('name') == project_name
+                    and pkg.get('source') == {'virtual': '.'}]
+        if len(projects) != 1 or projects[0].get('version') != current:
+            raise ValueError('uv.lock project version must match VERSION')
     return current
 
 

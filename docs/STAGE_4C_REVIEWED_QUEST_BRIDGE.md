@@ -37,7 +37,7 @@ This bridge never guesses a source ID from the target Quest number or translated
 Run:
 
 ```sh
-python3 -m unittest discover -s tests -v
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 ## Local Quest review consumer

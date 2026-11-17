@@ -6,12 +6,31 @@
 
 > **Стан розробки:** реєстрацію української мови та оригінальний **діагностичний текстовий пакет Places** реалізовано й перевірено вручну у Forever. Адаптер джерел ClassicUA також готовий. Повноцінні українські пакети завдань, діалогів, книг, описів локацій та історій босів **ще не випущено**.
 
+## Python-оточення: uv
+
+Для роботи з Python-інструментами використовуємо [uv](https://docs.astral.sh/uv/) та **Python 3.12**. У репозиторії є `pyproject.toml`, `.python-version` і закріплений `uv.lock`; це **не Python-пакет**, а відтворюване оточення для CLI. Встанови uv за [офіційною інструкцією](https://docs.astral.sh/uv/getting-started/installation/), потім у корені репозиторію:
+
+```bash
+uv sync --locked
+uv run --locked python -m unittest discover -s tests -v
+uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+**Встановлення білда в WoW Forever без ручного розпакування:**
+
+```bash
+uv run --locked python tools/install_addon.py --addons "/шлях/до/WoW/Interface/AddOns" --dry-run
+uv run --locked python tools/install_addon.py --addons "/шлях/до/WoW/Interface/AddOns"
+```
+
+Замінити шлях потрібно на **реальну директорію AddOns**. Скрипт перевіряє SHA-256 та структуру ZIP, замінює **лише** `Spoken_Ukrainian` і `Spoken_Quests_UA`, зберігає попередні версії в прихованій `.spoken-ukrainian-backups/` і не змінює офіційні аддони. Перед встановленням **повністю закрий гру**. `--dry-run` не змінює файли. [Детальніше](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv).
+
 ## Локальний тестовий білд Spoken Ukrainian (Quests)
 
 Проєкт створює **два окремі встановлювані аддони**: базовий `Spoken_Ukrainian` із назвою **Spoken Ukrainian** та Quest-модуль `Spoken_Quests_UA` (**Spoken Ukrainian: Quests**). Офіційні `Spoken` і `Spoken_Quests` не змінюються. **При кожному білді автоматично запускається автоімпорт ClassicUA 1:1**; відсутні/некоректні pinned checkouts або відсутність однозначних Quest-перекладів зупиняють збірку.
 
 ```sh
-python3 tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
+uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
 ```
 
 **AI-переклади ClassicUA:** необов’язковий прапорець `allow_ai_transations` (саме таке написання) за замовчуванням `false`, але в поточному `config/translation_sources.json` для `classicua` встановлено **`true`**. Він дозволяє тільки попередній локальний автоімпорт AI-записів, які пройшли суворе зіставлення 1:1; не означає людського схвалення перекладу. Зміна на `false` та повторний білд виключає AI-записи з активного тестового ZIP, не стираючи локальну історію імпорту. Не всі AI-переклади ClassicUA гарантовано існують у корпусі Spoken.
@@ -69,7 +88,7 @@ Compendium — спільне вікно `Spoken`, **не п'ятий модул
 **Масовий імпорт ClassicUA 1:1:** у локальному Review UI є кнопка **«Автоімпорт 1:1 · ClassicUA»**. Вона виконує оновлення кандидатів, автоматичне схвалення підтверджених однозначних записів і явний **неактивний локальний** імпорт. Унизу відображається таблиця: кількість канонічних Spoken ID (включно з усіма модулями), знайдені однозначні кандидати, підтверджені зв'язки, імпортовані переклади за джерелом, записи без імпорту та відсоток покриття. Для масового запуску через термінал:
 
 ```sh
-python3 tools/review_ui_server.py --classicua /path/to/ClassicUA --spoken /path/to/spoken-wow --auto-import-one-to-one
+uv run --locked python tools/review_ui_server.py --classicua /path/to/ClassicUA --spoken /path/to/spoken-wow --auto-import-one-to-one
 ```
 
 Строго однозначні Quest-відповідності (унікальний source і target, один перевірений контекст Spoken та наявний англійський оригінал) можуть автоматично зберігатися як **попередній машинний імпорт** у `build/machine-one-to-one.json` навіть без Stage 3 review. Це не є людським апрувом mapping і не дозволяє включати текст у реліз. Після незалежного mapping review переклад переходить до звичайного перевіреного локального імпорту, а машинний запис не перезаписує його. У таблиці машинні імпорти показано окремою колонкою. У типовій конфігурації ClassicUA автоапрув увімкнено; для інших джерел вимкнено. Фактичне збереження — у приватному `build/translation-reviews.json`, не у Git та не у WoW. [Процедура й обмеження](docs/TRANSLATION_APPROVALS.md).
@@ -140,9 +159,9 @@ python3 tools/review_ui_server.py --classicua /path/to/ClassicUA --spoken /path/
 Наразі локально можна зібрати **лише діагностичний пакет**, а не повноцінну українську локалізацію.
 
 ```sh
-python3 tools/version.py check
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Для збирання потрібен Python 3. Для тестів додатково знадобляться Git, системна бібліотека Lua 5.4 та копія вихідного коду Spoken на закріпленій ревізії (зазвичай у сусідній директорії `../spoken-wow`). Якщо Spoken розташований в іншому місці, задайте `SPOKEN_SOURCE=/absolute/path/to/spoken-wow`. Ці команди не завантажують вихідний код, не встановлюють пакети та не звертаються до робочих сервісів.
@@ -152,7 +171,7 @@ python3 -m unittest discover -s tests -v
 ### Перевірка canonical ID (Stage 3)
 
 ```sh
-python3 tools/stage3_report.py --classicua /absolute/path/to/clean-pinned-ClassicUA --spoken /absolute/path/to/spoken-wow
+uv run --locked python tools/stage3_report.py --classicua /absolute/path/to/clean-pinned-ClassicUA --spoken /absolute/path/to/spoken-wow
 ```
 
 Детермінований звіт із метаданими записується до ігнорованого `build/stage3-report.json`. Опції `--reviews` та `--candidate` з `--candidate-manifest` перевіряють збережені рішення й окрему локальну ревізію без зміни закріпленого джерела. Це ще **не запуск pipeline джерел перекладу**. Див. [документацію Stage 3](docs/STAGE_3_IMPLEMENTATION.md).
@@ -160,7 +179,7 @@ python3 tools/stage3_report.py --classicua /absolute/path/to/clean-pinned-Classi
 ### Офлайн-покриття реальних ID Spoken (Stage 4A)
 
 ```sh
-python3 tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-wow
+uv run --locked python tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-wow
 ```
 
 Інструмент читає **справжній закріплений індекс canonical ID Spoken**, перевіряє оригінальні тексти Quests/Gossip/Readables без їхнього експорту й записує звіт про джерела, записи без підтвердженого оригіналу та загальну кількість до `build/stage4-source-coverage.json` (ігнорується Git). Прив’язка до ClassicUA **навмисно вимкнена**, доки немає незалежно схвалених Stage 3 зіставлень. `another` — заглушка, `own_translator` — mock. Для порожньої конфігурації клієнтську локаль необхідно передати через `--client-locale`. Див. [межі Stage 4A](docs/STAGE_4A_INVENTORY_COVERAGE.md).
@@ -170,7 +189,7 @@ python3 tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-
 Workbench аудіює **обидва закріплені репозиторії**, формує чергу справжніх кандидатів за Quest ID/event (лише метадані) і вимагає незалежної перевірки NPC, голосу, faction та оригінального тексту перед зіставленням:
 
 ```sh
-python3 tools/stage4b_workbench.py \
+uv run --locked python tools/stage4b_workbench.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --faction horde --limit 40
@@ -187,7 +206,7 @@ python3 tools/stage4b_workbench.py \
 **Локальний вебінтерфейс** розділяє Mapping Review і Translation Review. Порівнюйте перевірені UA/EN та speaker/voice/faction, відхиляйте/відкладайте mappings або подавайте повний людський Stage 3 `JoinProof` із **двома незалежними reviewer**. Перевірені joins дають pending-переклади. Редагуйте нові версії, переглядайте provenance/історію та окремо схвалюйте текст/граматику/AI/права. **Approval та імпорт — окремі дії**; імпорт створює лише інертний локальний snapshot без активації у WoW. Реальних схвалень у цьому PR немає.
 
 ```sh
-python3 tools/review_ui_server.py \
+uv run --locked python tools/review_ui_server.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow
 ```
@@ -197,25 +216,25 @@ python3 tools/review_ui_server.py \
 Явний імпорт (ті самі необов'язкові шляхи/політика, що й у UI):
 
 ```sh
-python3 tools/review_ui_server.py \
+uv run --locked python tools/review_ui_server.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --import-approved
 ```
 
-Перевірка: `python3 tools/version.py check`, `python3 tools/build.py` та `python3 -m unittest discover -s tests -v` (включно з локальними HTTP sockets).
+Перевірка: `uv run --locked python tools/version.py check`, `uv run --locked python tools/build.py` та `uv run --locked python -m unittest discover -s tests -v` (включно з локальними HTTP sockets).
 
 ### Аудит закріпленої ревізії ClassicUA (Stage 2A)
 
 ```sh
-python3 tools/classicua_audit.py --source /absolute/path/to/clean-pinned-ClassicUA
+uv run --locked python tools/classicua_audit.py --source /absolute/path/to/clean-pinned-ClassicUA
 ```
 
 Адаптер читає **окрему, незмінену робочу копію** ClassicUA на ревізії з [sources.lock.json](sources.lock.json), перевіряє хеші файлів та враховує реальний порядок завантаження й перевизначень `classic → sod → forever`. Звіт містить лише метадані й зберігається в ігнорованому Git файлі `build/classicua-audit.json`. Адаптер не виконує Lua-код ClassicUA, не створює пакетів із перекладеним текстом і поки не зіставляє записи з канонічними ID Spoken. Дивіться [опис реалізації](docs/STAGE_2A_IMPLEMENTATION.md) і [результати тестів](docs/STAGE_2A_TESTING.md).
 
 ## Версійність проєкту
 
-Кореневий файл [VERSION](VERSION) містить **версію проєкту** (початкова — `0.0.1`), яка не залежить від версій окремих аддонів (діагностичний пакет має `0.1.0`). Команди `python3 tools/version.py show` і `python3 tools/version.py check` показують і перевіряють версію; історію змін ведемо в [CHANGELOG.md](CHANGELOG.md). Git-теги та GitHub Releases створюються окремо після перевірки, а не автоматично під час підвищення версії. Докладніше — у [VERSIONING.md](docs/VERSIONING.md).
+Кореневий файл [VERSION](VERSION) містить **версію проєкту** (початкова — `0.0.1`), яка не залежить від версій окремих аддонів (діагностичний пакет має `0.1.0`). Команди `uv run --locked python tools/version.py show` і `uv run --locked python tools/version.py check` показують і перевіряють версію; історію змін ведемо в [CHANGELOG.md](CHANGELOG.md). Git-теги та GitHub Releases створюються окремо після перевірки, а не автоматично під час підвищення версії. Докладніше — у [VERSIONING.md](docs/VERSIONING.md).
 
 ## Документація
 

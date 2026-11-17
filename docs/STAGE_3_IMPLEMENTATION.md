@@ -113,9 +113,9 @@ The only committed review example is explicitly synthetic.
 ## Commands and verified coverage
 
 ```sh
-python3 tools/stage3_report.py --classicua /tmp/stage3-classicua --spoken ../spoken-wow
+uv run --locked python tools/stage3_report.py --classicua /tmp/stage3-classicua --spoken ../spoken-wow
 # Optional local update analysis:
-python3 tools/stage3_report.py --classicua /path/to/baseline --spoken /path/to/spoken --candidate /path/to/reviewed-candidate --candidate-manifest /path/to/reviewed-manifest.json
+uv run --locked python tools/stage3_report.py --classicua /path/to/baseline --spoken /path/to/spoken --candidate /path/to/reviewed-candidate --candidate-manifest /path/to/reviewed-manifest.json
 ```
 
 Optional `--reviews` reads reviewed schema version 1. Output defaults to ignored

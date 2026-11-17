@@ -61,9 +61,9 @@ Tests must use actual pinned public functions or source-verified golden naming/c
 
 Run:
 ```sh
-python3 tools/version.py check
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 The diagnostic ZIP must remain byte-identical, SHA-256:

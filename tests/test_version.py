@@ -138,5 +138,37 @@ class VersionTests(unittest.TestCase):
             version.bump(self.root,'patch')
         self.assertEqual(target.read_bytes(),b'0.0.1\n')
 
+    def test_uv_metadata_version_consistency_and_lock_requirement(self):
+        # Legacy project-root fixtures need no uv metadata. Once a uv
+        # pyproject exists, both the PEP 621 version and lockfile must be
+        # synchronized with VERSION on every version check.
+        (self.root / 'pyproject.toml').write_text(
+            '[project]\nname = "spoken-ukrainian-tools"\n'
+            'version = "0.0.1"\n',
+            encoding='utf-8')
+        lockfile = self.root / 'uv.lock'
+        with self.assertRaisesRegex(ValueError, 'uv.lock missing'):
+            version.check(self.root)
+        lockfile.write_text(
+            'version = 1\nrevision = 3\nrequires-python = ">=3.12"\n'
+            '[[package]]\nname = "spoken-ukrainian-tools"\n'
+            'version = "0.0.1"\nsource = { virtual = "." }\n',
+            encoding='utf-8')
+        self.assertEqual(version.check(self.root), '0.0.1')
+        (self.root / 'pyproject.toml').write_text(
+            '[project]\nname = "spoken-ukrainian-tools"\n'
+            'version = "0.0.2"\n',
+            encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'pyproject.toml project.version'):
+            version.check(self.root)
+        (self.root / 'pyproject.toml').write_text(
+            '[project]\nname = "spoken-ukrainian-tools"\n'
+            'version = "0.0.1"\n',
+            encoding='utf-8')
+        lockfile.write_text(lockfile.read_text().replace(
+            'version = "0.0.1"', 'version = "0.0.2"'), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'uv.lock project version'):
+            version.check(self.root)
+
     def test_real_project_metadata_is_consistent_read_only(self):
         self.assertEqual(version.check(ROOT),version.read_version(ROOT))

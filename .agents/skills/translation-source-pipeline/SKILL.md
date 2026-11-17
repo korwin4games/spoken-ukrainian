@@ -37,7 +37,7 @@ description: Design, change, test or review Spoken Ukrainian's configurable orde
 
 1. Use invented unit tests for permutations; English first/only/omitted, own mock first/only, empty policy with `deDE`, invalid configs, bad candidate hashes, missing providers and deterministic reports.
 2. Check single-record vs batch equivalence; no unintended lower-priority calls after a real result; no actual translation/publication from mocks.
-3. Run `python3 -m unittest discover -s tests -v`, `python3 tools/build.py` and `python3 tools/version.py check` when the required pinned test dependencies are present. Report CI evidence separately from local execution.
+3. Run `uv run --locked python -m unittest discover -s tests -v`, `uv run --locked python tools/build.py` and `uv run --locked python tools/version.py check` when the required pinned test dependencies are present. Report CI evidence separately from local execution.
 4. Confirm unchanged pinned repositories, `VERSION`, diagnostic package and README/architecture diagrams when relevant.
 
 ## Output

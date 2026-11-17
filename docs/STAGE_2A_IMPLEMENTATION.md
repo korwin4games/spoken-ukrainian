@@ -96,10 +96,10 @@ The detailed local report is about 52 MB because every effective field has prove
 ## Usage and remaining scope
 
 ```sh
-python3 tools/classicua_audit.py --source /absolute/path/to/ClassicUA
-python3 tools/classicua_audit.py --source /absolute/path/to/ClassicUA --output build/review/audit.json
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/classicua_audit.py --source /absolute/path/to/ClassicUA
+uv run --locked python tools/classicua_audit.py --source /absolute/path/to/ClassicUA --output build/review/audit.json
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Tests do not require ClassicUA to exist. The optional audit requires a clean checkout at the exact pin. See [STAGE_2A_TESTING.md](STAGE_2A_TESTING.md) for effective inventory and results.

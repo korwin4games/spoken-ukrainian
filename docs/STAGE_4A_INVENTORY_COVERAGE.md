@@ -16,7 +16,7 @@
 ## Run
 
 ```sh
-python3 tools/stage4_coverage.py \
+uv run --locked python tools/stage4_coverage.py \
   --spoken /absolute/path/to/clean-pinned-spoken-wow
 ```
 
@@ -25,7 +25,7 @@ Default policy is [`config/translation_sources.json`](../config/translation_sour
 For explicit English-only selection:
 
 ```sh
-python3 tools/stage4_coverage.py \
+uv run --locked python tools/stage4_coverage.py \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --policy config/examples/english-only.json
 ```
@@ -33,7 +33,7 @@ python3 tools/stage4_coverage.py \
 For an **empty** provider list:
 
 ```sh
-python3 tools/stage4_coverage.py \
+uv run --locked python tools/stage4_coverage.py \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --policy config/examples/client-language.json \
   --client-locale deDE

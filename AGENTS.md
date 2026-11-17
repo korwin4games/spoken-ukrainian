@@ -34,6 +34,11 @@ Read only what the task needs; do not use old planning notes as proof of current
 - Issue #19 is implemented in `addons/Spoken_Quests_UA/NativeQuestFrame.lua`: independent **native NPC QuestFrame** translation for imported, audited QuestID/events with Shift-held English original; ClassicUA is an offline-only build input. Use only guarded widget-level `hooksecurefunc` with SetText reentry protection and per-Quest/moment snapshot; no global getter/Spoken monkey-patches. Yield to runtime ClassicUA when loaded. Lua simulation + actual WoW client acceptance required before any release. This is separate from Spoken audio-gated captions and opt-in preview.
 - The historical Places diagnostic `addons/SpokenCommunity_ukrainian-diagnostic` remains unchanged and maintains its source-lock hashes. No Release, CurseForge distribution, or installer modification is authorized.
 
+### Mandatory uv Python workflow
+
+- Use **uv** for all Python commands: `uv sync --locked`, followed by `uv run --locked python tools/…` / `uv run --locked python -m unittest discover -s tests -v`. Keep `.python-version` set to 3.12 and `uv.lock` committed in sync with `pyproject.toml`. Avoid `pip install` and bare `python3` in instructions or CI. The test suite currently has no third-party Python packages; `liblua5.4` is a system C library and remains a runner prerequisite.
+- `VERSION` is the authoritative project version: if it changes, synchronize the PEP 621 `project.version` and regenerate `uv.lock` in that same reviewed change; do not allow version metadata to drift.
+
 ## Active product priorities
 - Near-term Ukrainian content priority is **P0 Places lore**, **P1 Readables books/notes**, **P2 Bosses stories**, then **P3 Compendium UI chrome**, then **P4 Quests/Gossip**. Quest mapping and local reviewer UI are deferred, not deleted. See `docs/PLACES_SOURCE_AUDIT.md` for verified ClassicUA-name-only vs UA VoiceOver candidate-source constraints. Treat Compendium as a shared core UI, **not** an added fifth Community Pack.
 - Runtime blockers are distinct: core UI labels follow actual `GetLocale()`; Places has no safe per-record English story fallback; Readables text-only records need safe no-audio handling and Compendium text selection; Bosses need an explicit story language resolver and content rights. Work only on supported/rights-cleared slices and report blockers truthfully.
@@ -76,12 +81,12 @@ Read only what the task needs; do not use old planning notes as proof of current
 
 ## Project versioning and release discipline
 - Read `docs/VERSIONING.md`, `CHANGELOG.md`, and `VERSION` before a versioning or release task.
-- `VERSION` is the single source of truth for the **project** version (currently `0.0.1`). Read it with `python3 tools/version.py show`; never add another hardcoded project-version constant.
+- `VERSION` is the single source of truth for the **project** version (currently `0.0.1`). Read it with `uv run --locked python tools/version.py show`; never add another hardcoded project-version constant.
 - Project and addon versions are independent. In particular, the diagnostic addon's `.toc` version is `0.1.0`; do not synchronize it with `VERSION`, change its proven archive, or alter dependency versions in `sources.lock.json` as part of a project bump.
 - Use the repository's strict numeric `MAJOR.MINOR.PATCH` policy: PATCH for fixes, MINOR for features; during 0.x, breaking changes may use MINOR but must be labeled **BREAKING** in the changelog. The first stable MAJOR requires explicit approval and `--approve-stable`; do not assume Stage 2B or Stage 3 completion implies a release.
 - During ordinary development, describe notable changes under `CHANGELOG.md` > `[Unreleased]`. **Do not bump versions automatically for every commit, fix, feature or completed stage.** Bump only when the task expressly requests release/version preparation.
-- For a requested bump, first inspect Git state, version and changelog. Use `python3 tools/version.py bump patch|minor|major --dry-run` to preview, then the supported bump command. The CLI updates **only** `VERSION`: prepare the matching new dated changelog section separately, preserve history, and run `python3 tools/version.py check`. A check failure between the bump and changelog edit is expected; do not bypass validation.
-- CI validates version/changelog consistency. If verifying a project tag, use `python3 tools/version.py check --tag vX.Y.Z`. Never create, move, push tags, merge release PRs, publish GitHub Releases or publish Community Packs without explicit authorization and required content permissions.
+- For a requested bump, first inspect Git state, version and changelog. Use `uv run --locked python tools/version.py bump patch|minor|major --dry-run` to preview, then the supported bump command. The CLI updates **only** `VERSION`: prepare the matching new dated changelog section separately, preserve history, and run `uv run --locked python tools/version.py check`. A check failure between the bump and changelog edit is expected; do not bypass validation.
+- CI validates version/changelog consistency. If verifying a project tag, use `uv run --locked python tools/version.py check --tag vX.Y.Z`. Never create, move, push tags, merge release PRs, publish GitHub Releases or publish Community Packs without explicit authorization and required content permissions.
 - Annotated Git project tags use `v<project-version>`; tag creation, Git pushes and GitHub Releases are separate decisions from incrementing the version.
 
 ## Documentation parity and reporting
@@ -94,12 +99,12 @@ Read only what the task needs; do not use old planning notes as proof of current
 1. Inspect `git status`, branch and task scope; do not discard existing changes.
 2. Use focused edits, synthetic fixtures and source-backed tests. Source adapters read pinned local checkouts without executing arbitrary Lua.
 3. For code or build changes, run:
-   `python3 tools/version.py check`
-   `python3 tools/build.py`
-   `python3 -m unittest discover -s tests -v`
+   `uv run --locked python tools/version.py check`
+   `uv run --locked python tools/build.py`
+   `uv run --locked python -m unittest discover -s tests -v`
    Stage 1 tests require pinned Spoken and system Lua 5.4.
 4. For optional real-source audits, run:
-   `python3 tools/classicua_audit.py --source /absolute/path/to/clean-pinned-ClassicUA`
+   `uv run --locked python tools/classicua_audit.py --source /absolute/path/to/clean-pinned-ClassicUA`
    Outputs must remain under ignored `build/` and contain metadata only.
 5. Report verified results, untested in-game behavior, regressions and unresolved permissions.
 6. Never push, merge, tag or publish without the user's explicit instruction.

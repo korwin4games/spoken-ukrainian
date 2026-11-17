@@ -74,8 +74,8 @@ English interface-string fallback and configured voice fallback remain available
 
 ```sh
 cd /home/korwin/projects/wow/spoken-ukrainian
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Python standard library only for build and test orchestration. The Lua contract tests use the already installed `liblua5.4` through `ctypes`, without a Python package or interpreter installation. The Stage 0 Node preference was advisory; Python's standard ZIP/hash/test support avoids npm dependencies for this two-file pack. No parser, source adapter or database is needed in Stage 1.

@@ -64,7 +64,7 @@ From the project repository with Python 3.12+ and Git installed:
 
 ```sh
 cd /path/to/spoken-ukrainian
-python3 tools/build_ukrainian.py \
+uv run --locked python tools/build_ukrainian.py \
   --classicua ../ClassicUA \
   --spoken ../spoken-wow
 ```
@@ -211,6 +211,58 @@ replace its strings.
    ZIP has the Quest ID/event, record the ID/event and WoW
    `/console scriptErrors 1` Lua error (if any); actual client
    acceptance remains unverified until this manual test.
+
+## Safe local AddOn installer with uv
+
+The project uses **uv** and a checked-in `uv.lock` for reproducible
+Python 3.12 execution. The CLI has no third-party Python dependencies,
+and no build system is required; `[tool.uv] package = false`.
+Install uv using its official docs, then run from the repo root:
+
+```sh
+uv sync --locked
+uv run --locked python -m unittest discover -s tests -v
+uv run --locked python tools/build_ukrainian.py \
+  --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+**Quit WoW Forever before installing.** Find the **real**, existing
+`Interface/AddOns` directory (it must contain the official
+`Spoken/Spoken.toc` and `Spoken_Quests/Spoken_Quests.toc`).
+On Linux, Windows and WSL, paths vary: replace the following with yours.
+
+```sh
+uv run --locked python tools/install_addon.py \
+  --addons "/real/path/to/WoW/Interface/AddOns" --dry-run
+
+uv run --locked python tools/install_addon.py \
+  --addons "/real/path/to/WoW/Interface/AddOns"
+```
+
+The optional `--archive /path/to/file.zip` argument selects a
+different **local** ZIP, which must have a matching `.zip.sha256`
+sidecar beside it. Without this argument the installer uses the
+local `dist/Spoken_Ukrainian_Quest_Local_Test.zip` from the builder.
+
+**Safety properties**:
+- Fail before writing if the ZIP/checksum is missing or corrupt, the
+  archive contains unexpected/duplicate paths, symlinks, directory
+  entries, non-stored ZIP entries, or the AddOns path is incorrect.
+- `--dry-run` validates files and destination **without changing them**.
+- Only the two Ukrainian folders are replaced.
+  **Official Spoken, Spoken_Quests, and unrelated AddOns are untouched.**
+- On upgrade, original Ukrainian folders move into the hidden
+  `Interface/AddOns/.spoken-ukrainian-backups/` directory. Previous files
+  remain available for recovery; no automatic backup deletion.
+- New files are prepared in a private folder inside AddOns, then moved
+  into place. If installation fails partway, the script attempts to
+  restore the prior versions and reports incomplete rollback explicitly.
+- The test ZIP and generated translations remain **private and local**.
+  Do not distribute them or claim they are release-approved.
+
+After installation, restart the game, disable ClassicUA **in game**
+for native QuestFrame testing, open an imported quest and hold Shift
+to inspect the original English text.
 
 ## Install and test in the real game
 

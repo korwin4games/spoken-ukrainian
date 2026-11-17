@@ -93,9 +93,9 @@ Add:
 Run at minimum:
 
 ```sh
-python3 tools/version.py check
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Verify the resulting diagnostic ZIP digest remains **`5a2519858229c9aa004dbef075d1c8c51561e33f09828112504e0558005c8a8e`** (unless tests establish an authorized intentional change, which this task should avoid). Record actual test counts, unexpected gaps and evidence. An absence of a working WoW client means **manual in-game acceptance is pending**, not passed.

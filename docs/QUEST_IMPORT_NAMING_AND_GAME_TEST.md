@@ -63,9 +63,9 @@ is necessary.
 ## Step-by-step — verify the **offline** Quest importer
 
 1. Use the PR #17 branch with *exact pinned* Spoken and ClassicUA
-   checkouts. Run `python3 -m unittest discover -s tests -v` and verify
+   checkouts. Run `uv run --locked python -m unittest discover -s tests -v` and verify
    the existing compatibility/Quest tests pass.
-2. Run `python3 tools/review_ui_server.py --classicua /absolute/path/to/ClassicUA --spoken /absolute/path/to/spoken-wow`.
+2. Run `uv run --locked python tools/review_ui_server.py --classicua /absolute/path/to/ClassicUA --spoken /absolute/path/to/spoken-wow`.
    Open `http://127.0.0.1:8765/` on the same computer.
 3. Confirm the title **Quest Translation Import · Spoken_Quests**
    and that the interface says **offline** and **Quests only**.
@@ -76,7 +76,7 @@ is necessary.
    `human_reviewed_imported_total`.
 5. Alternatively stop the server and run:
    ```sh
-   python3 tools/review_ui_server.py \
+   uv run --locked python tools/review_ui_server.py \
      --classicua /absolute/path/to/ClassicUA \
      --spoken /absolute/path/to/spoken-wow \
      --auto-import-one-to-one

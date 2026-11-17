@@ -5,8 +5,8 @@ Date: 2026-11-16. The initial implementation was prepared locally on `feat/class
 ## Automated verification
 
 ```sh
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Result: **52 tests passed**, comprising 36 synthetic Stage 2A tests and all 16 unchanged Stage 1 regression tests. No ClassicUA checkout, translation fixture, network, database or TTS provider is required by the standard suite. Stage 1 still needs its existing pinned Spoken checkout and system Lua library.
@@ -28,7 +28,7 @@ No diagnostic addon files or existing test files were modified. The Stage 0 docu
 The separate temporary checkout used for this task is `/tmp/spoken-uk-classicua-pinned`. It was acquired from the public repository and detached at `1770d208ad853d23d61105cf510d53804770d916`. Acquisition was separate from the adapter; the adapter never fetches or checks out source itself.
 
 ```sh
-python3 tools/classicua_audit.py --source /tmp/spoken-uk-classicua-pinned
+uv run --locked python tools/classicua_audit.py --source /tmp/spoken-uk-classicua-pinned
 ```
 
 Result: all 25 selected data files parsed successfully in actual manifest order. The report validates 36 relevant file hashes. There are no unsupported Lua constructs, unsupported row fields, invalid field types or source errors at this pin. Three explicit warnings explain unresolved permissions, inherited SoD review and unrendered player grammar.
@@ -90,7 +90,7 @@ The classifier understands 15069 forms. It flags 36 numeric captures as requirin
 
 ## CI and remaining limits
 
-No workflow modification is necessary: the existing `python3 -m unittest discover -s tests -v` discovers all Stage 2A tests. It still checks out only this project and pinned Spoken, installs Lua, builds the original diagnostic pack and runs the suite. It neither downloads ClassicUA nor uploads the audit report. The local build/test commands passed; a remote run was not performed during initial implementation because pushing was outside that task's scope. The prior main-branch CI success is not evidence of a remote Stage 2A run.
+No workflow modification is necessary: the existing `uv run --locked python -m unittest discover -s tests -v` discovers all Stage 2A tests. It still checks out only this project and pinned Spoken, installs Lua, builds the original diagnostic pack and runs the suite. It neither downloads ClassicUA nor uploads the audit report. The local build/test commands passed; a remote run was not performed during initial implementation because pushing was outside that task's scope. The prior main-branch CI success is not evidence of a remote Stage 2A run.
 
 No code executes the real ClassicUA Lua, no game pack is produced from its text, and no production or publishing operation occurred. Real-corpus testing proves this pinned syntax and its recognized wrappers, not all future revisions or all game hook behavior. Gameplay eligibility, canonical page chains, source hash-to-Spoken-moment joins, unknown grammar review, and remaining text-display contracts belong to later stages.
 
