@@ -190,7 +190,60 @@ def read_classicua_inflections(classicua_path, source_files):
     return result
 
 
-def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
+def local_gossip_titles(state):
+    """Title-only lookup by EXACT questID and faction from pinned ClassicUA.
+
+    This is independent of Spoken narrated Quest accept/progress/complete.
+    It never upgrades a title to a reviewed mapping/Quest narration. Exclude
+    AI-marked titles when the user's explicit import policy opts out.
+    """
+    allow_ai = state.policy.allows_ai_transations("classicua")
+    views, _ = state.dataset.faction_views(include_ai=allow_ai)
+    titles = {}
+    for faction in ("alliance", "horde"):
+        rows = {}
+        for quest_id, record in views[faction].items():
+            if type(quest_id) is not int or quest_id <= 0:
+                continue
+            if record.ai and not allow_ai:
+                continue
+            field = record.fields.get((1,))
+            if not field or type(field.node.value) is not str:
+                continue
+            title = field.node.value.strip()
+            if not title or len(title) > 500:
+                continue
+            # No unpinned third-party source file is trusted for this export.
+            if field.origin.file not in state.source.files:
+                raise ValueError("unverified_classicua_quest_title_source")
+            rows[quest_id] = title
+        titles[faction] = rows
+    return titles
+
+
+def import_reason_for_quest(state, quest_id):
+    """Metadata-only Quest diagnostic, with no source text exposed."""
+    if type(quest_id) is not int or quest_id <= 0:
+        raise ValueError("invalid_diagnostic_quest_id")
+    prefix = "q:" + str(quest_id) + ":"
+    targets = sorted(k for k, target in state.inventory.targets.items()
+                     if target.family == "quest" and k.startswith(prefix))
+    hints = [row for row in state._hints
+             if row["source_id"].startswith("quest:")
+             and row["source_id"].split(":")[2] == str(quest_id)]
+    refs = [row["target_id"] for store in
+            (state.machine_imports.file.data, state.translations.file.data)
+            for row in store.get("imports", [])
+            if row["target_id"].startswith(prefix)]
+    return {"quest_id": quest_id,
+            "spoken_narrated_targets": len(targets),
+            "classicua_candidates": len(hints),
+            "candidate_reasons": sorted({row["reason"] for row in hints}),
+            "auto_imported_targets": len(set(refs)),
+            "allow_ai_transations": state.policy.allows_ai_transations("classicua")}
+
+
+def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles=None):
     if not re.fullmatch(r"[a-f0-9]{40}", pinned_spoken_sha):
         raise ValueError("invalid_spoken_pin")
     lines = [
@@ -213,6 +266,21 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None):
                 lines.append("            [" + lua_quote(case) + "] = {"
                              + lua_quote(pair[0]) + ", " + lua_quote(pair[1]) + "},")
             lines.append("        },")
+        lines.append("    },")
+    lines.append("}")
+    # Gossip has reliable per-row questID on WoW Forever. Titles are
+    # independently sourced, provisional, and NEVER counted as narration.
+    lines.append("SpokenUkrainian.GossipQuestTitles = {")
+    for faction, rows in sorted((gossip_titles or {}).items()):
+        if faction not in ("alliance", "horde") or type(rows) is not dict:
+            raise ValueError("invalid_gossip_title_faction")
+        lines.append("    [" + lua_quote(faction) + "] = {")
+        for quest_id, title in sorted(rows.items()):
+            if type(quest_id) is not int or quest_id <= 0 or type(title) is not str:
+                raise ValueError("invalid_gossip_title_entry")
+            if len(title) > 500:
+                raise ValueError("oversized_gossip_title")
+            lines.append("        [%d] = %s," % (quest_id, lua_quote(title)))
         lines.append("    },")
     lines.append("}")
     lines.append("SpokenUkrainian.QuestTranslations = {")
@@ -334,7 +402,9 @@ def build(classicua, spoken):
     if not preview_count:
         raise ValueError("no_unambiguous_quest_imports_for_local_test_pack")
     forms = read_classicua_inflections(classicua, state.source.files)
-    entries = template_entries(render_quest_lua(preview, state.inventory.revision, forms))
+    titles = local_gossip_titles(state)
+    entries = template_entries(render_quest_lua(
+        preview, state.inventory.revision, forms, titles))
     artifact, digest = write_zip(entries)
     return {
         "artifact": artifact, "sha256": digest,
@@ -344,6 +414,8 @@ def build(classicua, spoken):
         "skipped_ambiguous_preview_variants": ambiguous,
         "machine_provisional": report["machine_one_to_one_imported"],
         "human_reviewed": report["human_reviewed_imported_total"],
+        "title_only_gossip_records": {k: len(v) for k, v in titles.items()},
+        "quest_97279": import_reason_for_quest(state, 97279),
         "report": report,
     }
 
@@ -368,6 +440,9 @@ def main(argv=None):
     print("Skipped ambiguous voice/wording variants:",
           result["skipped_ambiguous_preview_variants"])
     print("Local test ZIP:", result["artifact"])
+    print("Title-only Gossip entries by faction:",
+          result["title_only_gossip_records"])
+    print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])
     print("SHA-256:", result["sha256"])
     print("NOT a release: no recorded audio and NO replacement of Spoken narrator captions.")
     return 0
