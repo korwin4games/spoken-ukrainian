@@ -3,8 +3,9 @@
 **Goal:** turn missing NPC Gossip into reviewable Ukrainian translations,
 rather than mistaking the 15 NPC-specific ClassicUA records for all coverage.
 The pinned Spoken corpus currently contains 5,047 NPC/hash wordings that do
-not match ClassicUA; some English lines repeat across many NPCs. The actual
-unique group count is printed by the command below and must not be guessed.
+not match ClassicUA; some English lines repeat across many NPCs. The pinned corpus deduplicates these 5,047 wordings into **3,109 unique
+English texts** (1,938 duplicates, 418 shared-wording groups). At the
+default batch size 40, this yields **78 private translation batches**.
 
 ## 1. Build a deduplicated private translation queue
 
@@ -27,6 +28,17 @@ Files ignored by Git:
   gender/class/race references or game terminology without review.
 
 Do not commit source batches, model outputs, reviewed text, or ledgers.
+
+### Codex-assisted batch translation (explicit opt-in)
+
+Open Codex CLI in the project root and use the instruction in
+[`docs/GOSSIP_CODEX_TRANSLATION_PROMPT.md`](GOSSIP_CODEX_TRANSLATION_PROMPT.md).
+Tell it to process `build/gossip-batches/batch-0001.json` **only**, then
+inspect the resulting JSON and run the `propose` command in step 2.
+Repeat for the next batch. **The generator does not call a provider or spend
+tokens automatically.** This isolates model-generated text from human approval
+and the local WoW ZIP.
+
 
 ## 2. Propose translated text — status PENDING
 
