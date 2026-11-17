@@ -16,6 +16,7 @@ from adapters.review_workbench import (approve_explicit_join, build_workbench,
                                        empty_decisions, record_decision, validate_decisions)
 from adapters.spoken.text_index import TextIndex
 from adapters.local_review_store import LocalFile, strict_json
+from adapters.import_summary import import_summary
 from adapters.reviewed_bridge import approved_quest_bindings
 from adapters.translation_approvals import ReviewCandidate, TranslationApprovals
 from adapters.translation_sources import (AlternativeSourceStub, ClassicUAProvider,
@@ -176,7 +177,26 @@ class LocalReviewState:
             elif action == "decide" and set(payload) == {"identity", "decision", "reviewer", "checks"}:
                 self.translations.decide(**payload, observations=observations, policy=self.policy)
             elif action == "import" and payload == {}:
-                return self.translations.import_approved(observations, self.policy)
+                result = self.translations.import_approved(observations, self.policy)
+                return result | {"report": import_summary(
+                    self.inventory, observations, self.policy, self.translations,
+                    self._hints, self.source.units, changed=result["changed"])}
+            elif action == "auto_import_one_to_one" and payload == {"source": "classicua"}:
+                # This action is intentionally limited to an already explicitly
+                # opted-in, audited source; it cannot auto-approve ID mappings.
+                if not self.policy.auto_approves_one_to_one("classicua"):
+                    raise ValueError("one_to_one_auto_import_not_enabled_for_source")
+                if any(o.candidate.provider != "classicua" for o in observations):
+                    raise ValueError("multi_source_auto_import_not_supported")
+                saved = self.translations.observe(observations, self.policy)
+                result = self.translations.import_approved(observations, self.policy)
+                summary = import_summary(
+                    self.inventory, observations, self.policy, self.translations,
+                    self._hints, self.source.units,
+                    auto_approved=saved["auto_approved"], changed=result["changed"])
+                return {"imported": result["imported"], "changed": result["changed"],
+                        "auto_approved": saved["auto_approved"],
+                        "activated": False, "report": summary}
             else:
                 raise ValueError("invalid_translation_action")
             return {"saved": True, "activated": False}
