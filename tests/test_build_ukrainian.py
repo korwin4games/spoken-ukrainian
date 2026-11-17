@@ -37,6 +37,7 @@ class BuildUkrainianTests(unittest.TestCase):
             "Spoken_Quests_UA/Spoken_Quests_UA.toc",
             "Spoken_Quests_UA/Module.lua",
             "Spoken_Quests_UA/NativeQuestFrame.lua",
+            "Spoken_Quests_UA/GossipQuestTitles.lua",
             "Spoken_Quests_UA/Translations.lua",
         })
         self.assertIn(b"Spoken_Ukrainian, ", entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"]
@@ -142,6 +143,42 @@ class BuildUkrainianTests(unittest.TestCase):
             preview, _, _ = builder.current_quest_texts(state)
         self.assertNotIn("title", preview[42])
 
+    def test_gossip_title_only_from_audited_quest_records_even_without_spoken_voice(self):
+        state = Mock()
+        state.policy.allows_ai_transations.return_value = True
+        state.source.files = {"entries/forever/quest_horde.lua": "a" * 64}
+        source = "entries/forever/quest_horde.lua"
+        entry = SimpleNamespace(
+            ai=True, fields={(1,): SimpleNamespace(
+                node=SimpleNamespace(value="Загублена зброя"),
+                origin=SimpleNamespace(file=source))})
+        state.dataset.faction_views.return_value = (
+            {"alliance": {}, "horde": {97279: entry}}, [])
+        names = builder.local_gossip_titles(state)
+        self.assertEqual(names, {"alliance": {}, "horde": {97279: "Загублена зброя"}})
+        generated = builder.render_quest_lua({}, "a" * 40, gossip_titles=names).decode()
+        self.assertIn("[97279] = \"Загублена зброя\"", generated)
+        self.assertIn("SpokenUkrainian.GossipQuestTitles", generated)
+        self.assertIn("SpokenUkrainian.QuestTranslations = {}", generated)
+        # This title is *not* a narration import and remains unreviewed.
+        state.policy.allows_ai_transations.return_value = False
+        state.dataset.faction_views.return_value = (
+            {"alliance": {}, "horde": {}}, [])
+        self.assertEqual(builder.local_gossip_titles(state)["horde"], {})
+
+    def test_quest_97279_diagnostic_does_not_invent_reason_without_real_corpus(self):
+        state = Mock()
+        state.policy.allows_ai_transations.return_value = True
+        state.inventory.targets = {"q:42:accept": SimpleNamespace(family="quest")}
+        state._hints = [{"source_id": "quest:horde:97279:accept",
+                         "reason": "target_unavailable", "candidates": []}]
+        state.machine_imports.file.data = {"imports": []}
+        state.translations.file.data = {"imports": []}
+        report = builder.import_reason_for_quest(state, 97279)
+        self.assertEqual(report["spoken_narrated_targets"], 0)
+        self.assertEqual(report["auto_imported_targets"], 0)
+        self.assertEqual(report["candidate_reasons"], ["target_unavailable"])
+
     def test_import_always_runs_before_zip_write(self):
         state = Mock()
         state.inventory.revision = "a" * 40
@@ -164,6 +201,8 @@ class BuildUkrainianTests(unittest.TestCase):
                 builder, "build_state", return_value=state), patch.object(
                 builder, "current_quest_texts", return_value=(preview, 1, 0)), patch.object(
                 builder, "read_classicua_inflections", return_value={}), patch.object(
+                builder, "local_gossip_titles", return_value={"horde": {}, "alliance": {}}), patch.object(
+                builder, "import_reason_for_quest", return_value={"quest_id": 97279}), patch.object(
                 builder, "write_zip", side_effect=fake_zip):
             built = builder.build(Path("/unused/classicua"), Path("/unused/spoken"))
         self.assertEqual(order, ["import", "zip"])
