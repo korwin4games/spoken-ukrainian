@@ -6,6 +6,16 @@
 
 > **Development status:** Ukrainian language registration and an original text-only **Places diagnostic pack** have been implemented and manually tested in Forever. The ClassicUA source adapter is implemented. Full Ukrainian quest, dialogue, book, location and boss-story packs **have not yet been released**.
 
+## Local Spoken Ukrainian Quest test build
+
+The build produces two independently installable AddOns: **Spoken Ukrainian** (`Spoken_Ukrainian`) and the Quest module **Spoken Ukrainian: Quests** (`Spoken_Quests_UA`). Official `Spoken` and `Spoken_Quests` are unchanged. **Every build MUST auto-import current ClassicUA 1:1 Quest translations**; bad/missing pinned checkouts, import errors, or no unambiguous Quest translations fail the build.
+
+```sh
+python3 tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+Unzip the private `dist/Spoken_Ukrainian_Quest_Local_Test.zip` directly into `Interface/AddOns/`. In WoW use `/spokenuk preview on` to test an opt-in **separate** Quest translation frame. It is **not** Spoken's native captions: pinned Spoken 3.9.0 requires actual audio metadata to enqueue Quest subtitles, and this pack neither fakes audio nor patches upstream. Machine-matched text is conspicuously marked provisional; do not distribute this test build. [Exact game test steps and limitations](docs/QUEST_LOCAL_TEST_BUILD.md).
+
 ## Architecture and translation flow
 
 Spoken Ukrainian prepares Ukrainian content **offline** for the **unmodified Spoken Player**. Discovering a translation does **not** approve its canonical Spoken identity, text quality, content rights or runtime compatibility.
