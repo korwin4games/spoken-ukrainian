@@ -12,6 +12,10 @@ from adapters.local_review_store import LocalFile
 from adapters.translation_sources import CandidateState, TranslationCandidate, HEX64
 
 CHECKS = ("text", "grammar", "ai", "rights")
+AUTO_DECISION = "auto_approved_1to1"
+AUTO_REVIEWER = "policy:verified_one_to_one"
+# Automatic approval is NOT a human quality/grammar attestation.
+AUTO_CHECKS = {"text": False, "grammar": False, "ai": True, "rights": True}
 BINDING = {"target_id", "source_id", "original_sha256", "source_context_sha256",
            "target_context_sha256", "grammar_sha256"}
 KEY_FIELDS = BINDING | {"text_sha256", "base_sha256", "kind", "rights_status"}
@@ -73,11 +77,15 @@ def _validate_ledger(data):
             provenance_seen.add(digest(p))
         for d in row["decisions"]:
             fields(d, {"decision", "reviewer", "checks"})
-            if (d["decision"] not in ("approved", "rejected", "deferred")
+            if (d["decision"] not in ("approved", "rejected", "deferred", AUTO_DECISION)
                     or not nonblank(d["reviewer"], 120) or type(d["checks"]) is not dict
                     or set(d["checks"]) != set(CHECKS)
                     or any(type(v) is not bool for v in d["checks"].values())
-                    or (d["decision"] == "approved" and not all(d["checks"].values()))):
+                    or (d["decision"] == "approved" and not all(d["checks"].values()))
+                    or (d["decision"] == AUTO_DECISION and
+                        (row["kind"] != "provider" or row["rights_status"] != "reviewed"
+                         or d["reviewer"] != AUTO_REVIEWER or d["checks"] != AUTO_CHECKS))
+                    or (d["decision"] != AUTO_DECISION and d["reviewer"] == AUTO_REVIEWER)):
                 raise ValueError("explicit_content_attestation_required")
         seen[row["id"]] = row
         numbers.add(row["number"])
@@ -88,7 +96,8 @@ def _validate_ledger(data):
         fields(item, {"target_id", "version_id"})
         row = seen.get(item["version_id"]) if type(item["version_id"]) is str else None
         if (row is None or item["target_id"] != row["target_id"]
-                or row["target_id"] in imported_targets or status(row) != "approved"):
+                or row["target_id"] in imported_targets
+                or status(row) not in ("approved", AUTO_DECISION)):
             raise ValueError("invalid_or_duplicate_translation_import")
         imported_targets.add(row["target_id"])
     return deepcopy(data)
@@ -150,16 +159,49 @@ class TranslationApprovals:
         data["imports"].sort(key=lambda r: r["target_id"])
         self.file.save(data)
 
+    @staticmethod
+    def _unique_one_to_one(row, observations, policy):
+        """Fail closed on shared source, target or alternate provider candidates.
+
+        The caller (LocalReviewState) MUST have obtained observations by
+        revalidating human-approved Stage 3 joins with approved_quest_bindings.
+        Cardinality alone is never evidence of mapping identity.
+        """
+        if row["kind"] != "provider" or row["rights_status"] != "reviewed":
+            return False
+        related = [observation.row() for observation in observations
+                   if observation.target_id == row["target_id"]
+                   or observation.source_id == row["source_id"]]
+        if len(related) != 1 or related[0]["id"] != row["id"]:
+            return False
+        provider = related[0]["provenance"][0]["provider"]
+        return (policy.auto_approves_one_to_one(provider)
+                and policy.stores(provider)
+                and provider == "classicua")
+
     def observe(self, observations, policy):
-        """Store explicitly requested discoveries; preserve edits and all provenance."""
+        """Store reviewed-identity candidates; optionally auto-approve unique 1:1.
+
+        Only *new* provider versions may be auto-approved. A changed upstream
+        text, existing manual version, previous rejection or ambiguity leaves
+        the newly observed version pending for a human.
+        """
         data = deepcopy(self.file.data)
         rows = {r["id"]: r for r in data["versions"]}
+        approved = 0
         for observation in observations:
             row = observation.row()
             provider = row["provenance"][0]["provider"]
             if provider not in policy.sources or not policy.stores(provider):
                 continue
             if row["id"] not in rows:
+                if (not any(prior["target_id"] == row["target_id"]
+                            for prior in data["versions"])
+                        and self._unique_one_to_one(row, observations, policy)):
+                    row["decisions"].append({"decision": AUTO_DECISION,
+                                             "reviewer": AUTO_REVIEWER,
+                                             "checks": dict(AUTO_CHECKS)})
+                    approved += 1
                 row["number"] = len(data["versions"]) + 1
                 data["versions"].append(row)
                 rows[row["id"]] = row
@@ -169,6 +211,7 @@ class TranslationApprovals:
                         rows[row["id"]]["provenance"].append(p)
         self.merge_provenance(data, observations, policy)
         self._save(data)
+        return {"auto_approved": approved, "saved": True}
 
     def matching_observations(self, row, observations, policy):
         result = []
@@ -224,7 +267,11 @@ class TranslationApprovals:
         eligible = {}
         rank = {p: i for i, p in enumerate(policy.sources)}
         for row in self.file.data["versions"]:
-            if status(row) != "approved" or not self.current(row, observations, policy):
+            decision = status(row)
+            if (decision not in ("approved", AUTO_DECISION)
+                    or not self.current(row, observations, policy)):
+                continue
+            if decision == AUTO_DECISION and not self._unique_one_to_one(row, observations, policy):
                 continue
             eligible.setdefault(row["target_id"], []).append(row)
         result = []
