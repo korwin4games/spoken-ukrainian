@@ -166,6 +166,33 @@ class ImportSummaryTests(unittest.TestCase):
             f.dataset, source, inv, TextIndex({}, ("q:42:accept",), {}), hints,
             allow_ai_transations=True), [])
 
+    def test_unknown_spoken_faction_does_not_choose_between_faction_sources(self):
+        # Unknown Spoken faction is not permission to pick one of two
+        # ClassicUA faction translations pointing at the same QuestID/event.
+        fixture = (Fixture()
+                   .add("quest_horde", "classic",
+                        '{[42]={nil,"Текст Орди",ai=true}}')
+                   .add("quest_alliance", "classic",
+                        '{[42]={nil,"Текст Альянсу",ai=true}}'))
+        source = fixture.inventory()
+        initial = synthetic_inventory()
+        context = initial.contexts["q:42:accept"][0] | {"faction": "unknown"}
+        inv = synthetic_inventory(contexts=[context])
+        hints = candidates(source.units, inv)
+        self.assertEqual(
+            set(source.units), {
+                "quest:horde:42:accept", "quest:alliance:42:accept"})
+        self.assertEqual(
+            unique_one_to_one_hint_pairs(
+                hints, source.units, inv, allow_ai_transations=True),
+            frozenset())
+        self.assertEqual(
+            machine_candidates(
+                fixture.dataset, source, inv,
+                TextIndex({"q:42:accept": "invented wording"}, (), {}),
+                hints, allow_ai_transations=True),
+            [])
+
     def test_ai_opt_in_does_not_break_global_bipartite_uniqueness(self):
         f = Fixture().add("quest_both", "classic",
                           '{[42]={nil,"Вигаданий ШІ переклад.",ai=true}}')
