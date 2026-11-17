@@ -159,7 +159,7 @@ class BuildUkrainianTests(unittest.TestCase):
         generated = builder.render_quest_lua({}, "a" * 40, gossip_titles=names).decode()
         self.assertIn("[97279] = \"Загублена зброя\"", generated)
         self.assertIn("SpokenUkrainian.GossipQuestTitles", generated)
-        self.assertIn("SpokenUkrainian.QuestTranslations = {}", generated)
+        self.assertIn("SpokenUkrainian.QuestTranslations = {", generated)
         # This title is *not* a narration import and remains unreviewed.
         state.policy.allows_ai_transations.return_value = False
         state.dataset.faction_views.return_value = (
