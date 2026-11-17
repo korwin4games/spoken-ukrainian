@@ -74,7 +74,7 @@ def validate_machine_ledger(data):
     return deepcopy(data)
 
 
-def machine_candidates(dataset, source, inventory, originals, hints):
+def machine_candidates(dataset, source, inventory, originals, hints, *, allow_ai_transations=False):
     """Revalidate exact pinned source field, target context and original bytes.
 
     A unique numeric Quest ID/event only authorizes an explicitly marked
@@ -82,13 +82,15 @@ def machine_candidates(dataset, source, inventory, originals, hints):
     """
     if not isinstance(source, SourceInventory):
         raise ValueError("audited_source_inventory_required")
-    pairs = unique_one_to_one_hint_pairs(hints, source.units, inventory)
+    pairs = unique_one_to_one_hint_pairs(
+        hints, source.units, inventory, allow_ai_transations=allow_ai_transations)
     views, _ = dataset.faction_views(include_ai=True)
     result = []
     for source_id, target_id in sorted(pairs):
         unit, target = source.units[source_id], inventory.targets[target_id]
         if (unit.family != "quest" or target.family != "quest"
-                or unit.ai or not SOURCE_ID.fullmatch(source_id)
+                or (unit.ai and not allow_ai_transations)
+                or not SOURCE_ID.fullmatch(source_id)
                 or not TARGET_ID.fullmatch(target_id)):
             continue
         _, faction, quest_id, event = source_id.split(":")
