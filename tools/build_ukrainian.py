@@ -32,7 +32,7 @@ ARCHIVE = DIST / "Spoken_Ukrainian_Quest_Local_Test.zip"
 ADDON_FOLDERS = ("Spoken_Ukrainian", "Spoken_Quests_UA")
 TEMPLATE_FILES = {
     "Spoken_Ukrainian": ("Spoken_Ukrainian.toc", "Core.lua"),
-    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua"),
+    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
 QUEST_SOURCE = re.compile(r"quest:(horde|alliance):([1-9][0-9]*):(accept|progress|complete)\Z")
@@ -329,7 +329,7 @@ def template_entries(preview_lua):
             "## LoadOnDemand: 1\n",
             "## X-SpokenQuests-DataModule-Version: 1\n",
             "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\n"):
+            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\n"):
         if required not in quest_toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
     # Module must never invent sound files or call AddOn playback.
@@ -339,6 +339,11 @@ def template_entries(preview_lua):
             "MODIFIER_STATE_CHANGED", "hooksecurefunc", "GetQuestID",
             "IsShiftKeyDown", "QuestProgressText")):
         raise ValueError("missing_native_questframe_translation_contract")
+    gossip_code = entries["Spoken_Quests_UA/GossipQuestTitles.lua"].decode("utf-8")
+    if not all(symbol in gossip_code for symbol in (
+            "GossipAvailableQuestButtonMixin", "QuestFrameGreetingPanel",
+            "GetAvailableQuestInfo", "UnitFactionGroup", "IsShiftKeyDown")):
+        raise ValueError("missing_gossip_quest_title_contract")
     if not ('quests:Register("Spoken_Quests_UA"' in module
             and "SoundLengthLookupByFileName = {}" in module
             and "QUEST_DETAIL" in module):
