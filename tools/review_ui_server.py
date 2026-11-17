@@ -8,6 +8,8 @@ import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
 import json
+import logging
+import re
 from pathlib import Path
 import secrets
 import sys
@@ -27,6 +29,16 @@ from adapters.spoken.text_index import index_verified_originals
 
 STATIC = ROOT / "tools/review_ui/static"
 MAX_REQUEST_BYTES = 262144
+LOGGER = logging.getLogger("spoken.review_ui")
+SAFE_REASON = re.compile(r"[a-z][a-z0-9_]{1,79}\\Z")
+
+
+def _reason(exc):
+    """Never log request text, reviewer IDs, or an exception's arbitrary payload."""
+    value = str(exc)
+    return value if SAFE_REASON.fullmatch(value) else type(exc).__name__
+
+
 
 
 def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
@@ -76,6 +88,14 @@ def create_handler(state, token, port):
     }
 
     class LocalHandler(BaseHTTPRequestHandler):
+        def _event(self, event, outcome, reason=None):
+            # Event and outcome are code constants, never request data.
+            if reason is None:
+                LOGGER.info("%s %s", event, outcome)
+            else:
+                LOGGER.warning("%s %s reason=%s", event, outcome, reason)
+
+
         def log_message(self, format, *args):
             # URL params or error bodies may leak review context; no access logs.
             pass
@@ -126,7 +146,8 @@ def create_handler(state, token, port):
             if parts.path == "/api/translations" and not parts.query:
                 try:
                     self._json(200, state.translation_page())
-                except (ValueError, TypeError, KeyError):
+                except (ValueError, TypeError, KeyError) as exc:
+                    self._event("translation.list", "failed", _reason(exc))
                     self._json(400, {"error": "translation_evidence_revalidation_failed"})
                 return
             if parts.path != "/api/queue":
@@ -182,6 +203,13 @@ def create_handler(state, token, port):
             if length <= 0 or length > MAX_REQUEST_BYTES:
                 self._json(413, {"error": "review_request_too_large"})
                 return
+            event = {"/api/decisions": "mapping.decision",
+                     "/api/mapping/approve": "mapping.approve",
+                     "/api/translations/refresh": "translation.refresh",
+                     "/api/translations/edit": "translation.edit",
+                     "/api/translations/decide": "translation.decision",
+                     "/api/translations/import": "translation.import"}[route]
+            self._event(event, "requested")
             try:
                 payload = strict_json(self.rfile.read(length))
                 if type(payload) is not dict:
@@ -194,9 +222,13 @@ def create_handler(state, token, port):
                     result = state.approve_mapping(payload)
                 else:
                     result = state.translation_action(route.rsplit("/", 1)[1], payload)
+                self._event(event, "succeeded")
                 self._json(200, result)
-            except (ValueError, TypeError, KeyError, UnicodeError, OSError):
-                self._json(400, {"error": "invalid_or_duplicate_review_decision"})
+            except (ValueError, TypeError, KeyError, UnicodeError, OSError) as exc:
+                reason = _reason(exc)
+                self._event(event, "failed", reason)
+                self._json(400, {"error": "invalid_or_duplicate_review_decision",
+                                 "reason": reason})
 
     return LocalHandler
 
@@ -215,6 +247,8 @@ def main(argv=None):
                         help="Revalidate and explicitly import an inert local snapshot, then exit")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [review-ui] %(message)s", stream=sys.stderr)
+    LOGGER.info("startup requested; local-only")
     if not 1024 <= args.port <= 65535:
         parser.error("--port must be between 1024 and 65535")
     try:
@@ -231,15 +265,21 @@ def main(argv=None):
         state = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
                             outputs[1], outputs[2], args.policy)
         if args.import_approved:
-            print(json.dumps(state.translation_action("import", {}), sort_keys=True))
+            LOGGER.info("translation.import requested (CLI)")
+            result = state.translation_action("import", {})
+            LOGGER.info("translation.import succeeded (CLI) imported=%d changed=%s",
+                        result["imported"], result["changed"])
+            print(json.dumps(result, sort_keys=True))
             return 0
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
             create_handler(state, secrets.token_urlsafe(32), args.port))
-    except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError):
+    except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        LOGGER.error("startup failed reason=%s", _reason(exc))
         print("review_ui_pinned_sources_or_local_bind_failed", file=sys.stderr)
         return 1
+    LOGGER.info("startup succeeded; listening on localhost port %d", args.port)
     print(f"Quest review UI: http://127.0.0.1:{args.port}/", flush=True)
     print("Local-only. Mapping requires independent JoinProof; translation approval and import are separate.", flush=True)
     try:
