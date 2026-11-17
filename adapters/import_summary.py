@@ -8,22 +8,26 @@ from collections import Counter
 
 
 
-def unique_one_to_one_hint_pairs(hints, source_units, inventory):
+def unique_one_to_one_hint_pairs(hints, source_units, inventory, *, allow_ai_transations=False):
     """Conservative exact-cardinality Quest hints, NOT approved mappings.
 
     The reverse degree counts *all* source candidates (including excluded AI
     and ambiguous sources). Two factions or voice variants sharing a target
     therefore never qualify through partial filtering.
     """
+    if type(allow_ai_transations) is not bool:
+        raise ValueError("invalid_allow_ai_transations")
     target_degree = Counter(target for row in hints for target in set(row["candidates"])
                             if target in inventory.targets)
     return frozenset(
         (row["source_id"], row["candidates"][0])
         for row in hints
         if len(row["candidates"]) == 1
-        and row["reason"] == "speaker_wording_eligibility_review_required"
+        and row["reason"] in (
+            ("speaker_wording_eligibility_review_required", "ai_independent_review_required")
+            if allow_ai_transations else ("speaker_wording_eligibility_review_required",))
         and row["source_id"] in source_units
-        and not source_units[row["source_id"]].ai
+        and (allow_ai_transations or not source_units[row["source_id"]].ai)
         and target_degree[row["candidates"][0]] == 1
     )
 
