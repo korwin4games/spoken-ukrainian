@@ -437,14 +437,14 @@ function renderImportReport(report) {
   const table = make("table", "import-report-table");
   const header = make("thead");
   const headings = make("tr");
-  ["Джерело", "Кандидатів", "Імпортовано / перекладено"].forEach(title =>
+  ["Джерело", "Кандидатів", "Імпортовано / перекладено", "Із них машинні 1:1"].forEach(title =>
     headings.appendChild(make("th", "", title)));
   header.appendChild(headings);
   table.appendChild(header);
   const body = make("tbody");
   report.by_source.forEach(entry => {
     const row = make("tr");
-    [entry.source, entry.candidate_translations, entry.imported_translations]
+    [entry.source, entry.candidate_translations, entry.imported_translations, entry.machine_provisional_imports || 0]
       .forEach(value => row.appendChild(make("td", "", String(value))));
     body.appendChild(row);
   });
@@ -456,6 +456,7 @@ function renderImportReport(report) {
     ["Перевірені відповідності з перекладом", report.verified_source_to_target_bindings],
     ["Автоматично схвалено за цей запуск", report.auto_approved_now],
     ["Всього імпортовано", report.imported_total],
+    ["Із них автоматичні 1:1 (ще без human mapping review)", report.machine_one_to_one_imported || 0],
     ["Залишилося без імпорту", report.untranslated_total],
     ["Покриття", report.coverage_percent + "%"],
   ];
@@ -470,7 +471,7 @@ function renderImportReport(report) {
   summary.appendChild(summaryBody);
   target.appendChild(summary);
   target.appendChild(make("p", "muted",
-    "Імпорт — тільки приватне локальне сховище build/. Нічого не записано в Git чи активний аддон."));
+    "Імпорт — тільки приватне локальне сховище build/. Машинні 1:1 є попередніми до human mapping review; нічого не записано в Git чи активний аддон."));
 }
 
 async function translationAction(action, payload) {
@@ -490,8 +491,9 @@ async function translationAction(action, payload) {
         result.auto_approved + ". Збережено лише приватно, імпорт — окрема дія.";
     }
     if (action === "auto_import_one_to_one") {
-      message = "Автоімпорт 1:1 завершено. Схвалено за запуск: " +
-        result.auto_approved + "; імпортовано загалом: " + result.imported +
+      message = "Автоімпорт 1:1 завершено. Підтверджених автоапрувів за запуск: " +
+        result.auto_approved + "; попередніх машинних 1:1: " + result.machine_imported +
+        "; імпортовано загалом: " + result.imported +
         ". Таблиця нижче. Активації у WoW немає.";
     }
     if (action === "decide") {
