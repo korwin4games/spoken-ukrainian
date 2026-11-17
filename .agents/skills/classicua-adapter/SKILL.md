@@ -22,8 +22,8 @@ description: Audit or modify Spoken Ukrainian's pinned ClassicUA source adapter,
 
 ## Verify
 1. Add small **invented** Lua fixtures and regression tests before changing parser or merge rules.
-2. Run `python3 -m unittest discover -s tests -v` and `python3 tools/build.py`.
-3. Optional pinned local audit: `python3 tools/classicua_audit.py --source /absolute/path/to/ClassicUA`. Inspect metadata-only reports in ignored `build/`; check deterministic output and provenance integrity. Do not copy source text into reports, console output or commits.
+2. Run `uv run --locked python -m unittest discover -s tests -v` and `uv run --locked python tools/build.py`.
+3. Optional pinned local audit: `uv run --locked python tools/classicua_audit.py --source /absolute/path/to/ClassicUA`. Inspect metadata-only reports in ignored `build/`; check deterministic output and provenance integrity. Do not copy source text into reports, console output or commits.
 4. State raw vs effective counts, unresolved variants, unknown tokens and permission blockers. **Never** label source inventory as Spoken coverage.
 
 ## Output
