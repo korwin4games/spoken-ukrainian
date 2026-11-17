@@ -12,9 +12,9 @@ class GossipTextsTests(unittest.TestCase):
     def fixture_state(self, allow_ai=True):
         fixture = Fixture(revision="a" * 40).add(
             "gossip", "classic",
-            '{["!common"]={[991562674]="Спільна відповідь."},'
+            '{["!common"]={[979258284]="Спільна відповідь."},'
             '[42]={[3995595454]="Вітаю, {ім\'я}!",'
-            '[3246404856]="Ось де заїзд.",'
+            '[3242472692]="Ось де заїзд.",'
             '["!code"]={["unknown-pattern"]=3995595454}},'
             '[99]={[3974570973]="ШІ-відповідь",ai=true}}')
         policy = Mock()
@@ -25,12 +25,12 @@ class GossipTextsTests(unittest.TestCase):
     def test_only_audited_exact_hashes_and_ai_opt_in(self):
         state = self.fixture_state(allow_ai=False)
         data = builder.local_gossip_texts(state)
-        self.assertEqual(data["common"], {991562674: "Спільна відповідь."})
+        self.assertEqual(data["common"], {979258284: "Спільна відповідь."})
         self.assertEqual(data["byNpc"][42][3995595454], "Вітаю, {ім'я}!")
-        self.assertEqual(data["byNpc"][42][3246404856], "Ось де заїзд.")
+        self.assertEqual(data["byNpc"][42][3242472692], "Ось де заїзд.")
         self.assertNotIn(99, data["byNpc"])
         self.assertEqual(len(data["byNpc"][42]), 2)
-        self.assertEqual(set(data["byNpc"][42]), {3995595454, 3246404856})
+        self.assertEqual(set(data["byNpc"][42]), {3995595454, 3242472692})
         self.assertIn(99, builder.local_gossip_texts(self.fixture_state(True))["byNpc"])
         # Source file/revision must be pinned, never emitted from edited data.
         state.source.files["classic/gossip.lua"] = "0" * 64
