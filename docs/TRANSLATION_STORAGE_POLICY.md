@@ -18,6 +18,7 @@
 }
 ```
 
+- Optional `auto_approve_one_to_one: true` (initially ClassicUA only, default `false`) permits the local Review UI's explicit Refresh action to auto-mark a unique candidate `auto_approved_1to1` when an independently reviewed canonical source↔Spoken binding exists, rights are reviewed, no AI mark/competing candidate or previous version exists, and evidence is current. The private `build/translation-reviews.json` ledger saves the exact text and machine decision. This **does not** approve canonical mappings, attest human content quality, activate the AddOn, import automatically, or write to Git. Changed upstream wording remains pending. `save_translations` must also be `true`.
 - `save_translations: true` **permits the existing explicit private review-ledger retention** and opts a provider into a **future** Git-backed curated workflow. It is not automatic approval, an immediate write, or a public release.
 - `false` keeps provider lookup available in its configured order but blocks private review-ledger retention for that source and excludes it from the future Git-backed corpus. Existing saved history is not auto-deleted.
 - `original_english` can never be marked saveable: it is a fallback, not a Ukrainian translation.
