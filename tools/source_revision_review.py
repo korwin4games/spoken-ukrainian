@@ -209,7 +209,8 @@ def write_template(trusted, output, provider, revision, offset, limit):
 def run(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("capture", "template", "ingest",
-        "revisions", "diff", "conflicts", "review", "activate", "clear", "active"))
+        "revisions", "diff", "conflicts", "review", "activate", "clear", "active",
+        "selection-history"))
     parser.add_argument("--classicua", type=Path)
     parser.add_argument("--spoken", type=Path)
     parser.add_argument("--db", type=Path)
@@ -270,6 +271,10 @@ def run(argv=None):
         if not args.domain or not args.target or not args.reviewer:
             raise ValueError("source_selection_clear_needs_identity")
         result = store.clear_selection(args.domain, args.target, args.reviewer, trusted)
+    elif args.action == "selection-history":
+        if not args.domain or not args.target:
+            raise ValueError("source_selection_history_needs_identity")
+        result = {"history": store.selection_history(args.domain, args.target)}
     else:
         result = {"selected": store.active(trusted, domain=args.domain)}
     # Only snapshot data and review decisions; no secret credentials or Git writes.
