@@ -39,6 +39,11 @@ Read only what the task needs; do not use old planning notes as proof of current
 
 - The historical Places diagnostic `addons/SpokenCommunity_ukrainian-diagnostic` remains unchanged and maintains its source-lock hashes. No Release, CurseForge distribution, or installer modification is authorized.
 
+### Source conflict review UI
+
+- The existing localhost UI adds a **Source Revision Review** section with authenticated GET `/api/source-reviews` and POST `/api/source-reviews/{decide,activate,clear}`. Keep Host/Origin, CSRF, strict JSON schema, request size and pinned source revalidation. UI displays dynamic strings through `textContent`, not `innerHTML`.
+- Never auto-capture or auto-select a new provider in the browser. Imported source candidates and recommended provider order are strictly advisory, and must not bypass five human checks, Stage 3 Quest mapping or the private test-only scope.
+
 ### Source revision history & conflict policy
 
 - `adapters/source_revision_store.py` and `tools/source_revision_review.py` add immutable provider+revision candidate snapshots and independent source review decisions. **Do not equate source import with approved content, proven Spoken identity, publication rights or active import.**

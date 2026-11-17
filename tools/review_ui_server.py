@@ -78,7 +78,8 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
     return state
 
 
-def create_handler(state, token, port, gossip_reviews=None):
+def create_handler(state, token, port, gossip_reviews=None,
+                   source_reviews=None, source_trusted=None):
     """Return request handler with strict host/origin and anti-CSRF policy."""
     allowed_host = f"127.0.0.1:{port}"
     allowed_origin = f"http://{allowed_host}"
@@ -170,6 +171,35 @@ def create_handler(state, token, port, gossip_reviews=None):
                     self._event("gossip.list", "failed", _reason(exc))
                     self._json(400, {"error": "invalid_gossip_review_query"})
                 return
+            if parts.path == "/api/source-reviews":
+                if source_reviews is None:
+                    self._json(404, {"error": "source_review_unavailable"})
+                    return
+                try:
+                    params = parse_qs(parts.query, keep_blank_values=True)
+                    if (set(params) - {"offset", "limit"}
+                            or any(len(values) != 1 for values in params.values())):
+                        raise ValueError("invalid_source_review_query")
+                    raw_offset = params.get("offset", ["0"])[0]
+                    raw_limit = params.get("limit", ["20"])[0]
+                    if (not raw_offset.isascii() or not raw_offset.isdecimal()
+                            or raw_limit not in ("20", "40")):
+                        raise ValueError("invalid_source_review_query")
+                    offset, limit = int(raw_offset), int(raw_limit)
+                    if offset > 100000:
+                        raise ValueError("invalid_source_review_query")
+                    from adapters.source_revision_store import SOURCES
+                    priority = [p for p in state.policy.sources if p in SOURCES]
+                    report = source_reviews.conflicts(priority=priority)
+                    self._json(200, {"total": len(report["items"]),
+                        "conflicts": report["conflicts"],
+                        "revisions": source_reviews.revisions(),
+                        "offset": offset, "limit": limit,
+                        "items": report["items"][offset:offset + limit]})
+                except (ValueError, TypeError, KeyError) as exc:
+                    self._event("source_review.list", "failed", _reason(exc))
+                    self._json(400, {"error": "invalid_source_review_query"})
+                return
             if parts.path != "/api/queue":
                 self._json(404, {"error": "not_found"})
                 return
@@ -200,7 +230,9 @@ def create_handler(state, token, port, gossip_reviews=None):
             routes = {"/api/decisions", "/api/mapping/approve", "/api/translations/refresh",
                       "/api/translations/edit", "/api/translations/decide", "/api/translations/import",
                       "/api/translations/auto_import_one_to_one",
-                      "/api/gossip/propose", "/api/gossip/decide", "/api/gossip/import"}
+                      "/api/gossip/propose", "/api/gossip/decide", "/api/gossip/import",
+                      "/api/source-reviews/decide", "/api/source-reviews/activate",
+                      "/api/source-reviews/clear"}
             if route not in routes or "?" in self.path:
                 self._json(404, {"error": "not_found"})
                 return
@@ -234,7 +266,10 @@ def create_handler(state, token, port, gossip_reviews=None):
                      "/api/translations/auto_import_one_to_one": "translation.auto_import_one_to_one",
                      "/api/gossip/propose": "gossip.propose",
                      "/api/gossip/decide": "gossip.decision",
-                     "/api/gossip/import": "gossip.import"}[route]
+                     "/api/gossip/import": "gossip.import",
+                     "/api/source-reviews/decide": "source_review.decision",
+                     "/api/source-reviews/activate": "source_review.activate",
+                     "/api/source-reviews/clear": "source_review.clear"}[route]
             self._event(event, "requested")
             try:
                 payload = strict_json(self.rfile.read(length))
@@ -246,6 +281,27 @@ def create_handler(state, token, port, gossip_reviews=None):
                     result = state.decide(**payload)
                 elif route == "/api/mapping/approve":
                     result = state.approve_mapping(payload)
+                elif route.startswith("/api/source-reviews/"):
+                    if source_reviews is None or source_trusted is None:
+                        raise ValueError("source_review_unavailable")
+                    # The same pinned-source revalidation gate as Quest/Gossip.
+                    state.revalidate_inputs()
+                    if route == "/api/source-reviews/decide":
+                        if set(payload) != {"candidate_id", "decision", "reviewer", "checks"}:
+                            raise ValueError("invalid_source_review_request")
+                        result = source_reviews.decide(payload["candidate_id"],
+                            payload["decision"], payload["reviewer"],
+                            payload["checks"], source_trusted)
+                    elif route == "/api/source-reviews/activate":
+                        if set(payload) != {"candidate_id", "reviewer"}:
+                            raise ValueError("invalid_source_selection_request")
+                        result = source_reviews.activate(payload["candidate_id"],
+                            payload["reviewer"], source_trusted)
+                    else:
+                        if set(payload) != {"domain", "target_id", "reviewer"}:
+                            raise ValueError("invalid_source_selection_clear_request")
+                        result = source_reviews.clear_selection(payload["domain"],
+                            payload["target_id"], payload["reviewer"], source_trusted)
                 elif route.startswith("/api/gossip/"):
                     if gossip_reviews is None:
                         raise ValueError("gossip_review_unavailable")
@@ -394,16 +450,23 @@ def main(argv=None):
         from tools.gossip_coverage import read_pinned_corpus
         from tools.build_ukrainian import local_gossip_texts
         from tools.gossip_translation_review import discover_groups, GossipReviews
+        spoken_lines = read_pinned_corpus(args.spoken, state.inventory.revision)
         gossip_groups, _ = discover_groups(
-            read_pinned_corpus(args.spoken, state.inventory.revision),
-            local_gossip_texts(state),
+            spoken_lines, local_gossip_texts(state),
             state.inventory.revision, state.source.revision)
         gossip_reviews = GossipReviews(
             gossip_groups, state.inventory.revision, state.source.revision)
+        from adapters.source_revision_store import SourceReviewStore
+        from adapters.sqlite_translation_store import DB_ENV, default_db_path
+        from tools.source_revision_review import trusted_inventory
+        import os
+        source_trusted = trusted_inventory(state, spoken_lines)
+        source_reviews = SourceReviewStore(os.environ.get(DB_ENV) or default_db_path())
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
-            create_handler(state, secrets.token_urlsafe(32), args.port, gossip_reviews))
+            create_handler(state, secrets.token_urlsafe(32), args.port,
+                           gossip_reviews, source_reviews, source_trusted))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)

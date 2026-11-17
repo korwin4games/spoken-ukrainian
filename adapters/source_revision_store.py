@@ -311,25 +311,50 @@ class SourceReviewStore:
             active = {tuple(row[:4]): row[4] for row in db.execute(
                 """SELECT domain, target_id, english_sha256,
                           context_sha256, candidate_id FROM source_active_selections""")}
+            # Explicit old selections remain visible even when a provider
+            # publishes a newer revision or removes the wording entirely.
+            selected_old = {}
+            for row in db.execute(SELECT + """
+                JOIN source_active_selections a ON a.candidate_id = c.id"""):
+                candidate = _record(row)
+                candidate["status"] = self._status(db, candidate["id"])
+                selected_old[candidate["id"]] = candidate
         result = []
         ranking = {p: i for i, p in enumerate(ordered)}
         for key, candidates in sorted(groups.items()):
             candidates.sort(key=lambda r: (ranking.get(r["provider"], len(ranking)),
                                            r["provider"], r["id"]))
             different = len({r["text_sha256"] for r in candidates}) > 1
-            if len(candidates) < 2 and key not in active:
-                continue
             chosen = active.get(key)
+            current_ids = {c["id"] for c in candidates}
+            chosen_is_current = chosen in current_ids if chosen else None
             # Recommended, not activated: first approved source by policy,
             # but only when no conflicting text among simultaneously approved
             # variants. Manual selection always stays the actual selection.
             approved = [c for c in candidates if c["status"] == "approved"]
             recommended = (approved[0]["id"] if approved and
                            len({x["text_sha256"] for x in approved}) == 1 else None)
+            shown = list(candidates)
+            if chosen and chosen not in current_ids and chosen in selected_old:
+                shown.append(selected_old[chosen])
             result.append({"domain": key[0], "target_id": key[1],
                            "english_sha256": key[2], "context_sha256": key[3],
-                           "different": different, "candidates": candidates,
+                           "different": different, "candidates": shown,
                            "selected_candidate_id": chosen,
+                           "selected_is_latest_source_revision": chosen_is_current,
                            "recommended_candidate_id": recommended})
+        for key, chosen in active.items():
+            if any((r["domain"], r["target_id"], r["english_sha256"],
+                    r["context_sha256"]) == key for r in result):
+                continue
+            historical = selected_old.get(chosen)
+            if historical:
+                result.append({"domain": key[0], "target_id": key[1],
+                               "english_sha256": key[2], "context_sha256": key[3],
+                               "different": False, "candidates": [historical],
+                               "selected_candidate_id": chosen,
+                               "selected_is_latest_source_revision": False,
+                               "recommended_candidate_id": None})
+        result.sort(key=lambda r: (r["domain"], r["target_id"]))
         return {"conflicts": sum(r["different"] for r in result),
                 "items": result}

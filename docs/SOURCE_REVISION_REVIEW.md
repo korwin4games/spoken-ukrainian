@@ -108,6 +108,31 @@ No public release is authorized. Source provenance, permissions, NPC
 context, WoW runtime acceptance, glyphs, placeholders and audio still
 require independent validation.
 
+## Browser-based source conflict review
+
+Start the existing localhost review UI with the pinned checkouts:
+
+```bash
+uv run --locked python tools/review_ui_server.py \
+  --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+Open `http://127.0.0.1:8765/` and use **Source Revision Review ·
+ClassicUA / Source B**. Each entry shows its latest provider candidates,
+all text variants, source revision, review status and explicitly selected
+version. When the selected version belongs to an older source revision, it
+is labelled **ACTIVE · OLD REVISION** rather than silently replaced.
+
+To review a version, choose it, provide a reviewer ID, tick all five
+independent attestations and click **Approve**. Only after this can
+**Явно вибрати активну версію** select it for the private local-test ZIP.
+Reject / Defer revokes that candidate's active selection and retains
+history. **Прибрати активний вибір** reverts to the normal tested fallback.
+All endpoint writes use the same localhost Host/Origin, CSRF, JSON,
+request-size and pinned source revalidation guards as Quest/Gossip.
+Source capture, private Source B import and revision comparison remain
+CLI operations; the UI never fetches untrusted sources automatically.
+
 ## Backups
 
 ```bash

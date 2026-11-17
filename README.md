@@ -43,7 +43,7 @@ The same **`Spoken_Quests_UA`** local-test addon also translates native NPC **Go
 
 **Durable translation storage:** the Quest and Gossip executable tools use a private, persistent SQLite database by default (`~/.local/share/spoken-ukrainian/translations.sqlite3` or `$XDG_DATA_HOME`). Existing ignored JSON ledgers are migrated non-destructively on first use; subsequent builds reuse saved translations and review history. Previously approved Gossip wording or a saved unambiguous pending proposal may prefill a new context's **pending draft** without bypassing human review. [Database setup, migration, backup and safeguards](docs/SQLITE_TRANSLATION_STORE.md).
 
-**Source revision review (new):** SQLite retains immutable snapshots for each ClassicUA/other-source revision, supports old/new Ukrainian text diffs, flags conflicting providers, and requires an explicit five-check human review **plus separate active selection**. Manual selections stay pinned to the chosen source version and must match the current Spoken original/context. [Source revision workflow](docs/SOURCE_REVISION_REVIEW.md). This is only a local test build, not a public release.
+**Source revision review (new):** SQLite retains immutable snapshots for each ClassicUA/other-source revision, supports old/new Ukrainian text diffs, flags conflicting providers, and requires an explicit five-check human review **plus separate active selection**. Manual selections stay pinned to the chosen source version and must match the current Spoken original/context. [Source revision workflow and local UI](docs/SOURCE_REVISION_REVIEW.md). This is only a local test build, not a public release.
 
 ## Architecture and translation flow
 
