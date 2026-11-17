@@ -18,7 +18,7 @@ from adapters.sqlite_translation_store import (
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("status", "backup"))
+    parser.add_argument("action", choices=("status", "backup", "imports"))
     parser.add_argument("--db", type=Path, default=os.environ.get(DB_ENV) or default_db_path())
     parser.add_argument("--output", type=Path,
                         help="Private backup destination (backup action only)")
@@ -37,6 +37,9 @@ def main(argv=None):
             print(json.dumps({"database_exists": True, "path": str(path),
                               "ledgers": ledgers, "translation_versions": counts},
                              ensure_ascii=False, indent=2))
+        elif args.action == "imports":
+            from adapters.import_statistics import report
+            print(json.dumps(report(path), ensure_ascii=False, indent=2))
         else:
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             output = args.output or path.parent / "backups" / f"translations-{stamp}.sqlite3"
