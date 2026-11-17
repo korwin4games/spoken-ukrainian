@@ -222,12 +222,18 @@ def memory_suggestions(db_path, domain, original_hashes):
     suggestions = {}
     with connection(db_path) as db:
         for english_sha in sorted(hashes):
-            rows = db.execute(
-                """SELECT DISTINCT ukrainian_text FROM translation_memory
-                   WHERE domain = ? AND english_sha256 = ?
-                     AND review_status = 'approved'""",
-                (domain, english_sha),
-            ).fetchall()
-            if len(rows) == 1:
-                suggestions[english_sha] = rows[0][0]
+            # Prefer a unique human-approved wording. If there is none,
+            # a unique existing PENDING proposal is reusable as a draft too.
+            # Rejected/deferred text and ambiguous conflicts are never reused.
+            for review_status in ("approved", "pending"):
+                rows = db.execute(
+                    """SELECT DISTINCT ukrainian_text FROM translation_memory
+                       WHERE domain = ? AND english_sha256 = ?
+                         AND review_status = ?""",
+                    (domain, english_sha, review_status),
+                ).fetchall()
+                if rows:
+                    if len(rows) == 1:
+                        suggestions[english_sha] = rows[0][0]
+                    break
     return suggestions
