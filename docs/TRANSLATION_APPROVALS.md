@@ -17,7 +17,7 @@ reports and their zero-approved baseline remain unchanged.
    `approved_quest_bindings`. Actual effective UTF-8 bytes and origin provenance
    are checked against the audited inventory; only verified English originals
    are accepted. AI-marked inputs remain excluded.
-3. Explicit **refresh** stores allowed source candidates as `pending`. Content
+3. Explicit **refresh** stores allowed source candidates as `pending` by default. An **opt-in** `auto_approve_one_to_one` source policy may additionally mark the first unique, validated 1:1 ClassicUA candidate as `auto_approved_1to1` in the private ledger. The identity must already have independently human-approved Stage 3 JoinProof; a mere one-to-one match by names/IDs is insufficient. The automatic decision has fixed provenance and `text=false`, `grammar=false`, `ai=true`, `rights=true` checks so it **never masquerades as a human text/grammar review**. Source changes, existing manual edits or decisions, conflicting candidates, unreviewed rights or AI-marked content cannot auto-approve. Content
    reviewers can reject, defer or approve individual versions. Approval requires
    a named reviewer and four explicit attestations: wording, grammar/templates,
    AI restrictions, and rights/attribution. Reviewer IDs record human statements;
