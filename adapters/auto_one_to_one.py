@@ -101,7 +101,13 @@ def machine_candidates(dataset, source, inventory, originals, hints, *, allow_ai
                            for row in contexts)):
             continue
         context = contexts[0]
-        if (context.get("faction") not in (faction, "both", "neutral")
+        # Some Forever Quest IDs have no entry in Spoken's pinned
+        # factions.json: the sole corpus context is then "unknown".
+        # Global source/target cardinality, verified wording, exact
+        # questID/event and pinned ClassicUA field checks are still mandatory.
+        # "unknown" is permitted for *private machine-provisional* tests
+        # only; a positive, conflicting Alliance/Horde faction stays blocked.
+        if (context.get("faction") not in (faction, "both", "neutral", "unknown")
                 or context.get("source") != event
                 or context.get("quest_id") != int(quest_id)
                 or not target_id.startswith(f"q:{quest_id}:{event}")):
