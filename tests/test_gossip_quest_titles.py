@@ -23,7 +23,7 @@ IsAddOnLoaded = function(name) return name == "ClassicUA" and classicua end
 SpokenUkrainian = {
     ExpandQuestText = function(_, str) return str end,
 }
-local events = {}
+local createdFrames = {}
 function CreateFrame()
     local frame = {callbacks = {}, registered = {}}
     function frame:RegisterEvent(event) self.registered[event] = true end
@@ -32,7 +32,7 @@ function CreateFrame()
         assert(self.registered[event])
         self.callbacks.OnEvent(self, event)
     end
-    table.insert(events, frame)
+    table.insert(createdFrames, frame)
     return frame
 end
 local hooks = {}
@@ -83,8 +83,8 @@ GetActiveQuestID = function(id) return id == 1 and 97279 or 42 end
                      "Spoken_Quests_UA/GossipQuestTitles.lua"):
             script += "\n" + files[name].decode("utf-8") + "\n"
         script += r'''
-assert(#events == 1)
-local eventFrame = events[1]
+assert(#createdFrames == 1)
+local eventFrame = createdFrames[1]
 local info = {questID = 97279, title = "Wayward Weapons"}
 GossipAvailableQuestButtonMixin:Setup(first, info)
 assert(first:GetText() == "! Загублена зброя")
