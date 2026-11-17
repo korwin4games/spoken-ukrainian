@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: Spoken Ukrainian
+## Notes: Ukrainian language support for Spoken. Local Quest preview is a separate test module.
+## Version: 0.1.0-test
+## Dependencies: Spoken
+## Group: Spoken
+## X-Part-Of: Spoken Ukrainian
+
+Core.lua

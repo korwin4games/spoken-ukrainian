@@ -139,6 +139,34 @@ class TranslationSourceTests(unittest.TestCase):
             SourcePolicy.from_mapping({"schema_version": 1, "sources": ["classicua"],
                                        "auto_approve_one_to_one": True})
 
+    def test_ai_transations_default_false_classicua_config_true_and_strict_validation(self):
+        default = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True}]})
+        self.assertFalse(default.allows_ai_transations("classicua"))
+        self.assertEqual(default.allow_ai_sources, frozenset())
+        selected = load_source_policy(ROOT / "config/translation_sources.json")
+        self.assertTrue(selected.allows_ai_transations("classicua"))
+        self.assertFalse(selected.allows_ai_transations("another"))
+        self.assertEqual(selected.allow_ai_sources, frozenset({"classicua"}))
+        for value in ("true", 1, None, [], {}):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                    ValueError, "invalid_translation_source_settings"):
+                SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+                    {"name": "classicua", "save_translations": True,
+                     "auto_approve_one_to_one": True,
+                     "allow_ai_transations": value}]})
+        for name, save, automatic in [
+                ("another", True, True), ("own_translator", True, True),
+                ("original_english", False, False),
+                ("classicua", False, True), ("classicua", True, False)]:
+            with self.subTest(name=name, save=save, automatic=automatic), self.assertRaises(
+                    ValueError):
+                SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+                    {"name": name, "save_translations": save,
+                     "auto_approve_one_to_one": automatic,
+                     "allow_ai_transations": True}]})
+
     def test_config_bad_duplicate_unknown_version_and_shape(self):
         invalid = [
             {"schema_version": 1, "sources": ["classicua", "classicua"]},

@@ -6,6 +6,18 @@
 
 > **Development status:** Ukrainian language registration and an original text-only **Places diagnostic pack** have been implemented and manually tested in Forever. The ClassicUA source adapter is implemented. Full Ukrainian quest, dialogue, book, location and boss-story packs **have not yet been released**.
 
+## Local Spoken Ukrainian Quest test build
+
+The build produces two independently installable AddOns: **Spoken Ukrainian** (`Spoken_Ukrainian`) and the Quest module **Spoken Ukrainian: Quests** (`Spoken_Quests_UA`). Official `Spoken` and `Spoken_Quests` are unchanged. **Every build MUST auto-import current ClassicUA 1:1 Quest translations**; bad/missing pinned checkouts, import errors, or no unambiguous Quest translations fail the build.
+
+```sh
+python3 tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+**ClassicUA AI translations:** optional `allow_ai_transations` (literal key spelling) defaults to `false`, but the checked-in `config/translation_sources.json` explicitly sets it to **`true`** for `classicua`. This permits **provisional local** imports only for candidates passing all strict 1:1/verified-original/source checks; it does not constitute human approval. Setting it back to `false` and rebuilding removes AI rows from the active test pack without deleting private local history. AI content absent from the Spoken narrated corpus cannot be imported.
+
+Unzip the private `dist/Spoken_Ukrainian_Quest_Local_Test.zip` directly into `Interface/AddOns/`. In WoW use `/spokenuk preview on` to test an opt-in **separate** Quest translation frame. It is **not** Spoken's native captions: pinned Spoken 3.9.0 requires actual audio metadata to enqueue Quest subtitles, and this pack neither fakes audio nor patches upstream. Machine-matched text is conspicuously marked provisional; do not distribute this test build. [Exact game test steps and limitations](docs/QUEST_LOCAL_TEST_BUILD.md).
+
 ## Architecture and translation flow
 
 Spoken Ukrainian prepares Ukrainian content **offline** for the **unmodified Spoken Player**. Discovering a translation does **not** approve its canonical Spoken identity, text quality, content rights or runtime compatibility.
@@ -35,7 +47,7 @@ The default offline provider order is configured in [`config/translation_sources
 {
   "schema_version": 2,
   "sources": [
-    {"name": "classicua", "save_translations": true},
+    {"name": "classicua", "save_translations": true, "auto_approve_one_to_one": true, "allow_ai_transations": true},
     {"name": "another", "save_translations": false},
     {"name": "own_translator", "save_translations": true},
     {"name": "original_english", "save_translations": false}
@@ -52,7 +64,7 @@ The default offline provider order is configured in [`config/translation_sources
 
 You can **reorder or remove** source objects. For example, putting `own_translator` before `classicua` changes priority (the translator is still a mock); leaving only `original_english` selects English only. **`{"schema_version":2,"sources":[]}` or `{}` means the genuine WoW client language**, with no provider calls; an actual `deDE` client is not forced to English. The offline caller must supply the client locale. Older schema v1 name arrays remain supported, with all save flags disabled. Omitting `original_english` does not silently reinsert it. A missing or invalid config file is an error.
 
-**Naming and in-game validation:** PR #17 provides **Quest Translation Import · Spoken_Quests (offline)**, **not** an installable AddOn. The official `Spoken_Quests` module is unchanged; the *proposed future* Ukrainian Quest pack is `SpokenCommunity_ukUA_Quests` (not created). The only existing playable Ukrainian diagnostic is `SpokenCommunity_ukrainian-diagnostic` for **Places**, not Quests. Offline imports are not visible in WoW. See [exact game acceptance procedure and blockers](docs/QUEST_IMPORT_NAMING_AND_GAME_TEST.md).
+**Naming and in-game validation:** PR #17 provides **Quest Translation Import · Spoken_Quests (offline)**, **not** an installable AddOn. The official `Spoken_Quests` module is unchanged; PR #18 now creates a **local-only test** Quest pack `Spoken_Quests_UA` alongside the new `Spoken_Ukrainian` base addon. The existing `SpokenCommunity_ukrainian-diagnostic` is for **Places** and remains unchanged. The imported texts appear only in an opt-in independent quest preview, **not native Spoken captions**: [game test plan](docs/QUEST_LOCAL_TEST_BUILD.md).
 
 **Bulk ClassicUA 1:1 import:** the local Review UI has an **Auto-import 1:1 · ClassicUA** button. It refreshes current candidates, applies only eligible one-to-one machine content approvals, and imports current eligible versions to an **inert private local snapshot**. A source breakdown table shows total canonical Spoken identities (all modules), unreviewed 1:1 candidate pairs, independently approved mappings, actual imported translations per provider, untranslated records and coverage percentage. The same table is printed by:
 

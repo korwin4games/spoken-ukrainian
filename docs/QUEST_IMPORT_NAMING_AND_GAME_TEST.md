@@ -1,4 +1,6 @@
-# Spoken Ukrainian — Quest Import naming and in-game test plan
+# Spoken Ukrainian — historical Quest offline-import naming and initial game checklist
+
+**Update (PR #18):** The owner's final installable names are `Spoken_Ukrainian` (title **Spoken Ukrainian**) and `Spoken_Quests_UA` (title **Spoken Ukrainian: Quests**). An actual **local test** build, including a default-off standalone Quest preview and mandatory auto-import, is now available; follow [QUEST_LOCAL_TEST_BUILD.md](QUEST_LOCAL_TEST_BUILD.md) for all installation/testing. The notes below document the earlier PR #17 offline-only stage and must not be interpreted as current pack availability or native Spoken caption support.
 
 **Status:** Offline Quest 1:1 importer in PR #17; **not an installable Quest
 Community Pack**. This checklist does **not** claim a live WoW Forever test.
@@ -11,7 +13,7 @@ Community Pack**. This checklist does **not** claim a live WoW Forever test.
 | Official Spoken module | `Spoken_Quests` | Installed upstream Spoken module. **Never rename, fork, patch, or replace it.** It owns both Quests and Gossip. |
 | Quest import/review UI | **Quest Translation Import · Spoken_Quests (offline)** | Local browser tool (Python HTTP server) for ClassicUA Quest `accept`, `progress`, `complete` text. No Gossip implementation. |
 | Quest CLI | `tools/review_ui_server.py --auto-import-one-to-one` | Offline import of audited unique Quest candidates to ignored `build/` storage, with summary counts across the entire Spoken inventory. |
-| **Future** Ukrainian Quest pack | `SpokenCommunity_ukUA_Quests` — **proposed, not created** | Separate installable community-pack folder/TOC, **only after** verifying the upstream public Quest language/text contract and packaging rights. Do not mistake this proposed name for a working AddOn. |
+| **Current local-test** Ukrainian Quest pack | `Spoken_Quests_UA` — built under `dist/` by `tools/build_ukrainian.py` | Installs beside unmodified official `Spoken_Quests`, registers as a language Community Pack, and displays provisional translations in a separate opt-in Quest preview. **Not** a released pack and **not** native Spoken captions. |
 | Existing playable diagnostic | `SpokenCommunity_ukrainian-diagnostic` | **Places** diagnostic: depends on `Spoken_Places`, registers one invented Ukrainian Elwynn Forest lore entry. It does not import ClassicUA or implement Quests. **Keep unchanged.** |
 
 `ukUA` is a Spoken content language; it must not spoof the real WoW
@@ -98,8 +100,10 @@ display (a Quest pack has not been generated).
 2. In AddOns, enable official `Spoken` and `Spoken_Quests`.
    The existing `SpokenCommunity_ukrainian-diagnostic` is
    **Places-only** and can be left disabled for this isolated test.
-   Neither the offline importer nor `SpokenCommunity_ukUA_Quests`
-   should be shown as an installed addon.
+   The offline importer is not installed as an addon. For an isolated
+   upstream **baseline** test, leave both new test addons `Spoken_Ukrainian`
+   and `Spoken_Quests_UA` disabled; for an opt-in Ukrainian **preview** test,
+   follow the newer installation guide linked above.
 3. Log in to WoW Forever. Open Spoken options and confirm the
    official **Quests** module loads without Lua errors. Record client
    locale and options for voice/text fallback; do **not** change
@@ -119,10 +123,9 @@ display (a Quest pack has not been generated).
    Spoken's caption, native Blizzard frame or audio changed.
    Re-enable normal addons and original fallback settings afterward.
 
-## Blocking acceptance criteria for a future playable Quest pack
+## Blocking acceptance criteria for native Spoken Quest captions / release
 
-A future **`SpokenCommunity_ukUA_Quests`** is ready to test in the
-game only after all of the following: (1) confirmed public
+A future **release** of `Spoken_Quests_UA` can claim native Spoken Quest-caption support only after all of the following: (1) confirmed public
 `Spoken_Quests` Community Pack registration and canonical-ID
 contract, (2) safe text-only captions on an `enUS` client **without
 invented audio**, (3) independent review/promotion of machine-provisional

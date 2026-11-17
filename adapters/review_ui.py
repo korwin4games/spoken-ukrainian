@@ -208,7 +208,8 @@ class LocalReviewState:
                     observations, self.policy, one_to_one_pairs=pairs)
                 machine_rows = machine_candidates(
                     self.dataset, self.source, self.inventory,
-                    self.original_index, self._hints)
+                    self.original_index, self._hints,
+                    allow_ai_transations=self.policy.allows_ai_transations("classicua"))
                 blocked = {row["target_id"] for row in self.translations.file.data["versions"]}
                 machine_result = self.machine_imports.run(machine_rows, blocked_targets=blocked)
                 summary = import_summary(
