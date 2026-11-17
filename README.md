@@ -6,6 +6,25 @@
 
 > **Development status:** Ukrainian language registration and an original text-only **Places diagnostic pack** have been implemented and manually tested in Forever. The ClassicUA source adapter is implemented. Full Ukrainian quest, dialogue, book, location and boss-story packs **have not yet been released**.
 
+## Python tooling: uv
+
+Use [uv](https://docs.astral.sh/uv/) with **Python 3.12** for a locked, dependency-free CLI environment. The checked-in `pyproject.toml`, `.python-version` and `uv.lock` describe a **non-package** project. The Lua test runtime requires a system `liblua5.4` library.
+
+```sh
+uv sync --locked
+uv run --locked python -m unittest discover -s tests -v
+uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
+```
+
+After quitting WoW Forever, validate and install the local test ZIP (no unzip command needed):
+
+```sh
+uv run --locked python tools/install_addon.py --addons "/real/path/to/WoW/Interface/AddOns" --dry-run
+uv run --locked python tools/install_addon.py --addons "/real/path/to/WoW/Interface/AddOns"
+```
+
+The installer verifies the ZIP's SHA-256 sidecar and exact contents, updates **only** `Spoken_Ukrainian` and `Spoken_Quests_UA`, keeps replaced folders in `.spoken-ukrainian-backups/`, and leaves official `Spoken`/`Spoken_Quests` untouched. `--dry-run` never modifies files. [Full installation guide](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv). Plain `python3` works if uv is not installed.
+
 ## Local Spoken Ukrainian Quest test build
 
 The build produces two independently installable AddOns: **Spoken Ukrainian** (`Spoken_Ukrainian`) and the Quest module **Spoken Ukrainian: Quests** (`Spoken_Quests_UA`). Official `Spoken` and `Spoken_Quests` are unchanged. **Every build MUST auto-import current ClassicUA 1:1 Quest translations**; bad/missing pinned checkouts, import errors, or no unambiguous Quest translations fail the build.
