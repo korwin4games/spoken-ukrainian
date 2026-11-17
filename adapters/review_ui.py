@@ -16,7 +16,7 @@ from adapters.review_workbench import (approve_explicit_join, build_workbench,
                                        empty_decisions, record_decision, validate_decisions)
 from adapters.spoken.text_index import TextIndex
 from adapters.local_review_store import LocalFile, strict_json
-from adapters.import_summary import import_summary
+from adapters.import_summary import import_summary, unique_one_to_one_hint_pairs
 from adapters.reviewed_bridge import approved_quest_bindings
 from adapters.translation_approvals import ReviewCandidate, TranslationApprovals
 from adapters.translation_sources import (AlternativeSourceStub, ClassicUAProvider,
@@ -170,7 +170,9 @@ class LocalReviewState:
                 self.revalidate_inputs()
             observations = self.translation_observations()
             if action == "refresh" and payload == {}:
-                result = self.translations.observe(observations, self.policy)
+                result = self.translations.observe(observations, self.policy,
+                    one_to_one_pairs=unique_one_to_one_hint_pairs(
+                        self._hints, self.source.units, self.inventory))
                 return result | {"activated": False}
             elif action == "edit" and set(payload) == {"identity", "text", "reviewer"}:
                 return {"version_id": self.translations.edit(**payload, observations=observations, policy=self.policy)}
@@ -188,7 +190,9 @@ class LocalReviewState:
                     raise ValueError("one_to_one_auto_import_not_enabled_for_source")
                 if any(o.candidate.provider != "classicua" for o in observations):
                     raise ValueError("multi_source_auto_import_not_supported")
-                saved = self.translations.observe(observations, self.policy)
+                saved = self.translations.observe(observations, self.policy,
+                    one_to_one_pairs=unique_one_to_one_hint_pairs(
+                        self._hints, self.source.units, self.inventory))
                 result = self.translations.import_approved(observations, self.policy)
                 summary = import_summary(
                     self.inventory, observations, self.policy, self.translations,
