@@ -133,7 +133,7 @@ jobs:
           assert (base / "Spoken_Quests_UA/NativeQuestFrame.lua").is_file()
           assert (base / "Spoken_Quests_UA/GossipFrame.lua").is_file()
           assert (base / "Spoken_Quests_UA/GossipTranslations.lua").is_file()
-           assert not (base / "Spoken_Gossip_UA").exists()
+          assert not (base / "Spoken_Gossip_UA").exists()
           print("Local test ZIP installed; official Spoken preserved.")
           PY
 
