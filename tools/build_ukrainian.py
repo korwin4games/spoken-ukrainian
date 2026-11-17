@@ -445,11 +445,11 @@ def build(classicua, spoken):
         "auto_import_one_to_one", {"source": "classicua"})
     report = report_action["report"]
     preview, imported, ambiguous = current_quest_texts(state)
-    unknown_factions = unknown_faction_import_counts(state)
     preview_count = sum(event in ("accept", "progress", "complete")
                         for events in preview.values() for event in events)
     if not preview_count:
         raise ValueError("no_unambiguous_quest_imports_for_local_test_pack")
+    unknown_factions = unknown_faction_import_counts(state)
     forms = read_classicua_inflections(classicua, state.source.files)
     titles = local_gossip_titles(state)
     entries = template_entries(render_quest_lua(
