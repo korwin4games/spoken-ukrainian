@@ -74,8 +74,9 @@ ledgers, translation batches or model-generated drafts.
 ## Reusing approved translations across NPC/source revisions
 
 `gossip_translation_review.py queue` consults the indexed SQLite translation
-memory when generating **new** batch files. A unique previously **approved**
-Ukrainian version for the *same English hash* may prefill the draft field,
+memory when generating **new** batch files. A unique previously **approved** Ukrainian version (or an unambiguous
+existing **pending** draft when no approved version exists) for the same
+English hash may prefill the draft field,
 saving a repeat model call even when the Spoken source revision or NPC
 context differs.
 
