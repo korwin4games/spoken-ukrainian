@@ -99,14 +99,15 @@ def _memory_versions(db, name, data):
         return
     domain = "gossip" if name.startswith("gossip") else "quest"
     # Incremental index: don't rewrite every translation on each decision.
-    incoming = [row["id"] for row in data["versions"]]
-    if incoming:
-        db.execute(
-            "DELETE FROM translation_memory WHERE domain = ? AND version_id NOT IN ("
-            + ",".join("?" for _ in incoming) + ")",
-            (domain, *incoming))
-    else:
-        db.execute("DELETE FROM translation_memory WHERE domain = ?", (domain,))
+    incoming = {row["id"] for row in data["versions"]}
+    # Avoid one SQL bind variable per translation. SQLite builds differ in
+    # SQLITE_MAX_VARIABLE_NUMBER, and real history can exceed 32,766 rows.
+    known = {row[0] for row in db.execute(
+        "SELECT version_id FROM translation_memory WHERE domain = ?", (domain,))}
+    stale = sorted(known - incoming)
+    if stale:
+        db.executemany("DELETE FROM translation_memory WHERE version_id = ?",
+                       [(version_id,) for version_id in stale])
     for row in data["versions"]:
         status = row["decisions"][-1]["decision"] if row["decisions"] else "pending"
         english_sha = row["english_sha256"] if domain == "gossip" else row["original_sha256"]
@@ -203,12 +204,23 @@ def backup_database(db_path, destination):
     output = protected_path(destination)
     if original == output or not original.is_file():
         raise ValueError("sqlite_backup_source_or_target_invalid")
-    if output.exists():
-        raise ValueError("sqlite_backup_target_already_exists")
     output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with sqlite3.connect(original) as source, sqlite3.connect(output) as target:
-        source.backup(target)
-    os.chmod(output, 0o600)
+    # O_EXCL prevents an existing or concurrently created backup being
+    # overwritten. O_NOFOLLOW blocks symlink swaps at the destination.
+    try:
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        raise ValueError("sqlite_backup_target_already_exists") from None
+    except OSError:
+        raise ValueError("sqlite_backup_create_failed") from None
+    os.close(fd)
+    try:
+        with sqlite3.connect(original) as source, sqlite3.connect(output) as target:
+            source.backup(target)
+        os.chmod(output, 0o600)
+    except BaseException:
+        output.unlink(missing_ok=True)
+        raise
     return output
 
 
