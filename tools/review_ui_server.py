@@ -30,7 +30,7 @@ from adapters.spoken.text_index import index_verified_originals
 STATIC = ROOT / "tools/review_ui/static"
 MAX_REQUEST_BYTES = 262144
 LOGGER = logging.getLogger("spoken.review_ui")
-SAFE_REASON = re.compile(r"[a-z][a-z0-9_]{1,79}\\Z")
+SAFE_REASON = re.compile(r"[a-z][a-z0-9_]{1,79}\Z")
 
 
 def _reason(exc):
