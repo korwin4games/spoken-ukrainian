@@ -265,7 +265,7 @@ assert(#widgets > 1)
 assert(SpokenUkrainian.previewEnabled)
 local previewWindow
 for _, widget in ipairs(widgets) do
-    if widget.Info and widget.Content then previewWindow = widget end
+    if rawget(widget, "Info") and rawget(widget, "Content") then previewWindow = widget end
 end
 assert(previewWindow ~= nil)
 assert(previewWindow.Info.text:find("Вигадана назва", 1, true))
