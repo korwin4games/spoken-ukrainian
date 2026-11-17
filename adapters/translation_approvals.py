@@ -180,28 +180,20 @@ class TranslationApprovals:
                 and provider == "classicua")
 
     def observe(self, observations, policy):
-        """Store reviewed-identity candidates; optionally auto-approve unique 1:1.
+        """Refresh the private ledger, optionally approving audited 1:1 entries.
 
-        Only *new* provider versions may be auto-approved. A changed upstream
-        text, existing manual version, previous rejection or ambiguity leaves
-        the newly observed version pending for a human.
+        The first unique candidate can be approved whether it is newly stored
+        or already pending. If another version/manual edit/decision exists for
+        the target, auto-approval is blocked; human decisions remain intact.
         """
         data = deepcopy(self.file.data)
         rows = {r["id"]: r for r in data["versions"]}
-        approved = 0
         for observation in observations:
             row = observation.row()
             provider = row["provenance"][0]["provider"]
             if provider not in policy.sources or not policy.stores(provider):
                 continue
             if row["id"] not in rows:
-                if (not any(prior["target_id"] == row["target_id"]
-                            for prior in data["versions"])
-                        and self._unique_one_to_one(row, observations, policy)):
-                    row["decisions"].append({"decision": AUTO_DECISION,
-                                             "reviewer": AUTO_REVIEWER,
-                                             "checks": dict(AUTO_CHECKS)})
-                    approved += 1
                 row["number"] = len(data["versions"]) + 1
                 data["versions"].append(row)
                 rows[row["id"]] = row
@@ -210,6 +202,16 @@ class TranslationApprovals:
                     if p not in rows[row["id"]]["provenance"]:
                         rows[row["id"]]["provenance"].append(p)
         self.merge_provenance(data, observations, policy)
+        approved = 0
+        for row in data["versions"]:
+            if (not row["decisions"]
+                    and sum(other["target_id"] == row["target_id"]
+                            for other in data["versions"]) == 1
+                    and self._unique_one_to_one(row, observations, policy)):
+                row["decisions"].append({"decision": AUTO_DECISION,
+                                         "reviewer": AUTO_REVIEWER,
+                                         "checks": dict(AUTO_CHECKS)})
+                approved += 1
         self._save(data)
         return {"auto_approved": approved, "saved": True}
 
