@@ -187,10 +187,12 @@ class LocalReviewState:
                 result = self.translations.import_approved(observations, self.policy,
                     one_to_one_pairs=unique_one_to_one_hint_pairs(
                         self._hints, self.source.units, self.inventory))
-                return result | {"report": import_summary(
+                summary = import_summary(
                     self.inventory, observations, self.policy, self.translations,
                     self._hints, self.source.units, changed=result["changed"],
-                    machine_targets=self.machine_imports.current_import_targets())}
+                    machine_targets=self.machine_imports.current_import_targets())
+                return result | {"imported": summary["imported_total"],
+                                 "report": summary}
             elif action == "auto_import_one_to_one" and payload == {"source": "classicua"}:
                 # This action is intentionally limited to an already explicitly
                 # opted-in, audited source; it cannot auto-approve ID mappings.
