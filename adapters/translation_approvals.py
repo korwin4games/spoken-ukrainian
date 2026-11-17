@@ -179,9 +179,11 @@ class TranslationApprovals:
                 and policy.stores(provider)
                 and provider == "classicua")
 
-    def observe(self, observations, policy):
+    def observe(self, observations, policy, *, one_to_one_pairs=None):
         """Refresh the private ledger, optionally approving audited 1:1 entries.
 
+        An optional independently computed one-to-one-pairs allow-list constrains
+        automation against all source candidates, not just approved observations.
         The first unique candidate can be approved whether it is newly stored
         or already pending. If another version/manual edit/decision exists for
         the target, auto-approval is blocked; human decisions remain intact.
@@ -207,6 +209,8 @@ class TranslationApprovals:
             if (not row["decisions"]
                     and sum(other["target_id"] == row["target_id"]
                             for other in data["versions"]) == 1
+                    and (one_to_one_pairs is None
+                         or (row["source_id"], row["target_id"]) in one_to_one_pairs)
                     and self._unique_one_to_one(row, observations, policy)):
                 row["decisions"].append({"decision": AUTO_DECISION,
                                          "reviewer": AUTO_REVIEWER,
