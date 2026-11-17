@@ -107,11 +107,21 @@
             <button type="button" id="defer" class="primary" disabled>Відкласти</button>
             <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
           </div>
-          <details class="approval-note"><summary>Approve mapping — незалежний Stage 3 JoinProof</summary>
-            <p>Підготуйте повний approve-request JSON із другим незалежним reviewer за процедурою Stage 4B. UI перевіряє надані докази; він не створює attestations. Схвалення mapping не схвалює переклад.</p>
-            <label for="mapping-proof">Повний approve-request JSON</label>
-            <textarea id="mapping-proof" rows="10" spellcheck="false"></textarea>
-            <button type="button" id="mapping-approve" class="primary">Approve mapping із JoinProof</button>
+          <details class="approval-note"><summary>Approve mapping — форма незалежного Stage 3 JoinProof</summary>
+            <p><strong>Крок 1:</strong> незалежно перевірте обидва закріплені файли, точну репліку, NPC, voice, faction і gender.
+              Система заповнить лише перевірені метадані вибраної пари; вона не засвідчує, що ви відкривали джерела.</p>
+            <label for="mapping-context">Один перевірений контекст / voice (не змішуйте варіанти)</label>
+            <select id="mapping-context"></select>
+            <div class="decision-inputs">
+              <label>Evidence reviewer (особа, що перевірила джерела)
+                <input id="mapping-evidence-reviewer" maxlength="120" autocomplete="off" placeholder="Ідентифікатор першого рев'ювера"></label>
+              <label>Mapping reviewer (незалежна друга особа)
+                <input id="mapping-reviewer" maxlength="120" autocomplete="off" placeholder="Ідентифікатор другого рев'ювера"></label>
+            </div>
+            <p><label><input type="checkbox" id="mapping-inspected"> Evidence reviewer особисто перевірив точні закріплені джерела та обраний повний контекст.</label></p>
+            <p><label><input type="checkbox" id="mapping-independent"> Mapping reviewer незалежно перевірив відповідність; обидва reviewer — різні реальні люди.</label></p>
+            <p>Форма створює запит із фактичних audited hashes/references. Збереження дозволене лише після обох ручних підтверджень і серверної Stage 3 валідації. Це <b>не</b> approval перекладу.</p>
+            <button type="button" id="mapping-approve" class="primary">Підтвердити Mapping із JoinProof</button>
           </details>
         </section>
       </section>
