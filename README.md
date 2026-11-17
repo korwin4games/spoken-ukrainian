@@ -23,14 +23,14 @@ uv run --locked python tools/install_addon.py --addons "/real/path/to/WoW/Interf
 uv run --locked python tools/install_addon.py --addons "/real/path/to/WoW/Interface/AddOns"
 ```
 
-The installer verifies the ZIP's SHA-256 sidecar and exact contents, updates **only** `Spoken_Ukrainian` and `Spoken_Quests_UA`, keeps replaced folders in `.spoken-ukrainian-backups/`, and leaves official `Spoken`/`Spoken_Quests` untouched. `--dry-run` never modifies files. [Full installation guide](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv). Plain `python3` works if uv is not installed.
+The installer verifies the ZIP's SHA-256 sidecar and exact contents, updates **only** `Spoken_Ukrainian` and `Spoken_Quests_UA`, keeps replaced folders in `.spoken-ukrainian-backups/`, and leaves official `Spoken`/`Spoken_Quests` untouched. `--dry-run` never modifies files. [Full installation guide](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv).
 
 ## Local Spoken Ukrainian Quest test build
 
 The build produces two independently installable AddOns: **Spoken Ukrainian** (`Spoken_Ukrainian`) and the Quest module **Spoken Ukrainian: Quests** (`Spoken_Quests_UA`). Official `Spoken` and `Spoken_Quests` are unchanged. **Every build MUST auto-import current ClassicUA 1:1 Quest translations**; bad/missing pinned checkouts, import errors, or no unambiguous Quest translations fail the build.
 
 ```sh
-python3 tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
+uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
 ```
 
 **ClassicUA AI translations:** optional `allow_ai_transations` (literal key spelling) defaults to `false`, but the checked-in `config/translation_sources.json` explicitly sets it to **`true`** for `classicua`. This permits **provisional local** imports only for candidates passing all strict 1:1/verified-original/source checks; it does not constitute human approval. Setting it back to `false` and rebuilding removes AI rows from the active test pack without deleting private local history. AI content absent from the Spoken narrated corpus cannot be imported.
@@ -88,7 +88,7 @@ You can **reorder or remove** source objects. For example, putting `own_translat
 **Bulk ClassicUA 1:1 import:** the local Review UI has an **Auto-import 1:1 · ClassicUA** button. It refreshes current candidates, applies only eligible one-to-one machine content approvals, and imports current eligible versions to an **inert private local snapshot**. A source breakdown table shows total canonical Spoken identities (all modules), unreviewed 1:1 candidate pairs, independently approved mappings, actual imported translations per provider, untranslated records and coverage percentage. The same table is printed by:
 
 ```sh
-python3 tools/review_ui_server.py --classicua /path/to/ClassicUA --spoken /path/to/spoken-wow --auto-import-one-to-one
+uv run --locked python tools/review_ui_server.py --classicua /path/to/ClassicUA --spoken /path/to/spoken-wow --auto-import-one-to-one
 ```
 
 Strictly unique Quest ID/event pairs with a single verified Spoken identity context and original-English fingerprint may also be saved to a separate **provisional machine-import store** (`build/machine-one-to-one.json`) without a fabricated Stage 3 JoinProof. They are clearly labeled and counted separately from human-reviewed imports, cannot be treated as publication-ready, and never overwrite reviewed/manual text. Ambiguous source/target, missing originals, AI markers, or changed upstream text remain blocked/pending. The default config enables this mode for ClassicUA, but no real approved joins currently exist, so genuine coverage can remain zero. Content is stored in ignored `build/translation-reviews.json`, not Git or the live WoW AddOn. [Workflow and safeguards](docs/TRANSLATION_APPROVALS.md).
@@ -159,9 +159,9 @@ This attribution applies to **future ClassicUA-derived content**. The existing d
 The current downloadable **local build output is only a diagnostic pack**, not a complete Ukrainian localization.
 
 ```sh
-python3 tools/version.py check
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Building requires Python 3. The tests additionally use Git, the system Lua 5.4 shared library and the pinned Spoken source checkout (normally in sibling `../spoken-wow`). Set `SPOKEN_SOURCE=/absolute/path/to/spoken-wow` if yours is elsewhere. These commands do not fetch source code, install packages or access production systems.
@@ -171,7 +171,7 @@ The build writes `dist/SpokenCommunity_ukrainian-diagnostic.zip` plus its SHA-25
 ### Validate offline identities (Stage 3)
 
 ```sh
-python3 tools/stage3_report.py --classicua /absolute/path/to/clean-pinned-ClassicUA --spoken /absolute/path/to/spoken-wow
+uv run --locked python tools/stage3_report.py --classicua /absolute/path/to/clean-pinned-ClassicUA --spoken /absolute/path/to/spoken-wow
 ```
 
 Writes deterministic metadata only to ignored `build/stage3-report.json`. Optional
@@ -182,7 +182,7 @@ changing the active lock. See the [review procedure](docs/STAGE_3_IMPLEMENTATION
 ### Dry-run source coverage against real Spoken IDs (Stage 4A)
 
 ```sh
-python3 tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-wow
+uv run --locked python tools/stage4_coverage.py --spoken /absolute/path/to/clean-pinned-spoken-wow
 ```
 
 Reads the **real pinned canonical Spoken inventory** and checks original wording for Quests/Gossip/Readables without exporting text; reports a per-source lookup pass, missing-original targets and total counts in ignored `build/stage4-source-coverage.json`. Source identity is deliberately **unbound** until independently approved Stage 3 joins exist, so **no real ClassicUA translation is assigned**; `another` remains a stub and `own_translator` a mock. Empty policy requires an explicit `--client-locale` from the caller. See [Stage 4A scope and limitations](docs/STAGE_4A_INVENTORY_COVERAGE.md).
@@ -192,7 +192,7 @@ Reads the **real pinned canonical Spoken inventory** and checks original wording
 The review workbench audits **both pinned repositories**, produces a metadata-only shortlist of actual Quest ID/event candidates and requires independent speaker/voice/faction/wording evidence before accepting a canonical join:
 
 ```sh
-python3 tools/stage4b_workbench.py \
+uv run --locked python tools/stage4b_workbench.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --faction horde --limit 40
@@ -209,7 +209,7 @@ Outputs: ignored `build/stage4b-review-queue.json` and a **filterable, spreadshe
 The **local browser UI** separates Mapping Review from Translation Review. Compare audited UA/EN and speaker/voice/faction variants; reject/defer mappings or submit a complete human-supplied Stage 3 `JoinProof` with **two independent reviewers**. Revalidated joins can supply pending translations. Edit into new versions, inspect provenance/history, and explicitly approve text/grammar/AI/rights. **Approval and import are separate actions**; import creates only an inert local snapshot, with no WoW activation. No real approvals are supplied by this PR.
 
 ```sh
-python3 tools/review_ui_server.py \
+uv run --locked python tools/review_ui_server.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow
 ```
@@ -219,25 +219,25 @@ Open **http://127.0.0.1:8765/** on the same machine. The server binds only to lo
 Explicit import (same optional paths/policy as your UI session):
 
 ```sh
-python3 tools/review_ui_server.py \
+uv run --locked python tools/review_ui_server.py \
   --classicua /absolute/path/to/clean-pinned-ClassicUA \
   --spoken /absolute/path/to/clean-pinned-spoken-wow \
   --import-approved
 ```
 
-Verification: `python3 tools/version.py check`, `python3 tools/build.py`, and `python3 -m unittest discover -s tests -v` (including local HTTP sockets).
+Verification: `uv run --locked python tools/version.py check`, `uv run --locked python tools/build.py`, and `uv run --locked python -m unittest discover -s tests -v` (including local HTTP sockets).
 
 ### Audit a pinned ClassicUA checkout (Stage 2A)
 
 ```sh
-python3 tools/classicua_audit.py --source /absolute/path/to/clean-pinned-ClassicUA
+uv run --locked python tools/classicua_audit.py --source /absolute/path/to/clean-pinned-ClassicUA
 ```
 
 The adapter reads a **separate, clean** ClassicUA checkout at the revision in [sources.lock.json](sources.lock.json), validates source hashes and resolves the real `classic → sod → forever` load/override behavior. Its metadata-only report is stored in ignored `build/classicua-audit.json`. It does not execute ClassicUA source Lua, export translations into packs or match Spoken canonical IDs. See the [implementation](docs/STAGE_2A_IMPLEMENTATION.md) and [test report](docs/STAGE_2A_TESTING.md).
 
 ## Project versions
 
-The root [VERSION](VERSION) is the **project** version (initial baseline `0.0.1`), separate from independently versioned community addons (the diagnostic addon is `0.1.0`). Use `python3 tools/version.py show` and `python3 tools/version.py check`; changes are documented in [CHANGELOG.md](CHANGELOG.md). Tags and GitHub Releases are explicit, reviewed operations; they are not automatically created by version bumps. See [VERSIONING.md](docs/VERSIONING.md).
+The root [VERSION](VERSION) is the **project** version (initial baseline `0.0.1`), separate from independently versioned community addons (the diagnostic addon is `0.1.0`). Use `uv run --locked python tools/version.py show` and `uv run --locked python tools/version.py check`; changes are documented in [CHANGELOG.md](CHANGELOG.md). Tags and GitHub Releases are explicit, reviewed operations; they are not automatically created by version bumps. See [VERSIONING.md](docs/VERSIONING.md).
 
 ## Documentation
 
