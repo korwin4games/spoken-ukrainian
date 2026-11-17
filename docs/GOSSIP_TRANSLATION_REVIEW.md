@@ -29,6 +29,34 @@ Files ignored by Git:
 
 Do not commit source batches, model outputs, reviewed text, or ledgers.
 
+### Automatic one-batch Codex runner (opt-in, safe by default)
+
+The CLI wrapper makes a **single model call per explicitly chosen batch**.
+It cannot import or approve and never invokes Codex in normal CI/builds.
+Make sure Codex CLI is installed, logged in, and understand your plan usage:
+
+```bash
+# Free preflight: validates pinned metadata and reports how many blank entries remain.
+uv run --locked python tools/gossip_translate_codex.py --input build/gossip-batches/batch-0001.json
+
+# Explicit opt-in: one Codex invocation, model quota/cost may apply.
+uv run --locked python tools/gossip_translate_codex.py --input build/gossip-batches/batch-0001.json --apply
+```
+
+The driver runs `codex exec --sandbox read-only --output-schema ...` against
+the **one selected batch**, and receives JSON containing only
+`group_id` → `ukrainian_text`. It cross-checks hashes, source revisions,
+exact group IDs, all response items and preserved WoW placeholders. Existing
+drafts are never replaced. Results are drafts in ignored `build/`, not
+approved content; AI must not fake reviewer attestations. Invalid responses
+fail without overwriting a batch. If some model translations are left blank,
+review those manually before the separate `propose` step.
+
+This command is **not** a background job or automatic translation at build
+time. Running `--apply` may incur Codex usage; users decide which 1 of 78
+batches to process and when. No `--danger-full-access`, no upstream changes,
+no audio or public release.
+
 ### Codex-assisted batch translation (explicit opt-in)
 
 Open Codex CLI in the project root and use the instruction in
