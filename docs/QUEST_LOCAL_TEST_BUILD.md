@@ -177,6 +177,17 @@ different UI surfaces from the Quest description. The separate
 For safety, it yields to installed ClassicUA, uses **character faction**
 and leaves unknown IDs unchanged.
 
+**Quest 97279 root cause (confirmed on pinned sources):** its `accept`,
+`progress` and `complete` text each have one verified canonical Spoken
+target and one ClassicUA source, but all three Spoken contexts report
+`faction=unknown`. Previously the machine importer rejected any unknown
+faction even when there was no actual conflict. The importer now permits
+`unknown` for **strictly unique, verified, private machine-provisional**
+records only; explicit opposite faction, multivoice ambiguity, absent
+English originals or changed source hashes are still rejected. AI-marked
+ClassicUA rows also still require `allow_ai_transations=true`. This
+does **not** approve the AI translation for public release.
+
 **Title-only export is NOT the Spoken narration importer.** The
 builder extracts only title field [1] from pinned, audited ClassicUA
 effective faction views, respecting `allow_ai_transations`. This title
