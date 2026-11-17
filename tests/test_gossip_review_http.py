@@ -45,7 +45,7 @@ class GossipReviewHTTPTests(unittest.TestCase):
                 with urlopen(base + "/api/gossip?offset=0&limit=12", timeout=5) as resp:
                     queue = json.load(resp)
                 self.assertEqual(queue["total"], 1)
-                self.assertEqual(queue["items"][0]["english"], english.lower())
+                self.assertEqual(queue["items"][0]["english"], english)
                 self.assertEqual(queue["items"][0]["contexts"][0]["npc_id"], 42)
                 with self.assertRaises(HTTPError) as err:
                     post("/api/gossip/import", {}, headers={"Content-Type": "application/json",
