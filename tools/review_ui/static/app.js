@@ -723,8 +723,9 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
   const e = name => document.getElementById("source-" + name);
   const flags = ["text", "grammar", "ai", "rights", "all_contexts"];
   const sr = {items: [], offset: 0, limit: 20, total: 0, conflicting: 0,
-              revisions: [], target: null, candidate: null, busy: false};
-  const current = () => sr.items.find(x => x.target_id === sr.target) || null;
+              revisions: [], key: null, candidate: null, busy: false};
+  const keyOf = x => [x.domain, x.target_id, x.english_sha256, x.context_sha256].join(":");
+  const current = () => sr.items.find(x => keyOf(x) === sr.key) || null;
   const candidate = () => current()?.candidates.find(x => x.id === sr.candidate) || null;
 
   function render() {
@@ -739,7 +740,7 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
     e("items").replaceChildren();
     sr.items.forEach(item => {
       const b = make("button", "queue-item" +
-        (sr.target === item.target_id ? " selected" : ""));
+        (sr.key === keyOf(item) ? " selected" : ""));
       b.type = "button";
       b.appendChild(make("div", "queue-id", item.target_id));
       b.appendChild(make("div", "queue-meta", item.candidates.length +
@@ -748,7 +749,7 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
         (item.selected_is_latest_source_revision ? "ACTIVE" : "ACTIVE · OLD REVISION") :
         item.different ? "CONFLICT · REVIEW" : "NOT SELECTED"));
       b.addEventListener("click", () => {
-        sr.target = item.target_id;
+        sr.key = keyOf(item);
         sr.candidate = null;
         flags.forEach(x => { e("check-" + x).checked = false; });
         render();
@@ -799,8 +800,8 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
       sr.total = data.total;
       sr.conflicting = data.conflicts;
       sr.revisions = data.revisions;
-      if (!sr.items.some(x => x.target_id === sr.target)) {
-        sr.target = sr.items[0]?.target_id || null;
+      if (!sr.items.some(x => keyOf(x) === sr.key)) {
+        sr.key = sr.items[0] ? keyOf(sr.items[0]) : null;
         sr.candidate = null;
       }
       setText(e("feedback"), "Список джерел оновлено. Ручне схвалення необхідне.");
@@ -827,11 +828,11 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
   e("refresh").addEventListener("click", reload);
   e("prev").addEventListener("click", () => {
     sr.offset = Math.max(0, sr.offset - sr.limit);
-    sr.target = null; reload();
+    sr.key = null; reload();
   });
   e("next").addEventListener("click", () => {
     if (sr.offset + sr.limit >= sr.total) return;
-    sr.offset += sr.limit; sr.target = null; reload();
+    sr.offset += sr.limit; sr.key = null; reload();
   });
   e("candidate").addEventListener("change", () => {
     sr.candidate = e("candidate").value;
