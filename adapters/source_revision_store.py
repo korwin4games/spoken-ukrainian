@@ -216,6 +216,15 @@ class SourceReviewStore:
                     (candidate_id, decision, reviewer,
                      json.dumps(checks, sort_keys=True)))
                 if decision != "approved":
+                    selected = db.execute("""SELECT domain, target_id,
+                        english_sha256, context_sha256, candidate_id
+                        FROM source_active_selections WHERE candidate_id = ?""",
+                        (candidate_id,)).fetchall()
+                    db.executemany("""INSERT INTO source_selection_events
+                        (domain, target_id, english_sha256, context_sha256,
+                         candidate_id, action, reviewer)
+                        VALUES (?, ?, ?, ?, ?, 'clear', ?)""",
+                        [(*row, reviewer) for row in selected])
                     db.execute("""DELETE FROM source_active_selections
                         WHERE candidate_id = ?""", (candidate_id,))
                 db.commit()
