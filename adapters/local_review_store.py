@@ -28,6 +28,15 @@ class LocalFile:
         self.allowed = Path(allowed_directory).resolve()
         self.empty, self.validate = empty, validate
         self._guard()
+        self.sqlite = None
+        # Only explicitly selected review ledgers move to SQLite. Unrelated
+        # local files still use the historical safe JSON storage.
+        from adapters.sqlite_translation_store import DB_ENV, LEDGER_NAMES, SQLiteDocument
+        db_path = os.environ.get(DB_ENV)
+        if db_path and self.path.name in LEDGER_NAMES:
+            self.sqlite = SQLiteDocument(db_path, self.path, empty, validate)
+            self.baseline, self.data = self.sqlite.baseline, self.sqlite.data
+            return
         self.baseline = self._read()
         self.data = validate(strict_json(self.baseline)) if self.baseline is not None else validate(empty)
 
@@ -42,6 +51,8 @@ class LocalFile:
         return self.path.read_text(encoding="utf-8") if self.path.exists() else None
 
     def check_unchanged(self):
+        if self.sqlite is not None:
+            return self.sqlite.check_unchanged()
         if self._read() != self.baseline:
             raise ValueError("local_review_conflict_restart_and_reload")
 
@@ -57,6 +68,10 @@ class LocalFile:
             yield
 
     def save(self, data):
+        if self.sqlite is not None:
+            checked = self.sqlite.save(data)
+            self.baseline, self.data = self.sqlite.baseline, checked
+            return checked
         checked = self.validate(data)
         content = json.dumps(checked, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         with self.locked():
