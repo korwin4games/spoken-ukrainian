@@ -108,6 +108,17 @@ No public release is authorized. Source provenance, permissions, NPC
 context, WoW runtime acceptance, glyphs, placeholders and audio still
 require independent validation.
 
+All activation, manual clearing, and rejection-triggered revocations are
+recorded in an **append-only source selection audit trail** (in addition to
+the immutable source versions and decision history). To inspect the
+historical choices for a specific context:
+
+```bash
+uv run --locked python tools/source_revision_review.py selection-history \
+  --domain gossip --target gossip:42:<english-hash>
+```
+
+
 ## Browser-based source conflict review
 
 Start the existing localhost review UI with the pinned checkouts:
