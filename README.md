@@ -14,6 +14,8 @@ The build produces two independently installable AddOns: **Spoken Ukrainian** (`
 python3 tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
 ```
 
+**ClassicUA AI translations:** optional `allow_ai_transations` (literal key spelling) defaults to `false`, but the checked-in `config/translation_sources.json` explicitly sets it to **`true`** for `classicua`. This permits **provisional local** imports only for candidates passing all strict 1:1/verified-original/source checks; it does not constitute human approval. Setting it back to `false` and rebuilding removes AI rows from the active test pack without deleting private local history. AI content absent from the Spoken narrated corpus cannot be imported.
+
 Unzip the private `dist/Spoken_Ukrainian_Quest_Local_Test.zip` directly into `Interface/AddOns/`. In WoW use `/spokenuk preview on` to test an opt-in **separate** Quest translation frame. It is **not** Spoken's native captions: pinned Spoken 3.9.0 requires actual audio metadata to enqueue Quest subtitles, and this pack neither fakes audio nor patches upstream. Machine-matched text is conspicuously marked provisional; do not distribute this test build. [Exact game test steps and limitations](docs/QUEST_LOCAL_TEST_BUILD.md).
 
 ## Architecture and translation flow
@@ -45,7 +47,7 @@ The default offline provider order is configured in [`config/translation_sources
 {
   "schema_version": 2,
   "sources": [
-    {"name": "classicua", "save_translations": true},
+    {"name": "classicua", "save_translations": true, "auto_approve_one_to_one": true, "allow_ai_transations": true},
     {"name": "another", "save_translations": false},
     {"name": "own_translator", "save_translations": true},
     {"name": "original_english", "save_translations": false}
