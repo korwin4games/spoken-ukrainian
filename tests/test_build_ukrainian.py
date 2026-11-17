@@ -226,6 +226,8 @@ class BuildUkrainianTests(unittest.TestCase):
         with patch.object(builder, "validate_source_paths"), patch.object(
                 builder, "build_state", return_value=state), patch.object(
                 builder, "current_quest_texts", return_value=(preview, 1, 0)), patch.object(
+                builder, "unknown_faction_import_counts",
+                return_value={"machine_provisional": 0, "human_reviewed": 0}), patch.object(
                 builder, "read_classicua_inflections", return_value={}), patch.object(
                 builder, "local_gossip_titles", return_value={"horde": {}, "alliance": {}}), patch.object(
                 builder, "import_reason_for_quest", return_value={"quest_id": 97279}), patch.object(
