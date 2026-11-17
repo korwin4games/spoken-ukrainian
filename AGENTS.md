@@ -43,7 +43,7 @@ Read only what the task needs; do not use old planning notes as proof of current
 
 - Executable Quest/Gossip CLIs use a durable local SQLite file outside `build/` by default, configured through `SPOKEN_TRANSLATION_DB` or `XDG_DATA_HOME`. See `docs/SQLITE_TRANSLATION_STORE.md`.
 - Keep the five existing strict ledger validators, provenance, version hashes and approvals intact; do not manufacture review decisions. Initial legacy JSON migration is **read-only** for the source files, transactional for SQLite, and fails closed on malformed/stale evidence. SQLite becomes authoritative once migrated. Never silently overwrite a database, export private bodies into Git, or delete prior review ledgers.
-- SQLite's `translation_memory` index provides historical English-hash reuse only as **unapproved drafts** for newly changed NPC/context bindings. Approved content never transfers its approval to a changed context. Retain separate explicit import and human attestations.
+- SQLite's `translation_memory` index reuses unique prior approved or pending English-hash values only as **unapproved drafts** for newly changed NPC/context bindings. Approved content never transfers its approval to a changed context. Retain separate explicit import and human attestations.
 - Backup with `uv run --locked python tools/translation_db.py backup` and test concurrent-change detection and restoration. No new Python third-party database dependencies, Docker services, network servers, or changes to official Spoken/ClassicUA are needed.
 
 ### Mandatory uv Python workflow
