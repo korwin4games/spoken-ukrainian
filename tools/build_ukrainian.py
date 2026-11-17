@@ -65,7 +65,7 @@ def lua_quote(value):
     return "".join(out)
 
 
-def current_quest_texts(state):
+def current_quest_texts(state, selected_out=None):
     """Only currently imported references after real full-source revalidation."""
     machine = validate_machine_ledger(state.machine_imports.file.data)
     reviewed = _validate_ledger(state.translations.file.data)
@@ -126,6 +126,8 @@ def current_quest_texts(state):
         from adapters.source_revision_store import SourceReviewStore
         from tools.source_revision_review import quest_contexts
         selected_quest = SourceReviewStore(db_path).active(quest_contexts(state), domain="quest")
+        if selected_out is not None:
+            selected_out.extend(selected_quest)
         if selected_quest:
             mapped = {o.target_id for o in state.translation_observations()}
             for selection in selected_quest:
@@ -541,7 +543,8 @@ def build(classicua, spoken):
     report_action = state.translation_action(
         "auto_import_one_to_one", {"source": "classicua"})
     report = report_action["report"]
-    preview, imported, ambiguous = current_quest_texts(state)
+    selected_quest = []
+    preview, imported, ambiguous = current_quest_texts(state, selected_quest)
     preview_count = sum(event in ("accept", "progress", "complete")
                         for events in preview.values() for event in events)
     if not preview_count:
@@ -566,6 +569,7 @@ def build(classicua, spoken):
     from adapters.sqlite_translation_store import DB_ENV
     selected_gossip = []
     db_path = os.environ.get(DB_ENV)
+    source_proofs = {}
     if db_path:
         from adapters.source_revision_store import SourceReviewStore
         from tools.source_revision_review import gossip_contexts
