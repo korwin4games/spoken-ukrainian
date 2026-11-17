@@ -175,7 +175,23 @@ different UI surfaces from the Quest description. The separate
 (`GossipAvailableQuestButtonMixin`, `GossipActiveQuestButtonMixin`,
 `GetAvailableQuestInfo`, `GetActiveQuestID`) and supports Shift.
 For safety, it yields to installed ClassicUA, uses **character faction**
-and leaves unknown IDs unchanged.
+and leaves unknown IDs unchanged. NPC **Quest Greeting** title buttons
+are distinct from Gossip mixin buttons: the former do not implement
+`Resize()`. After localization and on every Shift press/release the
+addon recomputes their height using `GetTextHeight()`,
+`Icon:GetHeight()`, and `SetHeight()` (matching Blizzard's QuestFrame
+layout). Subsequent quest rows remain anchored relative to the updated
+preceding button and must not overlap or clip when translated titles
+wrap onto multiple lines. Verify this with two adjacent quests at the
+same NPC, one with a notably longer Ukrainian title.
+
+The build now also logs a **metadata-only split of active Quest imports
+whose only Spoken context has `faction=unknown`**, separated into
+machine-provisional versus human-reviewed counts. An unknown faction
+is not verified faction evidence: even when an import is structurally
+one-to-one, it still requires human confirmation before publication.
+An explicit opposite-faction conflict, duplicate source-to-target
+mapping or missing verified original remains blocked.
 
 **Quest 97279 root cause (confirmed on pinned sources):** its `accept`,
 `progress` and `complete` text each have one verified canonical Spoken
