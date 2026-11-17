@@ -1,15 +1,15 @@
 # Project versioning
 
-`VERSION` is the authoritative project version. Read it with `python3 tools/version.py show`; do not maintain a second project-version constant. The initial baseline is 0.0.1, established after Stage 2A was merged into main in PR #1. This is a version assignment, not a claim that a tag or GitHub Release already exists.
+`VERSION` is the authoritative project version. Since adding uv, the `pyproject.toml` `[project].version` and virtual project record in `uv.lock` must mirror `VERSION`; `uv run --locked python tools/version.py check` validates all three. On a version bump, edit `pyproject.toml` to the same version and run `uv lock` before the locked check. uv metadata are mirrors, never independent sources of truth. Read it with `uv run --locked python tools/version.py show`; do not maintain a second project-version constant. The initial baseline is 0.0.1, established after Stage 2A was merged into main in PR #1. This is a version assignment, not a claim that a tag or GitHub Release already exists.
 
 ## Format and validation
 
 The project uses the numeric SemVer core `MAJOR.MINOR.PATCH`. Components are nonnegative ASCII integers without leading zeros. Prerelease/build suffixes are not used by this lightweight policy. The VERSION file contains just the triplet and normally one final LF. A missing final LF is accepted and preserved on bump; spaces, CRLF, extra blank lines, a BOM and malformed values are rejected.
 
 ```sh
-python3 tools/version.py show
-python3 tools/version.py check
-python3 tools/version.py check --tag v0.0.1
+uv run --locked python tools/version.py show
+uv run --locked python tools/version.py check
+uv run --locked python tools/version.py check --tag v0.0.1
 ```
 
 `show` validates VERSION. `check` additionally requires an Unreleased changelog section first, dated version sections with real ISO dates in unique descending version order, and the newest dated section matching VERSION. `--tag` requires an exact `v` plus VERSION match. This catches inconsistent release preparation; it does not infer release approval from a version number.
@@ -27,9 +27,9 @@ Minor resets PATCH; major resets MINOR and PATCH. During 0.x development, breaki
 Pre-1.0 `bump major` fails even in dry-run mode unless `--approve-stable` is supplied. That flag records an explicit operator decision after obtaining stable-release approval; the tool cannot determine who approved it. It must not be added to routine CI or used to bypass review.
 
 ```sh
-python3 tools/version.py bump minor --dry-run
+uv run --locked python tools/version.py bump minor --dry-run
 # Only after explicit stable-release approval:
-python3 tools/version.py bump major --approve-stable --dry-run
+uv run --locked python tools/version.py bump major --approve-stable --dry-run
 ```
 
 No arbitrary set-version command is offered. Every supported bump increases the current parsed version, preventing downgrades through the tool. Manual edits and Git history remain subject to review; the tool does not audit remote release history or prevent every possible manual downgrade.
@@ -43,13 +43,13 @@ A bump writes only VERSION. It never silently moves Unreleased entries or change
 Example patch preparation, with changelog editing performed manually between the bump and validation:
 
 ```sh
-python3 tools/version.py show
-python3 tools/version.py bump patch --dry-run
-python3 tools/version.py bump patch
+uv run --locked python tools/version.py show
+uv run --locked python tools/version.py bump patch --dry-run
+uv run --locked python tools/version.py bump patch
 # Add a NEW dated section for the displayed version; move its Unreleased notes there.
-python3 tools/version.py check
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 ```
 
 Dry-run prints only the proposed version and changes no files. Mutation tests use temporary project roots. The tool does not run Git, enforce a clean working tree or mutate other files; preserve unrelated work and review VERSION/changelog together before committing. Run with ordinary write access to the repository. If VERSION is a symlink, replace it deliberately with a regular project file before updating; the tool refuses to follow it for a bump.
@@ -61,9 +61,9 @@ After implementing changes, running tests, preparing the changelog, bumping VERS
 For the first future baseline tag, after this versioning work has been reviewed and committed with VERSION still 0.0.1:
 
 ```sh
-python3 tools/version.py check --tag v0.0.1
-python3 tools/build.py
-python3 -m unittest discover -s tests -v
+uv run --locked python tools/version.py check --tag v0.0.1
+uv run --locked python tools/build.py
+uv run --locked python -m unittest discover -s tests -v
 # Commit reviewed changes separately if they are not committed yet.
 git tag -a v0.0.1 -m "Spoken Ukrainian v0.0.1"
 # Only after review and explicit authorization:
@@ -88,6 +88,6 @@ Future distributable addons may have independent version schedules. Project bump
 
 ## CI
 
-The existing workflow still runs build and all tests. It additionally runs `python3 tools/version.py check` and validates `v*` tags against VERSION using `--tag`. Its unrestricted push trigger already includes tag pushes. Tag names enter the shell through an environment variable, not interpolated shell code. Other tags are not project version tags. No release, artifact publication or automatic bump is configured.
+The existing workflow still runs build and all tests. It additionally runs `uv run --locked python tools/version.py check` and validates `v*` tags against VERSION using `--tag`. Its unrestricted push trigger already includes tag pushes. Tag names enter the shell through an environment variable, not interpolated shell code. Other tags are not project version tags. No release, artifact publication or automatic bump is configured.
 
 The normal unittest discovery includes version-tool tests along with all Stage 1 and Stage 2A regressions. A remote CI run for this branch remains pending until a separately authorized push.
