@@ -6,25 +6,30 @@ reviewer identifiers.
 """
 from collections import Counter
 
-from adapters.translation_approvals import AUTO_DECISION
+
+
+def unique_one_to_one_hint_pairs(hints, source_units, inventory):
+    """Conservative exact-cardinality Quest hints, NOT approved mappings.
+
+    The reverse degree counts *all* source candidates (including excluded AI
+    and ambiguous sources). Two factions or voice variants sharing a target
+    therefore never qualify through partial filtering.
+    """
+    target_degree = Counter(target for row in hints for target in set(row["candidates"])
+                            if target in inventory.targets)
+    return frozenset(
+        (row["source_id"], row["candidates"][0])
+        for row in hints
+        if len(row["candidates"]) == 1
+        and row["reason"] == "speaker_wording_eligibility_review_required"
+        and row["source_id"] in source_units
+        and not source_units[row["source_id"]].ai
+        and target_degree[row["candidates"][0]] == 1
+    )
 
 
 def one_to_one_hints(hints, source_units, inventory):
-    """Count possible *unapproved* Quest intersections, not trusted mappings."""
-    targets = Counter()
-    for row in hints:
-        if (len(row["candidates"]) == 1 and row["reason"] ==
-                "speaker_wording_eligibility_review_required"
-                and row["source_id"] in source_units
-                and not source_units[row["source_id"]].ai
-                and row["candidates"][0] in inventory.targets):
-            targets[row["candidates"][0]] += 1
-    return sum(1 for row in hints
-               if len(row["candidates"]) == 1
-               and row["reason"] == "speaker_wording_eligibility_review_required"
-               and row["source_id"] in source_units
-               and not source_units[row["source_id"]].ai
-               and targets[row["candidates"][0]] == 1)
+    return len(unique_one_to_one_hint_pairs(hints, source_units, inventory))
 
 
 def import_summary(inventory, observations, policy, translations, hints, source_units,
