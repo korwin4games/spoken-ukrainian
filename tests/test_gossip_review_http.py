@@ -90,7 +90,7 @@ class GossipReviewHTTPTests(unittest.TestCase):
                 with urlopen(base + "/app.js", timeout=5) as resp:
                     script = resp.read().decode("utf-8")
                     self.assertNotIn(".innerHTML", script)
-                    self.assertIn("/api/gossip/decide", script)
+                    self.assertIn('"/api/gossip/" + route', script)
             finally:
                 server.shutdown()
                 server.server_close()
