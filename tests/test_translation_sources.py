@@ -107,6 +107,38 @@ class TranslationSourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid_translation_save_policy"):
             SourcePolicy(("original_english",), (), frozenset({"original_english"}))
 
+    def test_one_to_one_auto_approval_policy_is_explicit_and_classicua_only(self):
+        config = {"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True,
+             "auto_approve_one_to_one": True},
+            {"name": "another", "save_translations": False},
+        ]}
+        policy = SourcePolicy.from_mapping(config)
+        self.assertEqual(policy.auto_approve_sources, frozenset({"classicua"}))
+        self.assertTrue(policy.auto_approves_one_to_one("classicua"))
+        self.assertFalse(policy.auto_approves_one_to_one("another"))
+        self.assertFalse(load_source_policy(
+            ROOT / "config/translation_sources.json").auto_approves_one_to_one("classicua"))
+        self.assertEqual(SourcePolicy.from_mapping({"schema_version": 1,
+                         "sources": ["classicua"]}).auto_approve_sources, frozenset())
+        self.assertEqual(SourcePolicy.from_mapping({"schema_version": 2,
+                         "sources": [{"name": "classicua", "save_translations": True}]}
+                         ).auto_approve_sources, frozenset())
+        for source, save in (("another", True), ("own_translator", True),
+                             ("original_english", False), ("classicua", False)):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+                    {"name": source, "save_translations": save,
+                     "auto_approve_one_to_one": True}]})
+        for invalid in ("true", 1, None, [], {}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+                    {"name": "classicua", "save_translations": True,
+                     "auto_approve_one_to_one": invalid}]})
+        with self.assertRaises(ValueError):
+            SourcePolicy.from_mapping({"schema_version": 1, "sources": ["classicua"],
+                                       "auto_approve_one_to_one": True})
+
     def test_config_bad_duplicate_unknown_version_and_shape(self):
         invalid = [
             {"schema_version": 1, "sources": ["classicua", "classicua"]},
