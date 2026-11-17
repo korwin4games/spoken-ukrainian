@@ -33,7 +33,7 @@ def one_to_one_hints(hints, source_units, inventory):
 
 
 def import_summary(inventory, observations, policy, translations, hints, source_units,
-                   auto_approved=0, changed=False):
+                   auto_approved=0, changed=False, machine_targets=()):
     """Summarize *actual current import references*, never candidate-only results."""
     total = len(inventory.targets)
     current = translations.page(observations, policy)
@@ -51,18 +51,28 @@ def import_summary(inventory, observations, policy, translations, hints, source_
         if provider is None:
             raise ValueError("imported_version_missing_current_provider")
         by_source[provider] += 1
-    imported_total = sum(by_source.values())
-    if imported_total != len({row["target_id"] for row in imported_rows}) or imported_total > total:
+    verified_total = sum(by_source.values())
+    machine_targets = set(machine_targets)
+    human_targets = {row["target_id"] for row in imported_rows}
+    if (verified_total != len(human_targets)
+            or machine_targets & human_targets or not (machine_targets | human_targets)
+            <= set(inventory.targets)):
+        raise ValueError("invalid_import_coverage")
+    by_source["classicua"] += len(machine_targets)
+    imported_total = verified_total + len(machine_targets)
+    if imported_total > total:
         raise ValueError("invalid_import_coverage")
     candidates = Counter(o.candidate.provider for o in observations)
     mapped = len({o.target_id for o in observations})
     rows = [{"source": name,
              "candidate_translations": candidates[name],
-             "imported_translations": by_source[name]}
+             "imported_translations": by_source[name],
+             "machine_provisional_imports": len(machine_targets) if name == "classicua" else 0}
             for name in policy.sources if name != "original_english"]
     if by_source["manual"]:
         rows.append({"source": "manual", "candidate_translations": 0,
-                     "imported_translations": by_source["manual"]})
+                     "imported_translations": by_source["manual"],
+                     "machine_provisional_imports": 0})
     return {
         "schema_version": 1,
         "scope": "offline, inert local review import; NOT a WoW Community Pack",
@@ -71,6 +81,8 @@ def import_summary(inventory, observations, policy, translations, hints, source_
         "verified_source_to_target_bindings": mapped,
         "auto_approved_now": auto_approved,
         "imported_total": imported_total,
+        "human_reviewed_imported_total": verified_total,
+        "machine_one_to_one_imported": len(machine_targets),
         "untranslated_total": total - imported_total,
         "coverage_percent": round(100 * imported_total / total, 2) if total else 0.0,
         "by_source": rows,
@@ -82,9 +94,10 @@ def import_summary(inventory, observations, policy, translations, hints, source_
 
 def format_import_table(report):
     """Stable human-readable console table, no source text or provenance."""
-    headers = ("Джерело", "Кандидатів", "Імпортовано")
+    headers = ("Джерело", "Кандидатів", "Імпортовано", "Із них машинні 1:1")
     rows = [(r["source"], str(r["candidate_translations"]),
-             str(r["imported_translations"])) for r in report["by_source"]]
+             str(r["imported_translations"]),
+             str(r.get("machine_provisional_imports", 0))) for r in report["by_source"]]
     widths = [max(len(str(value)) for value in [title] + [r[i] for r in rows])
               for i, title in enumerate(headers)]
     def line(items):
@@ -104,7 +117,10 @@ def format_import_table(report):
     text.extend(line(row) for row in rows)
     text.extend([sep,
                  "Імпортовано: " + str(report["imported_total"]),
+                 "Машинні 1:1 без людського mapping review: " +
+                     str(report.get("machine_one_to_one_imported", 0)),
                  "Без імпорту: " + str(report["untranslated_total"]),
                  "Покриття: " + str(report["coverage_percent"]) + "%",
-                 "Вихід: приватний build/; не Git, не активний аддон"])
+                 "Вихід: приватний build/; не Git, не активний аддон",
+                 "Машинні 1:1 є попередніми: потрібне незалежне mapping/content review перед паком."])
     return "\n".join(text)
