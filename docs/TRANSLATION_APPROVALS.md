@@ -39,7 +39,7 @@ runtime/rights gates; this snapshot is not a pack or a publication approval.
 The default schema-v2 config now explicitly enables `auto_approve_one_to_one: true` for ClassicUA (other providers remain disabled). The setting is optional and defaults to false when omitted. The local Review UI exposes **Auto-import 1:1 · ClassicUA** and the same workflow is available from the terminal:
 
 ```sh
-python3 tools/review_ui_server.py \\
+uv run --locked python tools/review_ui_server.py \\
   --classicua /path/to/pinned/ClassicUA \\
   --spoken /path/to/pinned/spoken-wow \\
   --auto-import-one-to-one
