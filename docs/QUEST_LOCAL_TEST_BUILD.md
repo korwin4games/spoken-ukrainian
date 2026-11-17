@@ -121,6 +121,42 @@ in the preview. This package is for a **local user testing the mapping**,
 not a release, redistribution, public CI artifact or an alternative to
 human-reviewed publishing checks.
 
+## Quest title and player-name placeholders in the local preview
+
+The local test ZIP now includes a **Ukrainian Quest title** when it can
+be read from ClassicUA's **audited title field [1]** for the *same*
+already-imported source Quest ID/event. If multiple imported sources for
+one Quest ID disagree on the title, no Ukrainian title is generated:
+the preview falls back to the game's public `GetTitleText()` when
+available, and always retains `Quest <ID>`.
+
+The text is expanded **at display time** (not permanently rewritten in
+the local ledger), using the live character's public WoW APIs:
+
+- `{ім'я}`, `{Ім'я}`, `{ім'я:к}`, and other documented name
+  cases use `UnitName("player")`.
+- `{стать:готовий:готова}` chooses the male/female branch based on
+  `UnitSex("player")`.
+- `{клас:к}`, `{Клас:к}`, `{раса}`, `{Раса:...}`
+  use the character's `UnitClass` and `UnitRace` together with the
+  **pinned, audited** ClassicUA `entries/class.lua` and
+  `entries/race.lua` inflection dictionaries embedded only in the
+  private generated test ZIP.
+
+**Limitations:** The WoW API exposes a character's regular name but
+*not* its Ukrainian declension choices. Until a separate character-name
+case editor exists, all name cases use the regular in-game name. For
+unknown classes/races, unrecognized placeholders, or unavailable
+character data, preserve the raw token rather than invent a word.
+This is still the independent test preview, **not native Spoken captions**.
+
+To verify: rebuild the ZIP, exit WoW, extract it **over the previous
+`Spoken_Ukrainian` and `Spoken_Quests_UA` directories**, and restart
+the game. Open Quest **4641** as in the first successful screenshot,
+then use `/spokenuk preview on`: check the localized title above
+`Quest 4641` and that `{Ім'я}` / `{стать:...}` no longer appear.
+Run both with male and female characters if available.
+
 ## Install and test in the real game
 
 1. Quit WoW Forever completely. Keep a backup of your
