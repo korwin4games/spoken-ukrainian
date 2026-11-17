@@ -12,13 +12,13 @@ import re
 
 from adapters.classicua.evidence import SourceInventory
 from adapters.crosswalk import QUEST_EVENTS, digest
-
-EVENT_POSITION = {event: position for position, event in QUEST_EVENTS.items()}
 from adapters.import_summary import unique_one_to_one_hint_pairs
 from adapters.local_review_store import LocalFile
 from adapters.mapping import target_context
 from adapters.translation_approvals import text_sha
 from adapters.translation_sources import HEX64
+
+EVENT_POSITION = {event: position for position, event in QUEST_EVENTS.items()}
 
 FIELDS = frozenset({
     "id", "source_id", "target_id", "source_revision", "source_file",
