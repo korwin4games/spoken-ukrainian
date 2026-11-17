@@ -132,7 +132,7 @@ def read_classicua_inflections(classicua_path, source_files):
         # Grammar source files append executable compatibility loops and aliases
         # after their literal tables. Parse ONLY the pinned literal constructor,
         # never execute or attempt to interpret the trailing Lua statements.
-        match = re.search(r"^addonTable\\." + kind + r"\\s*=\\s*(?=\\{)", text, re.MULTILINE)
+        match = re.search(r"^addonTable\." + kind + r"\s*=\s*(?=\{)", text, re.MULTILINE)
         if match is None:
             raise ValueError("invalid_classicua_grammar_table")
         node = Parser(text[match.end():], path).value()
