@@ -1,5 +1,7 @@
 """Synthetic source revision, conflict and active selection safety tests."""
 from copy import deepcopy
+import json
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -7,7 +9,7 @@ import unittest
 from adapters.source_revision_store import (
     SourceReviewStore, CHECKS, digest, exact,
 )
-from tools.source_revision_review import gossip_contexts
+from tools.source_revision_review import gossip_contexts, write_template, read_private_snapshot
 from tools.gossip_coverage import classicua_hash
 from adapters.sqlite_translation_store import connection
 
@@ -150,6 +152,33 @@ class SourceRevisionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source_candidate_pinned_context_mismatch"):
             self.store.ingest(good, self.trusted)
         self.assertEqual(len(self.store.revisions()), 0)
+
+    def test_external_template_must_have_real_translations_and_provenance(self):
+        with TemporaryDirectory() as root:
+            base = Path(root)
+            path = base / "build/source-review/another.json"
+            with patch("tools.source_revision_review.ROOT", base):
+                self.assertEqual(write_template(self.trusted, path, "another", B, 0, 40), 1)
+                with self.assertRaisesRegex(ValueError, "source_review_import_contains_no_translations"):
+                    read_private_snapshot(path, self.trusted)
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["records"][0]["ukrainian_text"] = "Вітаємо!"
+                path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "source_review_requires_real_provenance"):
+                    read_private_snapshot(path, self.trusted)
+                payload["records"][0]["source_ref"] = "another:audited-unit"
+                path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+                imported = read_private_snapshot(path, self.trusted)
+                self.assertEqual(imported["records"][0]["ukrainian_text"], "Вітаємо!")
+                payload["provider"] = "classicua"
+                path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "classicua_source_requires_verified_capture"):
+                    read_private_snapshot(path, self.trusted)
+                payload["provider"] = "another"
+                payload["records"][0]["english_original"] = "tampered English!"
+                path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "source_review_import_english_modified"):
+                    read_private_snapshot(path, self.trusted)
 
     def test_sqlite_migrations_include_source_tables(self):
         with connection(self.db) as db:
