@@ -246,6 +246,33 @@ def resolve_translation(request: TranslationRequest, policy: SourcePolicy,
     return SourceResolution(tuple(candidates), None, request.original_sha256, tuple(attempted))
 
 
+def discover_review_candidates(request: TranslationRequest, policy: SourcePolicy,
+                               registry: Mapping[str, TranslationProvider]) -> tuple[TranslationCandidate, ...]:
+    """Enumerate all real candidates for human review, without changing runtime priority.
+
+    This deliberately differs from resolve_translation: an unapproved result
+    from an earlier provider must not conceal an already-approved later result.
+    Explicit English ends discovery; mocks never become reviewable candidates.
+    """
+    if not policy.sources:
+        return ()
+    results = []
+    for name in policy.sources:
+        if name == "original_english":
+            break
+        provider = registry.get(name)
+        if provider is None or not callable(getattr(provider, "lookup", None)):
+            raise ValueError("enabled_translation_provider_not_registered:" + name)
+        item = provider.lookup(request)
+        if item is None:
+            continue
+        if not isinstance(item, TranslationCandidate) or item.provider != name or item.publishable:
+            raise ValueError("translation_provider_result_invalid:" + name)
+        if item.state == CandidateState.NEEDS_REVIEW:
+            results.append(item)
+    return tuple(results)
+
+
 @dataclass(frozen=True)
 class BatchAssignment:
     canonical_spoken_id: str
