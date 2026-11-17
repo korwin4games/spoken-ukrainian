@@ -53,6 +53,15 @@ local function button(index)
     function row:GetText() return self.text end
     function row:SetText(value) self.text = value end
     function row:Resize() self.sizeCount = self.sizeCount + 1 end
+    function row:GetTextHeight() return math.ceil(#self.text / 22) * 14 end
+    function row:SetHeight(value) self.height = value end
+    function row:GetHeight() return self.height end
+    row.Icon = { GetHeight = function() return 16 end }
+    -- Simulates Blizzard's anchor chain: each row's top is relative
+    -- to the preceding button's bottom, not a static pixel position.
+    function row:TopY()
+        return self.previous and (self.previous:TopY() - self.previous:GetHeight() - 2) or 0
+    end
     function row:IsShown() return self.visible end
     function row:GetID() return self.index end
     return row
@@ -125,22 +134,61 @@ classicua = true
 GossipAvailableQuestButtonMixin.Setup(first, {questID = 97279, title = "Wayward Weapons"})
 assert(first:GetText() == "! Wayward Weapons")
 classicua = false
--- QuestFrameGreetingPanel: same questID from GetAvailableQuestInfo/getActive.
+-- QuestFrameGreetingPanel buttons do NOT have Gossip mixin Resize().
+-- A long translated title must grow the row; the next anchored button
+-- must move automatically, then return when Shift shows shorter English.
+local longTitle = "Довга українська назва квесту з багатьма словами для перевірки перенесення рядків"
+SpokenUkrainian.GossipQuestTitles.horde[97279] = longTitle
+first.Resize = nil
+second.Resize = nil
 first:SetText("Wayward Weapons")
 second:SetText("Cutting Teeth")
 first.isActive = 0
 second.isActive = 1
+second.previous = first
+first:SetHeight(math.max(first:GetTextHeight() + 2, first.Icon:GetHeight()))
+second:SetHeight(math.max(second:GetTextHeight() + 2, second.Icon:GetHeight()))
+local originalHeight = first:GetHeight()
+local originalSecondTop = second:TopY()
 panelHooks.OnShow()
-assert(first:GetText() == "Загублена зброя")
+assert(first:GetText() == longTitle)
 assert(second:GetText() == "Перші випробування")
+assert(first:GetHeight() > originalHeight, "localized first row height not recomputed")
+assert(second:GetHeight() > 16, "localized second row height not recomputed")
+assert(second:TopY() == -first:GetHeight() - 2)
+assert(second:TopY() < originalSecondTop, "next row did not reflow")
+local localizedHeight = first:GetHeight()
 shifted = true
 eventFrame:Fire("MODIFIER_STATE_CHANGED")
 assert(first:GetText() == "Wayward Weapons")
 assert(second:GetText() == "Cutting Teeth")
+assert(first:GetHeight() == originalHeight, "Shift must restore original height")
+assert(second:GetHeight() == 16)
+assert(second:TopY() == originalSecondTop)
 shifted = false
 eventFrame:Fire("MODIFIER_STATE_CHANGED")
-assert(first:GetText() == "Загублена зброя")
+assert(first:GetText() == longTitle)
 assert(second:GetText() == "Перші випробування")
+assert(first:GetHeight() == localizedHeight)
+assert(second:TopY() == -localizedHeight - 2)
+-- Rescanning while already translated must not replace the cached
+-- English Shift original with the Ukrainian text or duplicate line breaks.
+panelHooks.OnShow()
+shifted = true
+eventFrame:Fire("MODIFIER_STATE_CHANGED")
+assert(first:GetText() == "Wayward Weapons")
+shifted = false
+eventFrame:Fire("MODIFIER_STATE_CHANGED")
+assert(first:GetText() == longTitle)
+-- Reuse the pooled button for an untranslated quest and clear state:
+-- it must keep its native text without resizing our cached old row.
+first:SetText("Untranslated quest")
+first.isActive = 0
+GetAvailableQuestInfo = function(id)
+    return "English", 0, 0, 0, id == 1 and 77777 or 42
+end
+panelHooks.OnShow()
+assert(first:GetText() == "Untranslated quest")
 eventFrame:Fire("GOSSIP_CLOSED")
 first:SetText("Unrelated NPC")
 eventFrame:Fire("MODIFIER_STATE_CHANGED")
