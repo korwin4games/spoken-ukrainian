@@ -131,6 +131,38 @@ class ImportStatisticsTests(unittest.TestCase):
         source.clear_selection("gossip", key[1], "human", trusted)
         self.assertEqual(report(self.db)["selected_not_necessarily_built"]["total_text_records"], 0)
 
+    def test_selected_source_is_attributed_to_exact_gossip_npc_only(self):
+        empty = {"versions": [], "imports": []}
+        state = SimpleNamespace(
+            machine_imports=SimpleNamespace(file=SimpleNamespace(data=empty)),
+            translations=SimpleNamespace(file=SimpleNamespace(data=empty)))
+        rows = collect_build_rows(
+            state, {}, {"common": {55: "Звичайний fallback"},
+                        "byNpc": {42: {321: "Альтернативний переклад"},
+                                  43: {322: "ClassicUA переклад"}}},
+            {}, {}, [{"target_id": "gossip:42:321", "provider": "another"}],
+            [], {}, self.db)
+        by_unit = {r["unit"]: r for r in rows}
+        self.assertEqual(by_unit["npc:42:321"]["source"], "another")
+        self.assertEqual(by_unit["npc:42:321"]["route"], "source_selected")
+        self.assertEqual(by_unit["npc:43:322"]["source"], "classicua")
+        self.assertEqual(by_unit["common:55"]["domain"], "gossip_common")
+
+    def test_selected_source_is_attributed_to_exact_quest_moment_only(self):
+        empty = {"versions": [], "imports": []}
+        state = SimpleNamespace(
+            machine_imports=SimpleNamespace(file=SimpleNamespace(data=empty)),
+            translations=SimpleNamespace(file=SimpleNamespace(data=empty)))
+        rows = collect_build_rows(
+            state, {42: {"accept": {"text": "Альтернативний переклад",
+                                   "reviewed": True}}},
+            {"common": {}, "byNpc": {}}, {}, {}, [],
+            [{"target_id": "q:42:accept", "provider": "another",
+              "ukrainian_text": "Альтернативний переклад"}], {}, self.db)
+        self.assertEqual(rows, [{
+            "domain": "quests", "unit": "42:accept", "entity": "42",
+            "source": "another", "route": "source_selected"}])
+
     def test_build_provenance_uses_only_displayed_quest_events(self):
         machine = {"versions": [{
             "id": "m", "target_id": "q:42:accept", "text": "Прийняти"
