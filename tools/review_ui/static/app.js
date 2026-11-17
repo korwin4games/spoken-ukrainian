@@ -307,7 +307,7 @@ async function reviewPost(route, payload) {
     "Content-Type": "application/json", "X-Review-Token": state.csrf,
   }, body: JSON.stringify(payload)});
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "evidence_or_storage_conflict");
+  if (!response.ok) throw new Error(result.reason || result.error || "evidence_or_storage_conflict");
   return result;
 }
 function resetMappingAttestations() {
@@ -433,11 +433,22 @@ async function translationAction(action, payload) {
     const result = await reviewPost("/api/translations/" + action, payload);
     await loadTranslations();
     if (result.version_id) { t("versions").value = result.version_id; renderTranslation(); }
-    setText(t("feedback"), action === "import"
+    let message = action === "import"
       ? "Явний inert import: " + result.imported + "; changed=" + result.changed + ". Активації немає."
-      : "Збережено локально: " + action + ". Імпорт — окрема дія.");
-  } catch (_) {
-    setText(t("feedback"), "Не збережено. Потрібні актуальні докази, reviewer та повні перевірки; перевірте конфлікт локального файлу.");
+      : "Збережено локально: " + action + ". Імпорт — окрема дія.";
+    if (action === "decide") {
+      const reviewed = translations.rows.find(row => row.id === payload.identity);
+      if (!reviewed || reviewed.status !== payload.decision) {
+        message = "Рішення збережено, але список версій не підтвердив статус. Оновіть сторінку.";
+      } else {
+        message = "✓ " + reviewed.source_id + " → " + reviewed.target_id +
+          ": " + reviewed.status.toUpperCase() + ". Імпорт — окрема дія.";
+      }
+    }
+    setText(t("feedback"), message);
+  } catch (error) {
+    setText(t("feedback"), "Не збережено: " + error.message +
+      ". Перевірте термінал сервера та актуальність доказів.");
   } finally { translations.busy = false; updateTranslationButtons(); }
 }
 t("versions").addEventListener("change", renderTranslation);
@@ -455,12 +466,28 @@ t("edit").addEventListener("click", () => {
       setText(t("feedback"), "Спочатку збережіть відредагований текст як нову версію.");
       return;
     }
+    const reviewer = t("reviewer").value.trim();
+    if (!reviewer) {
+      setText(t("feedback"), "Вкажіть Content reviewer перед збереженням рішення.");
+      t("reviewer").focus();
+      return;
+    }
     const checks = {};
     ["text", "grammar", "ai", "rights"].forEach(k => {
       checks[k] = document.getElementById("check-" + k).checked;
     });
+    if (decision === "approved") {
+      const unchecked = Object.entries(checks).filter(([, checked]) => !checked)
+        .map(([key]) => key);
+      if (unchecked.length) {
+        setText(t("feedback"), "Approve translation не виконано: перевірте всі 4 пункти " +
+          "(text, grammar, ai, rights). Не позначайте їх без фактичної перевірки. " +
+          "Не підтверджено: " + unchecked.join(", ") + ".");
+        return;
+      }
+    }
     translationAction("decide", {identity: row.id, decision,
-      reviewer: t("reviewer").value.trim(), checks});
+      reviewer, checks});
   });
 });
 loadTranslations().catch(() => setText(t("feedback"), "Не вдалося перевірити translation evidence."));
