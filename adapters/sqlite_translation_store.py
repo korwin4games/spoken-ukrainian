@@ -130,8 +130,22 @@ def connection(path):
                 selected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (domain, target_id, english_sha256, context_sha256)
             );
+            CREATE TABLE IF NOT EXISTS source_selection_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                english_sha256 TEXT NOT NULL,
+                context_sha256 TEXT NOT NULL,
+                candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
+                action TEXT NOT NULL CHECK (action IN ('activate', 'clear')),
+                reviewer TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_source_selection_history
+                ON source_selection_events(domain, target_id, id);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (2);
+            INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
         """)
         os.chmod(path, 0o600)
         yield db
