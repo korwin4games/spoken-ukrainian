@@ -167,6 +167,29 @@ def connection(path):
                 ON build_import_units(snapshot_id, domain, source);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (4);
+            CREATE TABLE IF NOT EXISTS agent_assessments (
+                id INTEGER PRIMARY KEY,
+                candidate_id TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('agent_verified', 'needs_human_review',
+                    'agent_reject_recommended', 'agent_unavailable')),
+                payload TEXT NOT NULL,
+                assessed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS agent_assessments_candidate
+                ON agent_assessments(candidate_id, id);
+            CREATE TABLE IF NOT EXISTS agent_stale_evidence (
+                candidate_id TEXT PRIMARY KEY,
+                detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS agent_imports (
+                id INTEGER PRIMARY KEY,
+                candidate_id TEXT NOT NULL,
+                assessment_id INTEGER NOT NULL REFERENCES agent_assessments(id),
+                action TEXT NOT NULL DEFAULT 'import' CHECK(action IN ('import', 'invalidate')),
+                reason TEXT,
+                imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS agent_imports_candidate ON agent_imports(candidate_id, id);
         """)
         db.execute("BEGIN IMMEDIATE")
         try:
@@ -178,6 +201,7 @@ def connection(path):
             db.execute("""INSERT OR IGNORE INTO build_import_head(singleton, snapshot_id)
                 SELECT 1, MAX(id) FROM build_import_snapshots HAVING COUNT(*) > 0""")
             db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (5)")
+            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (6)")
             db.commit()
         except BaseException:
             db.rollback()

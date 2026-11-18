@@ -159,32 +159,53 @@ class SourceReviewStore:
         return [_record(row) for row in rows]
 
     def compare(self, provider, before, after):
-        if provider not in SOURCES or not all(type(x) is str and REV.fullmatch(x)
-                                              for x in (before, after)):
+        return self.compare_snapshots(provider, before, provider, after, mode="revision")
+
+    def compare_snapshots(self, left_provider, before, right_provider, after,
+                          *, mode, change_filter="all", offset=0, limit=None):
+        kinds = ("added", "removed", "changed", "unchanged")
+        if (mode not in ("revision", "providers")
+                or (left_provider == right_provider) != (mode == "revision")
+                or any(p not in SOURCES for p in (left_provider, right_provider))
+                or not all(type(x) is str and REV.fullmatch(x) for x in (before, after))
+                or change_filter not in ("all", *kinds)
+                or type(offset) is not int or offset < 0
+                or limit is not None and (type(limit) is not int or not 1 <= limit <= 100)):
             raise ValueError("invalid_source_comparison")
+        identities = ((left_provider, before), (right_provider, after))
         with connection(self.db_path) as db:
-            refs = [db.execute("""SELECT id FROM source_snapshots
-                       WHERE provider = ? AND revision = ?""",
-                       (provider, rev)).fetchone() for rev in (before, after)]
-            if not all(refs):
-                raise ValueError("unknown_source_snapshot_revision")
+            for identity in identities:
+                if not db.execute("""SELECT id FROM source_snapshots
+                       WHERE provider = ? AND revision = ?""", identity).fetchone():
+                    raise ValueError("unknown_source_snapshot_revision_capture_or_ingest_first")
+            statuses = dict(db.execute("""SELECT candidate_id, decision
+                FROM source_candidate_decisions WHERE id IN (
+                    SELECT MAX(id) FROM source_candidate_decisions GROUP BY candidate_id)"""))
         a = {(r["domain"], r["target_id"], r["english_sha256"], r["context_sha256"]): r
-             for r in self.candidates(provider, before)}
+             for r in self.candidates(left_provider, before)}
         b = {(r["domain"], r["target_id"], r["english_sha256"], r["context_sha256"]): r
-             for r in self.candidates(provider, after)}
+             for r in self.candidates(right_provider, after)}
         change = []
         for key in sorted(set(a) | set(b)):
             old, new = a.get(key), b.get(key)
+            for row in (old, new):
+                if row is not None:
+                    row["status"] = statuses.get(row["id"], "pending")
             kind = ("added" if old is None else "removed" if new is None
                     else "changed" if old["text_sha256"] != new["text_sha256"]
                     else "unchanged")
             change.append({"domain": key[0], "target_id": key[1],
                            "english_sha256": key[2], "context_sha256": key[3],
                            "change": kind, "before": old, "after": new})
-        counts = {kind: sum(r["change"] == kind for r in change)
-                  for kind in ("added", "removed", "changed", "unchanged")}
-        return {"provider": provider, "before_revision": before,
-                "after_revision": after, "counts": counts, "changes": change}
+        counts = {kind: sum(r["change"] == kind for r in change) for kind in kinds}
+        filtered = [r for r in change if change_filter == "all" or r["change"] == change_filter]
+        result = {"mode": mode, "before_provider": left_provider, "before_revision": before,
+                  "after_provider": right_provider, "after_revision": after,
+                  "counts": counts, "total": len(filtered),
+                  "changes": filtered[offset:] if limit is None else filtered[offset:offset + limit]}
+        if mode == "revision":
+            result["provider"] = left_provider
+        return result
 
     @staticmethod
     def _status(db, candidate_id):

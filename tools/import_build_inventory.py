@@ -17,10 +17,18 @@ QUEST_MOMENT = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z
 
 def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
                        selected_gossip, selected_quest, trusted_gossip, db_path,
-                       machine_gossip=None):
+                       machine_gossip=None, agent_rows=()):
     """Build a metadata-only manifest from the same selected texts as the ZIP."""
     rows = []
     by_moment = defaultdict(list)
+    agent_gossip = {}
+    for row in agent_rows:
+        if row["domain"] == "quest":
+            match = QUEST_MOMENT.fullmatch(row["target_id"])
+            by_moment[int(match.group(1)), match.group(2)].append(
+                (row["provider"], "agent_verified", row["text"]))
+        else:
+            agent_gossip[row["target_id"]] = row
     for ledger_name, route in (
             ("machine_imports", "machine_1to1"), ("translations", "reviewed")):
         ledger = getattr(state, ledger_name).file.data
@@ -58,6 +66,7 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
             source = "+".join(sources)
             route = ("source_selected" if any(r == "source_selected" for _, r in contributions)
                      else "reviewed" if any(r == "reviewed" for _, r in contributions)
+                     else "agent_verified" if any(r == "agent_verified" for _, r in contributions)
                      else "machine_1to1")
             rows.append({"domain": "quests", "unit": f"{quest_id}:{event}",
                          "entity": str(quest_id), "source": source, "route": route})
@@ -82,9 +91,11 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
         selected[tuple(int(x) for x in match.groups())] = row["provider"]
 
     for hashed in sorted(gossip["common"]):
+        agent = agent_gossip.get(f"gossip:common:{hashed}")
         rows.append({"domain": "gossip_common", "unit": f"common:{hashed}",
                      "entity": "common", "source": "classicua",
-                     "route": "machine_1to1" if machine_gossip is not None else "pinned_source"})
+                     "route": ("agent_verified" if agent else
+                               "machine_1to1" if machine_gossip is not None else "pinned_source")})
     for npc, translations in sorted(gossip["byNpc"].items()):
         for hashed in sorted(translations):
             key = (npc, hashed)
@@ -95,6 +106,8 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
                 if not proof or proof["english_sha256"] not in reviews:
                     raise ValueError("build_import_gossip_provenance_missing")
                 source, route = reviews[proof["english_sha256"]], "reviewed"
+            elif agent := agent_gossip.get(f"gossip:{npc}:{hashed}"):
+                source, route = agent["provider"], "agent_verified"
             else:
                 source, route = "classicua", ("machine_1to1" if machine_gossip is not None
                                              else "pinned_source")

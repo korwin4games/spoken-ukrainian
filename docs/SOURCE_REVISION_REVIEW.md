@@ -152,3 +152,17 @@ uv run --locked python tools/translation_db.py backup
 
 This includes both existing Quest/Gossip review ledgers and all new source
 snapshots, decisions and selections. Keep an off-machine copy.
+
+## Compare revisions or providers
+
+Use `diff --provider PROVIDER --before REV_A --after REV_B` for one provider.
+Use `compare-providers --provider PROVIDER_A --other-provider PROVIDER_B
+--before REV_A --after REV_B` for two providers. Both support `--change`,
+`--offset` and `--limit`. The comparison matches exact target identity,
+English fingerprint and canonical context. Changes include both texts and
+their provenance. Missing snapshots produce an actionable error.
+
+In Review UI, load available snapshots in **Порівняння джерел і ревізій**.
+Use the appropriate comparison mode, then choose a revision for each side.
+An approved row can be explicitly activated through the existing human-only
+source selection action. Use [the CLI reference](CLI.md) for exact examples.

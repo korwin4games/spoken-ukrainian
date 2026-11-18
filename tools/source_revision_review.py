@@ -209,7 +209,7 @@ def write_template(trusted, output, provider, revision, offset, limit):
 def run(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("capture", "template", "ingest",
-        "revisions", "diff", "conflicts", "review", "activate", "clear", "active",
+        "revisions", "diff", "compare-providers", "conflicts", "review", "activate", "clear", "active",
         "selection-history"))
     parser.add_argument("--classicua", type=Path)
     parser.add_argument("--spoken", type=Path)
@@ -217,11 +217,14 @@ def run(argv=None):
     parser.add_argument("--input", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--provider", choices=SOURCES, default="another")
+    parser.add_argument("--other-provider", choices=SOURCES)
+    parser.add_argument("--change", choices=("all", "added", "removed", "changed", "unchanged"),
+                        default="all")
     parser.add_argument("--revision")
     parser.add_argument("--before")
     parser.add_argument("--after")
     parser.add_argument("--offset", type=int, default=0)
-    parser.add_argument("--limit", type=int, default=40)
+    parser.add_argument("--limit", type=int)
     parser.add_argument("--candidate")
     parser.add_argument("--decision", choices=("approved", "rejected", "deferred"))
     parser.add_argument("--reviewer")
@@ -243,17 +246,24 @@ def run(argv=None):
         if not args.output or not args.revision:
             raise ValueError("source_template_needs_output_and_revision")
         result = {"created_records": write_template(trusted, args.output, args.provider,
-                                                   args.revision, args.offset, args.limit)}
+                                                   args.revision, args.offset,
+                                                   40 if args.limit is None else args.limit)}
     elif args.action == "ingest":
         if not args.input:
             raise ValueError("source_review_needs_private_input")
         result = store.ingest(read_private_snapshot(args.input, trusted), trusted)
     elif args.action == "revisions":
         result = {"revisions": store.revisions()}
-    elif args.action == "diff":
+    elif args.action in ("diff", "compare-providers"):
         if not args.before or not args.after:
             raise ValueError("source_diff_needs_two_revisions")
-        result = store.compare(args.provider, args.before, args.after)
+        same_provider = args.action == "diff"
+        if same_provider == bool(args.other_provider):
+            raise ValueError("other_provider_required_only_for_compare_providers")
+        result = store.compare_snapshots(
+            args.provider, args.before, args.other_provider or args.provider, args.after,
+            mode="revision" if same_provider else "providers", change_filter=args.change,
+            offset=args.offset, limit=(40 if not same_provider and args.limit is None else args.limit))
     elif args.action == "conflicts":
         priority = [p["name"] for p in strict_json(
             (ROOT / "config/translation_sources.json").read_text(encoding="utf-8"))["sources"]]

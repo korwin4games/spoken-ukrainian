@@ -65,7 +65,7 @@ def lua_quote(value):
     return "".join(out)
 
 
-def current_quest_texts(state, selected_out=None):
+def current_quest_texts(state, selected_out=None, agent_rows=()):
     """Only currently imported references after real full-source revalidation."""
     machine = validate_machine_ledger(state.machine_imports.file.data)
     reviewed = _validate_ledger(state.translations.file.data)
@@ -115,6 +115,12 @@ def current_quest_texts(state, selected_out=None):
                         value = leaf.node.value.strip()
                         if value and len(value) <= limit:
                             supporting_fields[int(source_match.group(2))][key].add(value)
+
+    for row in agent_rows:
+        if row["domain"] == "quest":
+            target = row["target_id"]
+            if not texts.get(target, {}).get("reviewed"):
+                texts[target] = {"text": row["text"], "reviewed": False}
 
     # A source-review Quest override is valid only on top of a separately
     # human-approved Stage 3 Spoken ↔ source mapping. Pinned English, target
@@ -543,8 +549,18 @@ def build(classicua, spoken):
     report_action = state.translation_action(
         "auto_import_one_to_one", {"source": "classicua"})
     report = report_action["report"]
+    from adapters.sqlite_translation_store import DB_ENV
+    from adapters.translation_agent import TranslationAgent, has_imports
+    db_path = os.environ.get(DB_ENV)
+    agent_rows = ()
+    if db_path and has_imports(db_path):
+        from tools.translation_agent import evidence
+        agent_rows = TranslationAgent(db_path, lambda: evidence(state, spoken, db_path)).effective_imports()
     selected_quest = []
-    preview, imported, ambiguous = current_quest_texts(state, selected_quest)
+    if agent_rows:
+        preview, imported, ambiguous = current_quest_texts(state, selected_quest, agent_rows)
+    else:
+        preview, imported, ambiguous = current_quest_texts(state, selected_quest)
     preview_count = sum(event in ("accept", "progress", "complete")
                         for events in preview.values() for event in events)
     if not preview_count:
@@ -557,6 +573,11 @@ def build(classicua, spoken):
     gossip_machine = GossipMachineImport(state, spoken)
     gossip_machine.run()
     gossip = gossip_machine.build_lookup()
+    for row in agent_rows:
+        if row["domain"] == "gossip":
+            _, scope, hashed = row["target_id"].split(":")
+            dest = gossip["common"] if scope == "common" else gossip["byNpc"].setdefault(int(scope), {})
+            dest[int(hashed)] = row["text"]
     # Human imports retain their existing queue/evidence and override machine text.
     from tools.gossip_translation_review import load_reviewed_gossip
     reviewed_gossip = load_reviewed_gossip(state, original_gossip, spoken)
@@ -567,9 +588,7 @@ def build(classicua, spoken):
     # human-approved AND scoped to an exact pinned Spoken NPC/English hash.
     # They never override a second, separately imported human Gossip decision
     # without first resolving that conflict in the review ledger.
-    from adapters.sqlite_translation_store import DB_ENV
     selected_gossip = []
-    db_path = os.environ.get(DB_ENV)
     source_proofs = {}
     if db_path:
         from adapters.source_revision_store import SourceReviewStore
@@ -591,7 +610,6 @@ def build(classicua, spoken):
     entries = template_entries(render_quest_lua(
         preview, state.inventory.revision, forms, titles),
         render_gossip_lua(gossip))
-    artifact, digest = write_zip(entries)
     # Only metadata for texts that actually entered a successful local ZIP.
     # Never count raw proposals or claim an import was embedded beforehand.
     import_inventory = None
@@ -600,7 +618,10 @@ def build(classicua, spoken):
         from tools.import_build_inventory import collect_build_rows
         inventory_rows = collect_build_rows(
             state, preview, gossip, titles, reviewed_gossip,
-            selected_gossip, selected_quest, source_proofs, db_path, machine_gossip=gossip)
+            selected_gossip, selected_quest, source_proofs, db_path, machine_gossip=gossip,
+            agent_rows=agent_rows)
+    artifact, digest = write_zip(entries)
+    if db_path:
         import_inventory = store_successful_build(
             db_path, artifact_sha256=digest,
             spoken_revision=state.inventory.revision,

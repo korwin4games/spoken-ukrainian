@@ -134,3 +134,7 @@ status; it does not populate human approvals or the human translation-memory
 index. Schema v5 also adds metadata-only Gossip text fingerprints to build units
 and a pointer to the latest successful build snapshot. Existing history survives.
 See [Gossip workflow](GOSSIP_MACHINE_IMPORT.md) and [statistics](IMPORT_STATISTICS.md).
+
+Schema v6 adds `agent_assessments`, `agent_stale_evidence` and append-only
+`agent_imports` for private assessment/import history. The same online
+SQLite backup includes the new records. See [agent workflow](REVIEW_ASSISTANT_AGENT.md).

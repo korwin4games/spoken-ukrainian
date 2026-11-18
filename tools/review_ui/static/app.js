@@ -302,15 +302,17 @@ ui.defer.addEventListener("click", function() { sendDecision("deferred"); });
 })();
 
 // Mapping proof input is never populated from candidate hints or invented IDs.
-async function reviewPost(route, payload) {
+async function reviewPost(route, payload, notify = true) {
   const response = await fetch(route, {method: "POST", headers: {
     "Content-Type": "application/json", "X-Review-Token": state.csrf,
   }, body: JSON.stringify(payload)});
   const result = await response.json();
   if (!response.ok) throw new Error(result.reason || result.error || "evidence_or_storage_conflict");
   // Read-only statistics are recomputed from authoritative SQLite imports.
-  window.dispatchEvent(new Event("spoken-import-stats-refresh"));
-  window.dispatchEvent(new Event("spoken-gossip-machine-refresh"));
+  if (notify) {
+    window.dispatchEvent(new Event("spoken-import-stats-refresh"));
+    window.dispatchEvent(new Event("spoken-gossip-machine-refresh"));
+  }
   return result;
 }
 function resetMappingAttestations() {
@@ -892,6 +894,7 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
     compendium: "Compendium UI"
   };
   const routes = {
+    agent_verified: "Перевірено агентом · локальний тест",
     machine_1to1: "Machine 1:1 (provisional)",
     reviewed: "Human Review",
     source_selected: "Active Source Selection",
@@ -1010,4 +1013,167 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
   el("next").addEventListener("click", () => { offset += 40; load(); });
   window.addEventListener("spoken-gossip-machine-refresh", load);
   load();
+})();
+
+(function () {
+  const el = id => document.getElementById("agent-" + id);
+  const checked = () => Array.from(el("items").querySelectorAll("input:checked"), node => node.value);
+  let offset = 0, total = 0, busy = false, selected = null;
+
+  function render(data) {
+    total = data.total;
+    el("items").replaceChildren();
+    for (const row of data.items) {
+      const item = row.candidate;
+      const entry = make("div", "actions");
+      const box = make("input");
+      box.type = "checkbox";
+      box.value = item.id;
+      box.setAttribute("aria-label", "Позначити " + item.target_id);
+      const label = make("button", "secondary", item.target_id + " · " + item.provider + " · " + row.status);
+      label.type = "button";
+      label.addEventListener("click", () => {
+        selected = item.id;
+        setText(el("details"), JSON.stringify(row, null, 2));
+      });
+      entry.append(box, label);
+      el("items").appendChild(entry);
+    }
+    el("prev").disabled = offset === 0;
+    el("next").disabled = offset + Number(el("limit").value) >= total;
+    setText(el("message"), "Записів: " + total + " · " + JSON.stringify(data.counts));
+  }
+
+  async function run(action, extra = {}) {
+    if (busy) return;
+    busy = true;
+    try {
+      const isImport = action === "import-verified";
+      const options = {action, module: el("module").value, limit: Number(el("limit").value)};
+      if (!isImport && el("status").value && action !== "history") options.status = el("status").value;
+      const data = await reviewPost("/api/agent", {...options, ...extra}, isImport && !extra.dry_run);
+      if (action === "status") render(data);
+      else {
+        setText(el("result"), JSON.stringify(data, null, 2));
+        if (action !== "history" && !isImport && !extra.dry_run) {
+          render(await reviewPost("/api/agent", {...options, action: "status", offset}, false));
+        }
+      }
+    } catch (error) {
+      setText(el("message"), "Не вдалося виконати дію. Оновіть перелік і перевірте pinned джерела: " + error.message);
+    } finally { busy = false; }
+  }
+  const list = () => run("status", {offset});
+  for (const id of ["module", "status", "limit"]) {
+    el(id).addEventListener("change", () => { offset = 0; selected = null; });
+  }
+  el("list").addEventListener("click", () => { offset = 0; list(); });
+  el("prev").addEventListener("click", () => { offset = Math.max(0, offset - Number(el("limit").value)); list(); });
+  el("next").addEventListener("click", () => { offset += Number(el("limit").value); list(); });
+  el("one").addEventListener("click", () => {
+    if (!selected) return setText(el("message"), "Виберіть запис у переліку.");
+    try {
+      const model = el("model").value.trim();
+      run("one", {candidate_ids: [selected], dry_run: el("dry").checked,
+                  ...(model ? {model: JSON.parse(model)} : {})});
+    } catch (_) { setText(el("message"), "Вставте коректний JSON з порадами моделі."); }
+  });
+  el("batch").addEventListener("click", () => run("batch", {candidate_ids: checked(), dry_run: el("dry").checked}));
+  el("pending").addEventListener("click", () => run("pending", {dry_run: el("dry").checked, status: "unreviewed"}));
+  el("history").addEventListener("click", () => {
+    if (selected) run("history", {candidate_ids: [selected]});
+    else setText(el("message"), "Виберіть запис для перегляду історії.");
+  });
+  el("preview").addEventListener("click", () => run("import-verified", {dry_run: true}));
+  el("import").addEventListener("click", () => {
+    if (window.confirm("Імпортувати всі придатні записи вибраного модуля для приватного тестування?")) {
+      run("import-verified", {confirm: true});
+    }
+  });
+})();
+
+(function () {
+  const el = id => document.getElementById("comparison-" + id);
+  let offset = 0, total = 0, busy = false;
+  const limit = 10;
+
+  async function compare(load = false) {
+    if (busy) return;
+    busy = true;
+    try {
+      if (load) {
+        const data = await reviewPost("/api/source-comparison", {}, false);
+        for (const side of ["left", "right"]) {
+          const select = el(side);
+          const previous = select.value;
+          select.replaceChildren(make("option", "", "Оберіть знімок"));
+          select.firstChild.value = "";
+          for (const row of data.revisions) {
+            const option = make("option", "", row.provider + " · " + row.revision);
+            option.value = row.provider + ":" + row.revision;
+            select.appendChild(option);
+          }
+          if (Array.from(select.options).some(opt => opt.value === previous)) select.value = previous;
+        }
+        setText(el("message"), data.revisions.length ? "Оберіть два знімки." :
+          "Знімків немає. Виконайте capture або ingest у CLI.");
+        return;
+      }
+      const [left_provider, before] = el("left").value.split(":");
+      const [right_provider, after] = el("right").value.split(":");
+      const mode = el("mode").value;
+      if (!before || !after || (left_provider === right_provider) !== (mode === "revision")) {
+        return setText(el("message"), "Оберіть знімки потрібних джерел. Відсутній знімок додайте через capture або ingest.");
+      }
+      const data = await reviewPost("/api/source-comparison", {
+        mode, left_provider, right_provider, before, after, offset, limit,
+        change_filter: el("filter").value
+      }, false);
+      total = data.total;
+      setText(el("message"), "Записів: " + total + " · " + JSON.stringify(data.counts));
+      el("results").replaceChildren();
+      for (const row of data.changes) {
+        const card = make("section");
+        card.appendChild(make("h3", "", row.target_id + " · " + row.change));
+        const pair = make("div", "comparison");
+        for (const version of [row.before, row.after]) {
+          const content = make("div");
+          content.appendChild(make("pre", "story-text", version ?
+            version.provider + " · " + version.revision + " · " + version.status + "\n\n" +
+            version.ukrainian_text + "\n\n" + version.source_ref + "\n" + version.text_sha256 :
+            "У цьому знімку запис відсутній."));
+          if (version?.status === "approved") {
+            const button = make("button", "secondary", "Активувати схвалену версію");
+            button.type = "button";
+            button.addEventListener("click", async () => {
+              const reviewer = document.getElementById("source-reviewer").value.trim();
+              if (!reviewer) {
+                setText(el("message"), "Вкажіть рев’ювера в розділі Source Revision Review.");
+                document.getElementById("source-reviewer").focus();
+                return;
+              }
+              if (!window.confirm("Зробити цей схвалений переклад активним для " + row.target_id + "?")) return;
+              try {
+                await reviewPost("/api/source-reviews/activate", {candidate_id: version.id, reviewer});
+                document.getElementById("source-refresh").click();
+                setText(el("message"), "Активовано схвалену версію " + version.id);
+              } catch (error) { setText(el("message"), "Активацію відхилено: " + error.message); }
+            });
+            content.appendChild(button);
+          }
+          pair.appendChild(content);
+        }
+        card.appendChild(pair);
+        el("results").appendChild(card);
+      }
+      el("prev").disabled = offset === 0;
+      el("next").disabled = offset + limit >= total;
+    } catch (error) {
+      setText(el("message"), "Не вдалося порівняти знімки: " + error.message);
+    } finally { busy = false; }
+  }
+  el("load").addEventListener("click", () => compare(true));
+  el("run").addEventListener("click", () => { offset = 0; compare(); });
+  el("prev").addEventListener("click", () => { offset = Math.max(0, offset - limit); compare(); });
+  el("next").addEventListener("click", () => { if (offset + limit < total) { offset += limit; compare(); } });
 })();

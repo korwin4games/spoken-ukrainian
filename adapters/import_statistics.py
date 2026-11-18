@@ -16,7 +16,7 @@ CATEGORIES = ("quests", "gossip", "gossip_common", "gossip_titles", "places", "r
               "bosses", "compendium")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 QUEST_ID = re.compile(r"q:([1-9][0-9]*):(?:accept|progress|complete)(?::.*)?\Z")
-ROUTES = frozenset({"machine_1to1", "reviewed", "source_selected", "pinned_source"})
+ROUTES = frozenset({"machine_1to1", "reviewed", "source_selected", "pinned_source", "agent_verified"})
 MAX_ROWS = 200000
 
 
@@ -47,9 +47,10 @@ def _group(rows):
     return {"total_text_records": len(rows), "categories": totals, "rows": entries,
             "gossip_counts": {
                 "unique_translation_texts": len({r["text_sha256"] for r in gossip_rows if r.get("text_sha256")}),
-                "npc_hash_occurrences": len(npc_rows),
+                "npc_hash_occurrences": len({r["unit"].split(":", 1)[1] for r in npc_rows}),
                 "distinct_npc_ids": len({r["entity"] for r in npc_rows}),
-                "common_fallback_translations": sum(r["domain"] == "gossip_common" for r in gossip_rows),
+                "common_fallback_translations": len({r["unit"].rsplit(":", 1)[1]
+                    for r in gossip_rows if r["domain"] == "gossip_common"}),
                 "reviewed_english_groups": sum(r["domain"] == "gossip" and not
                     (r["unit"].startswith("npc:") or r["unit"].startswith("gossip:")) for r in gossip_rows),
                 "unknown_text_fingerprints": sum(not r.get("text_sha256") for r in gossip_rows)}}
@@ -115,6 +116,7 @@ def read_recorded_imports(db_path):
     from adapters.translation_approvals import validate_ledger as validate_quests
     from tools.gossip_translation_review import validate_ledger as validate_gossip
     from adapters.gossip_machine import validate_ledger as validate_gossip_machine
+    from adapters.translation_agent import recorded_imports
 
     validators = {
         "machine-one-to-one.json": validate_machine_ledger,
@@ -124,6 +126,8 @@ def read_recorded_imports(db_path):
     }
     documents = {}
     with connection(db_path) as db:
+        db.execute("BEGIN")
+        agent = list(recorded_imports(db))
         for ledger, payload in db.execute(
                 """SELECT ledger_name, payload FROM ledger_documents
                    WHERE ledger_name IN (?, ?, ?, ?)""",
@@ -139,6 +143,14 @@ def read_recorded_imports(db_path):
     selected = [{"domain": domain, "target_id": target, "provider": provider, "text_sha256": text_sha}
                 for domain, target, provider, text_sha in selected]
     rows = recorded_rows(documents)
+    for row in agent:
+        target = row["target_id"]
+        entity = target.split(":")[1]
+        domain = "quests" if row["domain"] == "quest" else (
+            "gossip_common" if entity == "common" else "gossip")
+        rows.append({"domain": domain, "unit": target, "entity": entity,
+                     "source": row["provider"], "route": "agent_verified",
+                     "text_sha256": row["text_sha256"]})
     machine = documents.get("gossip-machine-one-to-one.json", {"versions": [], "imports": []})
     versions = {r["id"]: r for r in machine["versions"]}
     for ref in machine["imports"]:
