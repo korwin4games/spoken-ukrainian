@@ -71,6 +71,9 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
     def revalidate():
         fresh = build_state(classicua_path, spoken_path, decisions_path, reviews_path,
                             local_reviews_path, translations_path, policy_path)
+        if (fresh.source.revision != state.source.revision
+                or fresh.inventory.revision != state.inventory.revision):
+            raise ValueError("pinned_sources_changed_restart_required")
         if fresh.policy != state.policy:
             raise ValueError("source_policy_changed_restart_required")
         fresh.translation_observations()
