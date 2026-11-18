@@ -22,6 +22,14 @@ from adapters.sqlite_translation_store import (
 )
 
 MODULE = "Spoken_Quests_UA"
+WORKER_ERRORS = frozenset({
+    "manager_confirmation_required", "manager_invalid_options", "manager_unknown_module",
+    "manager_reimport_already_running", "manager_state_changed_retry_reimport",
+    "manager_source_configuration_changed", "manager_unsafe_database_path",
+    "no_unambiguous_quest_imports_for_local_test_pack", "one_to_one_auto_import_not_enabled_for_source",
+    "public_revision_mismatch", "public_checkout_modified", "public_checkout_root_required",
+    "pinned_classicua_revision_mismatch", "pinned_spoken_revision_mismatch",
+})
 DOMAINS = "('quest','gossip')"
 MODULE_LEDGERS = (
     "stage4b-decisions.json", "stage3-ui-reviews.json", "translation-reviews.json",
@@ -231,6 +239,25 @@ class ManagerUI:
         self._lock = Lock()
         self._cached = None
         self._stamp = None
+        self._pins = None
+
+    def validate_checkouts(self):
+        """Validate Git identity and tracked cleanliness without rebuilding the catalog."""
+        from adapters.classicua.source import GitSource, SourceError
+        from adapters.spoken import PublicSource
+
+        pin_file = (ROOT / "sources.lock.json").read_bytes()
+        pins = json.loads(pin_file)
+        try:
+            GitSource(self.classicua, pins["classicua"]["revision"])
+        except (SourceError, OSError):
+            raise ValueError("manager_classicua_checkout_invalid") from None
+        try:
+            PublicSource(self.spoken, pins["spoken"])
+        except (ValueError, OSError):
+            raise ValueError("manager_spoken_checkout_invalid") from None
+        return (pin_file, (ROOT / "config/translation_sources.json").read_bytes(),
+                (ROOT / "tests/stage3_sources.json").read_bytes())
 
     def action(self, action, payload):
         from tools.build_ukrainian import ARCHIVE
@@ -252,9 +279,27 @@ class ManagerUI:
                     cwd=ROOT, capture_output=True, check=False, timeout=600)
             except subprocess.TimeoutExpired:
                 raise ValueError("manager_reimport_timed_out_check_build") from None
-            result = json.loads(worker.stdout)
+            except OSError:
+                raise ValueError("manager_reimport_worker_unavailable") from None
+            if worker.returncode < 0:
+                raise ValueError("manager_reimport_worker_terminated")
+            if not worker.stdout.strip():
+                raise ValueError("manager_reimport_worker_empty_response")
+            try:
+                result = json.loads(worker.stdout)
+            except (ValueError, RecursionError):
+                raise ValueError("manager_reimport_worker_invalid_response") from None
+            if not isinstance(result, dict):
+                raise ValueError("manager_reimport_worker_invalid_response")
             if worker.returncode != 0:
-                raise ValueError(result.get("error", "manager_reimport_failed"))
+                reason = result.get("error")
+                raise ValueError(reason if isinstance(reason, str) and reason in WORKER_ERRORS
+                                 else "manager_reimport_failed")
+            expected = "preview" if payload.get("dry_run") else "success"
+            if (result.get("build") != expected or result.get("module") != MODULE
+                    or not all(isinstance(result.get(key), dict) for key in ("summary", "agent"))
+                    or not isinstance(result.get("skipped"), list)):
+                raise ValueError("manager_reimport_worker_invalid_response")
             return result
         if action not in ("list", "detail"):
             raise ValueError("manager_invalid_action")
@@ -264,12 +309,17 @@ class ManagerUI:
             raise ValueError("manager_invalid_options")
 
         def stamp():
-            paths = (self.db_path, ARCHIVE, ROOT / "sources.lock.json", ROOT / "config/translation_sources.json")
+            paths = (self.db_path, ARCHIVE)
             return tuple((p.stat().st_ino, p.stat().st_mtime_ns) if p.exists() else None for p in paths)
 
         with self._lock:
-            if self._cached is None or self._stamp != stamp():
-                self._cached = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVE)
+            pins = self.validate_checkouts()
+            if self._cached is None or pins != self._pins or self._stamp != stamp():
+                view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVE)
+                if self.validate_checkouts() != pins:
+                    raise ValueError("manager_source_configuration_changed")
+                self._cached = view
+                self._pins = pins
                 self._stamp = stamp()
             view = self._cached
         return view.page(**payload) if action == "list" else view.detail(**payload)

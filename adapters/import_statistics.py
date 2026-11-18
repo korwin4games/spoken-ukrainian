@@ -21,6 +21,8 @@ MAX_ROWS = 200000
 
 
 def _group(rows):
+    exclusions = [r for r in rows if r["domain"] == "gossip_excluded"]
+    rows = [r for r in rows if r["domain"] != "gossip_excluded"]
     grouped = defaultdict(lambda: {"text_records": 0, "entities": set(), "texts": set(), "unknown": 0})
     totals = {category: 0 for category in CATEGORIES}
     for row in rows:
@@ -45,6 +47,7 @@ def _group(rows):
     npc_rows = [r for r in gossip_rows if r["domain"] == "gossip" and
                 (r["unit"].startswith("npc:") or r["unit"].startswith("gossip:"))]
     return {"total_text_records": len(rows), "categories": totals, "rows": entries,
+            "gossip_excluded_npc_hashes": len(exclusions),
             "gossip_counts": {
                 "unique_translation_texts": len({r["text_sha256"] for r in gossip_rows if r.get("text_sha256")}),
                 "npc_hash_occurrences": len({r["unit"].split(":", 1)[1] for r in npc_rows}),
@@ -176,7 +179,9 @@ def _validate_build_rows(rows):
         if "text_sha256" in row and (type(row["text_sha256"]) is not str
                                       or not HEX64.fullmatch(row["text_sha256"])):
             raise ValueError("invalid_build_inventory_text_fingerprint")
-        if (row["domain"] not in CATEGORIES or row["route"] not in ROUTES
+        valid_route = (row["route"] == "excluded" if row["domain"] == "gossip_excluded"
+                       else row["domain"] in CATEGORIES and row["route"] in ROUTES)
+        if (not valid_route
                 or any(type(row[k]) is not str or not row[k] or len(row[k]) > 256
                        for k in ("unit", "entity", "source"))):
             raise ValueError("invalid_build_inventory_row")

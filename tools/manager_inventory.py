@@ -275,7 +275,10 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
         group_ids = {sha(normalized(text)) for text in english}
         npc_target = f"gossip:{npc}:{hashed}"
         target = item["target_id"]
-        built = units.get(("gossip", f"npc:{npc}:{hashed}")) or units.get(("gossip_common", f"common:{hashed}"))
+        key = f"npc:{npc}:{hashed}"
+        exclusion = units.get(("gossip_excluded", key))
+        built = None if exclusion else (units.get(("gossip", key))
+                                        or units.get(("gossip_common", f"common:{hashed}")))
         if item["status"] == "conflict" or not english:
             built = None
         choices = []
@@ -294,7 +297,8 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
                                             state.source.revision, "candidate"))
         ready = (item["status"] == "eligible" and target not in blocked
                  and not any(r["review"] == "pending_update" for r in choices))
-        conflict = item["status"] == "conflict" or (not built and len(
+        conflict = (bool(exclusion and exclusion["source"] == "reviewed+source_selected")
+                    or item["status"] == "conflict") or (not built and len(
             {r["sha256"] for r in choices if r["review"] not in ("rejected", "deferred")}) > 1)
         name = next((v[1] for v in matching.values() if v[1]), f"NPC {npc}")
         rows.append(decorate({"id": f"{npc_target}:{fingerprint}", "type": "gossip", "label": name,

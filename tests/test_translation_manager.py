@@ -5,6 +5,7 @@ from http.server import ThreadingHTTPServer
 import io
 import json
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 from threading import Thread
 from types import SimpleNamespace
@@ -89,6 +90,8 @@ class ManagerTests(unittest.TestCase):
              "npcName": "Guide", "originalText": english},
             {"lineId": "g:missing", "source": "gossip", "npcId": 4, "npcType": "creature",
              "npcName": "Visitor", "originalText": "No translation"},
+            {"lineId": "g:conflict", "source": "gossip", "npcId": 5, "npcType": "creature",
+             "npcName": "Conflicted NPC", "originalText": english},
         ]
         empty = {"versions": [], "imports": []}
         state = SimpleNamespace(
@@ -109,18 +112,24 @@ class ManagerTests(unittest.TestCase):
         placements = [{"npc_id": r["npcId"], "english_hash": classicua_hash(r["originalText"]),
                        "english_sha256": sha(normalized(r["originalText"])),
                        "target_id": f"gossip:common:{classicua_hash(r['originalText'])}",
-                       "status": "eligible" if r["npcId"] == 3 else "untranslated"} for r in lines[1:]]
+                       "status": "untranslated" if r["npcId"] == 4 else "eligible"} for r in lines[1:]]
         self.archive.write_bytes(b"archive")
-        store_successful_build(self.db, artifact_sha256=sha256(b"archive").hexdigest(),
+        stats = store_successful_build(self.db, artifact_sha256=sha256(b"archive").hexdigest(),
             spoken_revision="a" * 40, classicua_revision="b" * 40,
             rows=[{"domain": "gossip_common", "unit": f"common:{hashed}", "entity": "common",
-                   "source": "classicua", "route": "agent_verified"}])
+                   "source": "classicua", "route": "agent_verified"},
+                  {"domain": "gossip_excluded", "unit": f"npc:5:{hashed}", "entity": "5",
+                   "source": "reviewed+source_selected", "route": "excluded"}])
+        self.assertEqual(stats["total_text_records"], 1)
+        self.assertEqual(stats["gossip_excluded_npc_hashes"], 1)
         with patch("tools.manager_inventory.read_pinned_corpus", return_value=lines), patch.object(
                 builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {hashed: "Вітаю, {ім'я}!"}}), patch(
                 "tools.manager_inventory.GossipMachineImport.inspect", return_value=([], placements, 0, set(), empty)):
             result = load_inventory(*self.paths, self.db, self.archive, state=state)
         self.assertEqual(result.summary()["gossip"]["included"], 1)
         self.assertEqual(result.summary()["gossip"]["missing"], 1)
+        self.assertEqual(result.summary()["gossip"]["conflicts"], 1)
+        self.assertIsNone(result.page(filter_by="conflicts")["items"][0]["built"])
         self.assertEqual(result.summary()["gossip_archive_units"]["common_hashes"], 1)
         included = result.page(filter_by="imported")["items"][0]
         self.assertFalse(included["recorded"])
@@ -243,7 +252,8 @@ class ManagerTests(unittest.TestCase):
             body = response.read().decode()
         self.assertEqual(body.count("Переімпортувати Quest + Gossip"), 1)
         self.assertIn('href="/advanced"', body)
-        with patch("tools.manager_inventory.load_inventory", return_value=self.view):
+        with patch("tools.manager_inventory.load_inventory", return_value=self.view), patch.object(
+                manager, "validate_checkouts", return_value=("fixture",)):
             self.assertEqual(post("list", {"module": MODULE, "kind": "gossip"})["total"], 1)
             self.assertEqual(post("detail", {"module": MODULE, "identity": "gossip:3:27:a"})["status"], "missing")
         with self.assertRaises(HTTPError) as error:
@@ -261,8 +271,74 @@ class ManagerTests(unittest.TestCase):
 
         with patch.object(builder, "build", side_effect=self.fake_build), patch(
                 "tools.manager_inventory.load_inventory", return_value=self.view), patch(
-                "tools.translation_manager.subprocess.run", side_effect=run_cli) as subprocess:
+                "tools.translation_manager.subprocess.run", side_effect=run_cli) as worker_run:
             preview = post("reimport", {"module": MODULE, "reset": True, "dry_run": True})
         self.assertEqual(preview["build"], "preview")
-        self.assertIn("--reset-test-data", subprocess.call_args.args[0])
+        self.assertIn("--reset-test-data", worker_run.call_args.args[0])
         self.assertFalse(self.archive.exists())
+
+        outcomes = [
+            (SimpleNamespace(returncode=1, stdout=b"", stderr=b"PRIVATE STDERR"),
+             "manager_reimport_worker_empty_response"),
+            (SimpleNamespace(returncode=0, stdout=b"PRIVATE TEXT"),
+             "manager_reimport_worker_invalid_response"),
+            (SimpleNamespace(returncode=0, stdout=b'{"build":"success"}'),
+             "manager_reimport_worker_invalid_response"),
+            (SimpleNamespace(returncode=-9, stdout=b""),
+             "manager_reimport_worker_terminated"),
+            (SimpleNamespace(returncode=1, stdout=b'{"error":"private_reviewer_data"}'),
+             "manager_reimport_failed"),
+            (SimpleNamespace(returncode=1, stdout=b'{"error":"manager_state_changed_retry_reimport"}'),
+             "manager_state_changed_retry_reimport"),
+        ]
+        for result, reason in outcomes:
+            with self.subTest(reason=reason), patch(
+                    "tools.translation_manager.subprocess.run", return_value=result):
+                with self.assertRaises(HTTPError) as error:
+                    post("reimport", {"module": MODULE, "confirm": True})
+                self.assertEqual(error.exception.code, 400)
+                self.assertEqual(json.load(error.exception)["reason"], reason)
+        with patch("tools.translation_manager.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("private path", 600, stderr=b"PRIVATE")):
+            with self.assertRaises(HTTPError) as error:
+                post("reimport", {"module": MODULE, "confirm": True})
+            self.assertEqual(json.load(error.exception)["reason"], "manager_reimport_timed_out_check_build")
+
+    def test_cached_inventory_revalidates_both_source_repositories(self):
+        def git(path, *args):
+            return subprocess.check_output(["git", "-C", str(path), *args], text=True).strip()
+
+        def commit(path, text):
+            (path / "tracked").write_text(text)
+            git(path, "add", "tracked")
+            git(path, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-qm", "fixture")
+            return git(path, "rev-parse", "HEAD")
+
+        pins = {}
+        for name, path in zip(("classicua", "spoken"), self.paths):
+            path.mkdir()
+            git(path, "init", "-q")
+            pins[name] = {"revision": commit(path, name), "files": {}}
+        for name in ("tests", "config"):
+            (self.root / name).mkdir()
+        for path in ("config/translation_sources.json", "tests/stage3_sources.json"):
+            (self.root / path).write_text("{}")
+        lock = self.root / "sources.lock.json"
+        lock.write_text(json.dumps(pins))
+        manager = ManagerUI(*self.paths, self.db)
+        with patch("tools.translation_manager.ROOT", self.root), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view) as load:
+            manager.action("list", {"module": MODULE})
+            manager.action("detail", {"module": MODULE, "identity": "q:42:accept"})
+            self.assertEqual(load.call_count, 1)
+            (self.paths[0] / "tracked").write_text("dirty")
+            with self.assertRaisesRegex(ValueError, "manager_classicua_checkout_invalid"):
+                manager.action("list", {"module": MODULE})
+            git(self.paths[0], "restore", "tracked")
+            pins["spoken"]["revision"] = commit(self.paths[1], "new Spoken revision")
+            with self.assertRaisesRegex(ValueError, "manager_spoken_checkout_invalid"):
+                manager.action("list", {"module": MODULE})
+            lock.write_text(json.dumps(pins))
+            manager.action("list", {"module": MODULE})
+            self.assertEqual(load.call_count, 2)

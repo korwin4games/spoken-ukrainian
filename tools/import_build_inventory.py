@@ -17,7 +17,7 @@ QUEST_MOMENT = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z
 
 def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
                        selected_gossip, selected_quest, trusted_gossip, db_path,
-                       machine_gossip=None, agent_rows=()):
+                       machine_gossip=None, agent_rows=(), excluded_gossip=None):
     """Build a metadata-only manifest from the same selected texts as the ZIP."""
     rows = []
     by_moment = defaultdict(list)
@@ -120,6 +120,9 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
                          "unit": f"title:{faction}:{quest_id}",
                          "entity": str(quest_id),
                          "source": "classicua", "route": "pinned_source"})
+    for (npc, hashed), source in sorted((excluded_gossip or {}).items()):
+        rows.append({"domain": "gossip_excluded", "unit": f"npc:{npc}:{hashed}",
+                     "entity": str(npc), "source": source, "route": "excluded"})
     from hashlib import sha256
     for row in rows:
         if row["domain"] == "gossip":

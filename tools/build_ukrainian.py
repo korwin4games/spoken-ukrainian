@@ -367,7 +367,7 @@ def local_gossip_texts(state):
     return result
 
 
-def render_gossip_lua(gossip):
+def render_gossip_lua(gossip, *, excluded=()):
     """UTF-8 Lua data table, packed into private ignored ZIP only."""
     if type(gossip) is not dict or set(gossip) != {"byNpc", "common"}:
         raise ValueError("invalid_gossip_lookup")
@@ -394,6 +394,17 @@ def render_gossip_lua(gossip):
             raise ValueError("invalid_gossip_common_hash")
         lines.append("        [%d] = %s," % (digest, lua_quote(value)))
     lines.append("    },")
+    if excluded:
+        by_npc = defaultdict(list)
+        for npc, hashed in excluded:
+            if type(npc) is not int or npc <= 0 or type(hashed) is not int or not 0 < hashed < 4294967291:
+                raise ValueError("invalid_gossip_exclusion")
+            by_npc[npc].append(hashed)
+        lines.append("    excluded = {")
+        for npc, hashes in sorted(by_npc.items()):
+            lines.append("        [%d] = {%s}," % (
+                npc, ", ".join("[%d] = true" % hashed for hashed in sorted(hashes))))
+        lines.append("    },")
     lines.append("}")
     return ("\n".join(lines) + "\n").encode("utf-8")
 
@@ -606,6 +617,7 @@ def build(classicua, spoken, *, prepare=None, destination=None, skipped=None):
     # They never override a second, separately imported human Gossip decision
     # without first resolving that conflict in the review ledger.
     selected_gossip = []
+    excluded_gossip = {}
     source_proofs = {}
     if db_path:
         from adapters.source_revision_store import SourceReviewStore
@@ -624,17 +636,25 @@ def build(classicua, spoken, *, prepare=None, destination=None, skipped=None):
                     and existing_reviewed != selection["ukrainian_text"]):
                 if skipped is not None:
                     skipped.append((selection["target_id"], "conflicting_human_reviewed_gossip_selection"))
-                    gossip["byNpc"][npc_id].pop(text_hash)
-                    # A common entry would still show a competing version to
-                    # this NPC. Omit it instead of silently choosing a winner.
-                    gossip["common"].pop(text_hash, None)
+                    remaining = gossip["byNpc"][npc_id]
+                    remaining.pop(text_hash)
+                    if not remaining:
+                        del gossip["byNpc"][npc_id]
+                    excluded_gossip[npc_id, text_hash] = "reviewed+source_selected"
                     continue
                 raise ValueError("conflicting_human_reviewed_gossip_selection")
             gossip["byNpc"].setdefault(npc_id, {})[text_hash] = selection["ukrainian_text"]
             selected_gossip.append(selection)
+        from tools.gossip_machine_import import source_review_targets
+        for target in source_review_targets(db_path):
+            match = re.fullmatch(r"gossip:([1-9][0-9]*):([1-9][0-9]*)", target)
+            if match:
+                npc, hashed = map(int, match.groups())
+                if hashed in gossip["common"] and hashed not in gossip["byNpc"].get(npc, {}):
+                    excluded_gossip.setdefault((npc, hashed), "source_review")
     entries = template_entries(render_quest_lua(
         preview, state.inventory.revision, forms, titles),
-        render_gossip_lua(gossip))
+        render_gossip_lua(gossip, excluded=excluded_gossip))
     # Only metadata for texts that actually entered a successful local ZIP.
     # Never count raw proposals or claim an import was embedded beforehand.
     import_inventory = None
@@ -644,7 +664,7 @@ def build(classicua, spoken, *, prepare=None, destination=None, skipped=None):
         inventory_rows = collect_build_rows(
             state, preview, gossip, titles, reviewed_gossip,
             selected_gossip, selected_quest, source_proofs, db_path, machine_gossip=gossip,
-            agent_rows=agent_rows)
+            agent_rows=agent_rows, excluded_gossip=excluded_gossip)
     artifact, digest = write_zip(entries) if destination is None else write_zip(entries, destination)
     if db_path:
         import_inventory = store_successful_build(

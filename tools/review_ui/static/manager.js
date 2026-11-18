@@ -16,6 +16,13 @@ const errors = {
   manager_state_changed_retry_reimport: "Дані змінилися під час збірки. Оновіть список і повторіть.",
   no_unambiguous_quest_imports_for_local_test_pack: "Для збірки бракує однозначних перекладів квестів.",
   manager_reimport_timed_out_check_build: "Час очікування минув. Оновіть список, щоб перевірити стан збірки.",
+  manager_reimport_worker_unavailable: "Не вдалося запустити збірку. Перезапустіть локальний менеджер.",
+  manager_reimport_worker_terminated: "Збірку перервано. Оновіть список, перевірте стан ZIP і повторіть.",
+  manager_reimport_worker_empty_response: "Збірка не повернула результат. Перевірте стан ZIP і повторіть через CLI.",
+  manager_reimport_worker_invalid_response: "Не вдалося прочитати результат збірки. Повторіть через CLI.",
+  manager_reimport_failed: "Переімпорт завершився помилкою. Перевірте закріплені джерела або повторіть через CLI.",
+  manager_classicua_checkout_invalid: "Потрібна чиста копія ClassicUA на закріпленій ревізії.",
+  manager_spoken_checkout_invalid: "Потрібна чиста копія Spoken на закріпленій ревізії.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
 let loading = 0;

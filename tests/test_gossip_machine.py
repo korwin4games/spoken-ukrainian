@@ -229,6 +229,18 @@ class GossipMachineTests(unittest.TestCase):
             service.run()
             self.assertEqual(service.build_lookup(), {'byNpc': {}, 'common': {}})
 
+    def test_npc_scoped_source_review_does_not_block_shared_machine_import(self):
+        state = state_for(self.allowed, common=True)
+        target = f"gossip:42:{H}"
+        with patch('tools.gossip_coverage.read_pinned_corpus', return_value=[corpus(), corpus(43)]), patch(
+                'tools.gossip_machine_import.source_review_targets', return_value={target}):
+            service = GossipMachineImport(state, '/unused')
+            _, items, _, blocked, _ = service.inspect()
+            self.assertEqual(blocked, {target})
+            self.assertEqual([row["status"] for row in items], ["source_selected", "eligible"])
+            service.run()
+            self.assertEqual(service.build_lookup(), {"byNpc": {}, "common": {H: UK}})
+
     def test_migrate_v4_database_preserves_old_snapshot(self):
         with connection(self.db) as db:
             db.execute('ALTER TABLE build_import_units DROP COLUMN text_sha256')
