@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import tempfile
 import threading
 import unittest
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -17,6 +18,7 @@ from adapters.classicua.evidence import SourceInventory
 from adapters.review_ui import LocalReviewState, guarded_decisions_path
 from adapters.spoken.text_index import TextIndex
 from tools.review_ui_server import create_handler
+from tools import review_ui_server
 
 
 UK = "Вигадана локальна репліка."
@@ -43,6 +45,31 @@ class SyntheticDataset:
 
 
 class ReviewUITests(unittest.TestCase):
+    def test_revalidation_rejects_a_new_pinned_source_until_restart(self):
+        classicua = SimpleNamespace(revision="a" * 40)
+        spoken = SimpleNamespace(revision="b" * 40)
+        state = SimpleNamespace(source=classicua, inventory=spoken, policy="policy")
+        lock = {"classicua": {"revision": classicua.revision, "files": {}},
+                "spoken": {"revision": spoken.revision}}
+        with (
+            patch.object(Path, "read_text", side_effect=[json.dumps(lock),
+                                                         json.dumps({"revision": spoken.revision})]),
+            patch.object(review_ui_server, "PublicSource"),
+            patch.object(review_ui_server, "build_index", return_value=spoken),
+            patch.object(review_ui_server, "index_verified_originals"),
+            patch.object(review_ui_server, "audit_checkout", return_value=(None, None)),
+            patch.object(review_ui_server, "from_audit", return_value=classicua),
+            patch.object(review_ui_server, "load_source_policy"),
+            patch.object(review_ui_server, "LocalReviewState", return_value=state),
+        ):
+            review_ui_server.build_state("classicua", "spoken", "decisions")
+        fresh = Mock(source=SimpleNamespace(revision="c" * 40),
+                     inventory=spoken, policy=state.policy)
+        with patch.object(review_ui_server, "build_state", return_value=fresh):
+            with self.assertRaisesRegex(ValueError, "pinned_sources_changed_restart_required"):
+                state.revalidate_inputs()
+        fresh.translation_observations.assert_not_called()
+
     def setUp(self):
         fixture = fixtures.WorkbenchTests()
         fixture.setUp()

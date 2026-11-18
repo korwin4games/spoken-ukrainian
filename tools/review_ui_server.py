@@ -71,6 +71,9 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
     def revalidate():
         fresh = build_state(classicua_path, spoken_path, decisions_path, reviews_path,
                             local_reviews_path, translations_path, policy_path)
+        if (fresh.source.revision != state.source.revision
+                or fresh.inventory.revision != state.inventory.revision):
+            raise ValueError("pinned_sources_changed_restart_required")
         if fresh.policy != state.policy:
             raise ValueError("source_policy_changed_restart_required")
         fresh.translation_observations()
@@ -79,7 +82,8 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
 
 
 def create_handler(state, token, port, gossip_reviews=None,
-                   source_reviews=None, source_trusted=None, import_db_path=None):
+                   source_reviews=None, source_trusted=None, import_db_path=None,
+                   gossip_machine=None):
     """Return request handler with strict host/origin and anti-CSRF policy."""
     allowed_host = f"127.0.0.1:{port}"
     allowed_origin = f"http://{allowed_host}"
@@ -151,6 +155,21 @@ def create_handler(state, token, port, gossip_reviews=None,
                 except (ValueError, TypeError, KeyError) as exc:
                     self._event("translation.list", "failed", _reason(exc))
                     self._json(400, {"error": "translation_evidence_revalidation_failed"})
+                return
+            if parts.path == "/api/gossip-machine":
+                if gossip_machine is None:
+                    self._json(404, {"error": "gossip_machine_unavailable"})
+                    return
+                try:
+                    params = parse_qs(parts.query, keep_blank_values=True)
+                    if set(params) - {"status", "offset", "limit"} or any(len(v) != 1 for v in params.values()):
+                        raise ValueError("invalid_gossip_machine_filter")
+                    offset, limit = params.get("offset", ["0"])[0], params.get("limit", ["40"])[0]
+                    if not offset.isascii() or not offset.isdecimal() or limit not in ("20", "40"):
+                        raise ValueError("invalid_gossip_machine_filter")
+                    self._json(200, gossip_machine.page(params.get("status", ["all"])[0], int(offset), int(limit)))
+                except (ValueError, TypeError, KeyError, OSError) as exc:
+                    self._json(400, {"error": "gossip_machine_revalidation_failed", "reason": _reason(exc)})
                 return
             if parts.path == "/api/gossip":
                 if gossip_reviews is None:
@@ -241,6 +260,7 @@ def create_handler(state, token, port, gossip_reviews=None,
             routes = {"/api/decisions", "/api/mapping/approve", "/api/translations/refresh",
                       "/api/translations/edit", "/api/translations/decide", "/api/translations/import",
                       "/api/translations/auto_import_one_to_one",
+                      "/api/gossip-machine/import",
                       "/api/gossip/propose", "/api/gossip/decide", "/api/gossip/import",
                       "/api/source-reviews/decide", "/api/source-reviews/activate",
                       "/api/source-reviews/clear"}
@@ -275,6 +295,7 @@ def create_handler(state, token, port, gossip_reviews=None,
                      "/api/translations/decide": "translation.decision",
                      "/api/translations/import": "translation.import",
                      "/api/translations/auto_import_one_to_one": "translation.auto_import_one_to_one",
+                     "/api/gossip-machine/import": "gossip_machine.import",
                      "/api/gossip/propose": "gossip.propose",
                      "/api/gossip/decide": "gossip.decision",
                      "/api/gossip/import": "gossip.import",
@@ -286,7 +307,11 @@ def create_handler(state, token, port, gossip_reviews=None,
                 payload = strict_json(self.rfile.read(length))
                 if type(payload) is not dict:
                     raise ValueError("invalid_review_request")
-                if route == "/api/decisions":
+                if route == "/api/gossip-machine/import":
+                    if payload or gossip_machine is None:
+                        raise ValueError("invalid_gossip_machine_import_request")
+                    result = gossip_machine.run()
+                elif route == "/api/decisions":
                     if set(payload) != {"source_id", "target_id", "decision", "reason", "reviewer"}:
                         raise ValueError("invalid_decision_request")
                     result = state.decide(**payload)
@@ -474,11 +499,13 @@ def main(argv=None):
         source_trusted = trusted_inventory(state, spoken_lines)
         source_reviews = SourceReviewStore(os.environ.get(DB_ENV) or default_db_path())
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
+        from tools.gossip_machine_import import GossipMachineImport
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
             create_handler(state, secrets.token_urlsafe(32), args.port,
                            gossip_reviews, source_reviews, source_trusted,
-                           os.environ.get(DB_ENV) or default_db_path()))
+                           os.environ.get(DB_ENV) or default_db_path(),
+                           gossip_machine=GossipMachineImport(state, args.spoken)))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)

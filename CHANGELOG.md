@@ -7,6 +7,11 @@ or GitHub Release has been published.
 
 ## [Unreleased]
 
+### Gossip provisional machine imports
+
+- Add auditable ClassicUA Gossip 1:1 import, CLI and localhost Review UI panel with status filters. Persist exact pinned provenance and version history in SQLite; preserve human decisions, exclude ambiguous hashes/contexts, and hold source changes as pending updates.
+- Refresh Quest and Gossip imports before local test builds. Include only verified provisional Gossip matches with human/source-selection precedence. Add schema v5 fingerprints and latest-build tracking; distinguish unique texts, NPC/hash occurrences, common fallbacks, recorded imports and actual ZIP contents. No human approval, provider calls, audio or public release.
+
 ### Native Gossip — integrated Quest local test
 
 - Include pinned ClassicUA exact NPC-ID/English-hash Gossip greeting and player-reply translations in the existing `Spoken_Quests_UA` test addon (separate `GossipTranslations.lua` data and `GossipFrame.lua` runtime). Reuse Shift-to-original and yield to installed ClassicUA; retain English on absent/mismatched identities. No new `Spoken_Gossip_UA` pack, fake audio, Spoken captions, approved canonical Gossip mapping or public release.

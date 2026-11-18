@@ -552,15 +552,16 @@ def build(classicua, spoken):
     unknown_factions = unknown_faction_import_counts(state)
     forms = read_classicua_inflections(classicua, state.source.files)
     titles = local_gossip_titles(state)
-    gossip = local_gossip_texts(state)
-    # Explicitly imported HUMAN-reviewed Gossip translations only. A draft,
-    # machine proposal or merely approved version never enters the ZIP.
+    original_gossip = local_gossip_texts(state)
+    from tools.gossip_machine_import import GossipMachineImport
+    gossip_machine = GossipMachineImport(state, spoken)
+    gossip_machine.run()
+    gossip = gossip_machine.build_lookup()
+    # Human imports retain their existing queue/evidence and override machine text.
     from tools.gossip_translation_review import load_reviewed_gossip
-    reviewed_gossip = load_reviewed_gossip(state, gossip, spoken)
+    reviewed_gossip = load_reviewed_gossip(state, original_gossip, spoken)
     for npc_id, rows in reviewed_gossip.items():
         for digest, text in rows.items():
-            if digest in gossip["byNpc"].get(npc_id, {}) or digest in gossip["common"]:
-                raise ValueError("gossip_review_may_not_replace_classicua")
             gossip["byNpc"].setdefault(npc_id, {})[digest] = text
     # Source Review selections override provider priority only when explicitly
     # human-approved AND scoped to an exact pinned Spoken NPC/English hash.
@@ -599,7 +600,7 @@ def build(classicua, spoken):
         from tools.import_build_inventory import collect_build_rows
         inventory_rows = collect_build_rows(
             state, preview, gossip, titles, reviewed_gossip,
-            selected_gossip, selected_quest, source_proofs, db_path)
+            selected_gossip, selected_quest, source_proofs, db_path, machine_gossip=gossip)
         import_inventory = store_successful_build(
             db_path, artifact_sha256=digest,
             spoken_revision=state.inventory.revision,
@@ -625,6 +626,7 @@ def build(classicua, spoken):
             "npc_hashes": sum(len(rows) for rows in reviewed_gossip.values()),
         },
         "explicit_source_gossip_selections": len(selected_gossip),
+        "gossip_machine_import": gossip_machine.page(),
         "unknown_faction_imports": unknown_factions,
         "quest_97279": import_reason_for_quest(state, 97279),
         "report": report,

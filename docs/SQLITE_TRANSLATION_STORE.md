@@ -124,3 +124,13 @@ normal executable CLIs (`review_ui_server.py`, `build_ukrainian.py`,
 `gossip_translation_review.py`) enables SQLite by default. To inspect
 an old JSON backup, use your existing tools but **don't run two separate
 writers on JSON and SQLite for the same project**.
+
+## Schema v5 — Gossip provisional import
+
+A sixth strict ledger, `gossip-machine-one-to-one.json`, uses the same validated
+`ledger_documents` persistence, optimistic concurrency and legacy JSON migration.
+It retains full versioned machine provenance and separate unreviewed approval
+status; it does not populate human approvals or the human translation-memory
+index. Schema v5 also adds metadata-only Gossip text fingerprints to build units
+and a pointer to the latest successful build snapshot. Existing history survives.
+See [Gossip workflow](GOSSIP_MACHINE_IMPORT.md) and [statistics](IMPORT_STATISTICS.md).

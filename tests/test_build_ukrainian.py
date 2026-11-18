@@ -9,6 +9,7 @@ import unittest
 
 from lua_runtime import run_lua
 from tools import build_ukrainian as builder
+from tools import gossip_machine_import
 
 
 EN = "Invented text"
@@ -227,6 +228,10 @@ class BuildUkrainianTests(unittest.TestCase):
             self.assertIn("Spoken_Quests_UA/GossipTranslations.lua", entries)
             return Path("dist/test.zip"), "b" * 64
         with patch.object(builder, "validate_source_paths"), patch.object(
+                gossip_machine_import,
+                "GossipMachineImport", return_value=Mock(
+                    build_lookup=Mock(return_value={"byNpc": {}, "common": {}}),
+                    page=Mock(return_value={}))), patch.object(
                 builder, "build_state", return_value=state), patch.object(
                 builder, "current_quest_texts", return_value=(preview, 1, 0)), patch.object(
                 builder, "unknown_faction_import_counts",
