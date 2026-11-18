@@ -18,14 +18,16 @@ class SourceSelectedBuildTests(unittest.TestCase):
         self.build_gossip_case(conflict=False)
 
     def test_conflicting_npc_does_not_remove_shared_common(self):
-        self.build_gossip_case(conflict=True)
+        for manager in (False, True):
+            with self.subTest(manager=manager):
+                self.build_gossip_case(conflict=True, manager=manager)
 
-    def build_gossip_case(self, *, conflict):
+    def build_gossip_case(self, *, conflict, manager=False):
         source = [{"source": "gossip", "npcType": "creature", "npcId": 42,
                    "npcName": "Synthetic NPC", "originalText": "Hello traveler."}]
         source.append(dict(source[0], npcId=43))
         hashed = classicua_hash("Hello traveler.")
-        skipped = [] if conflict else None
+        skipped = [] if manager else None
         trusted = gossip_contexts(source)
         key, proof = next(iter(trusted.items()))
         with TemporaryDirectory() as tmp:
@@ -82,7 +84,8 @@ class SourceSelectedBuildTests(unittest.TestCase):
                 self.assertNotIn("Альтернативний переклад", lua)
                 self.assertNotIn("Раніше схвалений переклад", lua)
                 self.assertEqual(result["explicit_source_gossip_selections"], 0)
-                self.assertEqual(skipped, [(key[1], "conflicting_human_reviewed_gossip_selection")])
+                if manager:
+                    self.assertEqual(skipped, [(key[1], "conflicting_human_reviewed_gossip_selection")])
                 self.assertEqual(collect.call_args.kwargs["excluded_gossip"], {(42, hashed): "reviewed+source_selected"})
                 run_lua(lua + r'''
 _G = _G or _ENV

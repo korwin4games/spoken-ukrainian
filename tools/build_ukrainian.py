@@ -636,13 +636,12 @@ def build(classicua, spoken, *, prepare=None, destination=None, skipped=None):
                     and existing_reviewed != selection["ukrainian_text"]):
                 if skipped is not None:
                     skipped.append((selection["target_id"], "conflicting_human_reviewed_gossip_selection"))
-                    remaining = gossip["byNpc"][npc_id]
-                    remaining.pop(text_hash)
-                    if not remaining:
-                        del gossip["byNpc"][npc_id]
-                    excluded_gossip[npc_id, text_hash] = "reviewed+source_selected"
-                    continue
-                raise ValueError("conflicting_human_reviewed_gossip_selection")
+                remaining = gossip["byNpc"][npc_id]
+                remaining.pop(text_hash)
+                if not remaining:
+                    del gossip["byNpc"][npc_id]
+                excluded_gossip[npc_id, text_hash] = "reviewed+source_selected"
+                continue
             gossip["byNpc"].setdefault(npc_id, {})[text_hash] = selection["ukrainian_text"]
             selected_gossip.append(selection)
         from tools.gossip_machine_import import source_review_targets
@@ -730,6 +729,9 @@ def main(argv=None):
     print("Explicitly selected human-reviewed source Gossip variants:",
           result["explicit_source_gossip_selections"])
     if result["import_inventory"] is not None:
+        excluded = result["import_inventory"]["gossip_excluded_npc_hashes"]
+        if excluded:
+            print("Gossip NPC/hash placements excluded by review:", excluded)
         print("Actual ZIP import inventory by domain/source/route:")
         for line in result["import_inventory"]["rows"]:
             print("  {category}: {source} ({route}) - {text_records} texts / {unique_entities} entities".format(**line))
