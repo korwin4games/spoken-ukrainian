@@ -54,10 +54,12 @@
           <label class="query">Пошук
             <input type="search" maxlength="200" id="query" placeholder="ID, назва, NPC або текст">
           </label>
-          <label>Вміст ZIP
+          <label>Показати
             <select id="filter">
               <option value="all">Усі</option><option value="imported">Імпортовані в ZIP</option>
-              <option value="not_imported">Не в ZIP</option><option value="conflicts">Конфлікти</option>
+              <option value="not_imported">Не в ZIP</option>
+              <option value="conflicts">Конфлікти кандидатів</option>
+              <option value="multiple_originals">Кілька перевірених оригіналів</option>
             </select>
           </label>
           <label>Тип
@@ -72,9 +74,9 @@
                 <option value="mapping_verified">Перевірено вручну</option>
                 <option value="mapping_provisional">Попереднє зіставлення</option>
                 <option value="mapping_pending">Потребує перевірки</option>
-                <option value="mapping_conflict">Неоднозначне зіставлення</option>
+                <option value="mapping_conflict">Неоднозначне зіставлення (усі причини)</option>
                 <option value="invalid_context">Непідтримуваний контекст</option>
-                <option value="multiple_originals">Кілька оригіналів</option>
+                <option value="multiple_originals">Кілька перевірених оригіналів</option>
                 <option value="mapping_rejected">Зіставлення відхилено або відкладено</option>
               </optgroup>
               <optgroup label="Переклад">

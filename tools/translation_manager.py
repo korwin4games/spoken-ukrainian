@@ -358,7 +358,9 @@ def main(argv=None):
             row = result["summary"][domain]
             print(f"{domain}: {row['included']}/{row['total']} in ZIP, "
                   f"{row['recorded']} backed by DB imports, {row['missing']} missing, "
-                  f"{row['conflicts']} conflicts, {row['pending_review']} pending review")
+                  f"{row['conflicts']} candidate conflicts, "
+                  f"{row['multiple_originals']} with multiple verified originals, "
+                  f"{row['pending_review']} pending review")
             print("  Not in ZIP by status:", row["not_included_by_status"])
             print("  Mapping:", row["mapping_states"], "· translation:", row["translation_states"])
             print("  Import:", row["import_states"], "· in a review queue:", row["in_review_queue"])

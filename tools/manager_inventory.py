@@ -61,7 +61,8 @@ class ModuleInventory:
             built = sum(r["built"] is not None for r in rows)
             result[kind] = {"total": len(rows), "included": built, "not_included": len(rows) - built,
                             "recorded": sum(r["recorded"] for r in rows),
-                            "conflicts": counts["conflict"] + counts["multiple_originals"],
+                            "conflicts": counts["conflict"],
+                            "multiple_originals": counts["multiple_originals"],
                             "conflicting_candidates": counts["conflict"], "missing": counts["missing"],
                             "ready": sum(r["status"] == "ready" and not r["built"] for r in rows),
                             "pending_review": pending["review"] + pending["stale"],
@@ -83,7 +84,7 @@ class ModuleInventory:
 
     def page(self, *, module=MODULE, query="", kind="all", filter_by="all", status="all", offset=0, limit=30):
         if (module != MODULE or kind not in ("all", "quest", "gossip")
-                or filter_by not in ("all", "imported", "not_imported", "conflicts")
+                or filter_by not in ("all", "imported", "not_imported", "conflicts", "multiple_originals")
                 or status not in {"all", *STATUS_HELP, *MAPPING_STATES, *TRANSLATION_STATES}
                 or type(query) is not str or len(query) > 200
                 or type(offset) is not int or offset < 0
@@ -97,7 +98,9 @@ class ModuleInventory:
                 continue
             if filter_by == "imported" and not row["built"] or filter_by == "not_imported" and row["built"]:
                 continue
-            if filter_by == "conflicts" and row["status"] != "conflict" and row.get("mapping_state") != "mapping_conflict":
+            if filter_by == "conflicts" and row["status"] != "conflict":
+                continue
+            if filter_by == "multiple_originals" and row["status"] != "multiple_originals":
                 continue
             if needles:
                 text = " ".join([row["id"], row["label"], *row["originals"],

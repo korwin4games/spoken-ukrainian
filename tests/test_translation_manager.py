@@ -76,6 +76,33 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid_filters"):
             self.view.page(module="Spoken_Readables")
 
+    def test_candidate_conflicts_and_multiple_originals_have_separate_statistics_and_filters(self):
+        conflict = self.view.rows["q:43:progress"]
+        conflict.update(mapping_state="mapping_conflict",
+                        candidates=[{"text": "Річка"}, {"text": "Дорога"}])
+        multi = row("q:8:progress", "quest", "Invented variants", "multiple_originals")
+        multi.update(mapping_state="mapping_conflict", originals=["First crossing", "Second crossing"])
+        self.view.rows[multi["id"]] = multi
+        summary = self.view.summary()
+        self.assertEqual(summary["quest"]["conflicts"], 1)
+        self.assertEqual(summary["quest"]["conflicting_candidates"], 1)
+        self.assertEqual(summary["quest"]["multiple_originals"], 1)
+        self.assertEqual(summary["quest"]["mapping_states"]["mapping_conflict"], 2)
+        self.assertEqual(summary["quest"]["included"], 1)
+        self.assertEqual(summary["gossip"]["multiple_originals"], 0)
+
+        for filter_by, match, excluded, expected in (
+                ("conflicts", "РІЧКА", "second crossing", conflict),
+                ("multiple_originals", "second crossing", "річка", multi)):
+            with self.subTest(filter_by=filter_by):
+                self.assertEqual(self.view.page(filter_by=filter_by)["total"], 1)
+                page = self.view.page(filter_by=filter_by, query=match, kind="quest", limit=1)
+                self.assertEqual([item["id"] for item in page["items"]], [expected["id"]])
+                self.assertEqual(self.view.page(filter_by=filter_by, query=excluded)["total"], 0)
+                self.assertEqual(self.view.page(filter_by=filter_by, kind="gossip")["total"], 0)
+        self.assertEqual(self.view.page(status="multiple_originals", query="first crossing")["total"], 1)
+        self.assertEqual(self.view.page(status="mapping_conflict")["total"], 2)
+
     def test_catalog_joins_verified_placements_to_effective_common_unit(self):
         from adapters.crosswalk import digest
         from adapters.source_revision_store import sha

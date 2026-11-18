@@ -4,8 +4,8 @@ const el = id => document.getElementById(id);
 const number = new Intl.NumberFormat("uk");
 const labels = {
   ready: "Готовий", missing: "Немає перекладу", review: "Потрібна перевірка",
-  conflict: "Конфлікт", rejected: "Відхилено / відкладено", invalid: "Не пройшов перевірку", stale: "Застарів",
-  multiple_originals: "Кілька оригіналів",
+  conflict: "Конфлікт кандидатів", rejected: "Відхилено / відкладено", invalid: "Не пройшов перевірку", stale: "Застарів",
+  multiple_originals: "Кілька перевірених оригіналів",
 };
 const mappingLabels = {
   mapping_verified: "Зіставлено вручну", mapping_provisional: "Попереднє зіставлення",
@@ -95,7 +95,8 @@ function metrics(summary, build) {
   const tally = key => selectedKind === "all" ? summary.quest[key] + summary.gossip[key] : summary[selectedKind][key];
   const cells = [
     ["Усього записів", "total"], ["Імпортовано в ZIP", "included"], ["Не в ZIP", "not_included"],
-    ["Конфлікти", "conflicts"], ["Без перекладу", "missing"], ["Готові до імпорту", "ready"],
+    ["Конфлікти кандидатів", "conflicts"], ["Кілька перевірених оригіналів", "multiple_originals"],
+    ["Без перекладу", "missing"], ["Готові до імпорту", "ready"],
     ["Зауваження агента", "agent_warnings"], ["Непідтверджені збіги Gossip", "unverified_alternatives"],
   ];
   el("metrics").replaceChildren(...cells.map(([label, key]) => {
@@ -124,6 +125,9 @@ function renderList(data) {
       badge(item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано", item.built ? "built" : ""));
     const statuses = tr.appendChild(make("td"));
     statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
+    if (["conflict", "multiple_originals"].includes(item.status) && item.translation_state) {
+      statuses.append(make("div", labels[item.status]));
+    }
     if (item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
     const problem = item.status !== "ready" || item.agent_warning;
     const flag = make("td", problem ? "⚑" : "—");
@@ -249,7 +253,7 @@ function renderResult(result) {
   const rows = [];
   for (const [key, name] of [["quest", "Quest"], ["gossip", "Gossip"]]) {
     const v = result.summary[key];
-    rows.push(make("p", `${name} · у ZIP ${v.included} з ${v.total} · без перекладу ${v.missing} · конфлікти ${v.conflicts} · на перевірку ${v.pending_review}`));
+    rows.push(make("p", `${name} · у ZIP ${v.included} з ${v.total} · без перекладу ${v.missing} · конфлікти кандидатів ${v.conflicts} · кілька перевірених оригіналів ${v.multiple_originals} · на перевірку ${v.pending_review}`));
   }
   const g = result.summary.gossip_archive_units;
   rows.push(make("p", `Архів Gossip · пар NPC/хеш: ${g.npc_hash_pairs} · спільних реплік: ${g.common_hashes}`));

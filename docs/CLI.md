@@ -152,6 +152,8 @@ The summary distinguishes database records, effective Quest moments, Gossip
 occurrences and serialized common units. It reports mapping, translation and
 import states separately, with review queue coverage, agent warnings by
 assessed version and unverified Gossip alternatives by NPC/hash occurrence.
+The summary counts candidate conflicts (`conflicts`) and rows with multiple
+verified English originals (`multiple_originals`) separately.
 `--json` includes detailed results
 and failure codes. Exit 0 indicates preview or successful promotion, 1 a
 failed operation, and 2 invalid CLI syntax. See the [manager guide](TRANSLATION_MANAGER.md).
