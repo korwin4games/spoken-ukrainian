@@ -21,7 +21,7 @@ MAX_ROWS = 200000
 
 
 def _group(rows):
-    grouped = defaultdict(lambda: {"text_records": 0, "entities": set()})
+    grouped = defaultdict(lambda: {"text_records": 0, "entities": set(), "texts": set(), "unknown": 0})
     totals = {category: 0 for category in CATEGORIES}
     for row in rows:
         domain, source, route = row["domain"], row["source"], row["route"]
@@ -30,13 +30,29 @@ def _group(rows):
         key = (domain, source, route)
         grouped[key]["text_records"] += 1
         grouped[key]["entities"].add(row["entity"])
+        if row.get("text_sha256"):
+            grouped[key]["texts"].add(row["text_sha256"])
+        else:
+            grouped[key]["unknown"] += 1
         totals[domain] += 1
     entries = [
         {"category": domain, "source": source, "route": route,
-         "text_records": data["text_records"], "unique_entities": len(data["entities"])}
+         "text_records": data["text_records"], "unique_entities": len(data["entities"]),
+         "unique_translation_texts": len(data["texts"]), "unknown_text_fingerprints": data["unknown"]}
         for (domain, source, route), data in sorted(grouped.items())
     ]
-    return {"total_text_records": len(rows), "categories": totals, "rows": entries}
+    gossip_rows = [r for r in rows if r["domain"] in ("gossip", "gossip_common")]
+    npc_rows = [r for r in gossip_rows if r["domain"] == "gossip" and
+                (r["unit"].startswith("npc:") or r["unit"].startswith("gossip:"))]
+    return {"total_text_records": len(rows), "categories": totals, "rows": entries,
+            "gossip_counts": {
+                "unique_translation_texts": len({r["text_sha256"] for r in gossip_rows if r.get("text_sha256")}),
+                "npc_hash_occurrences": len(npc_rows),
+                "distinct_npc_ids": len({r["entity"] for r in npc_rows}),
+                "common_fallback_translations": sum(r["domain"] == "gossip_common" for r in gossip_rows),
+                "reviewed_english_groups": sum(r["domain"] == "gossip" and not
+                    (r["unit"].startswith("npc:") or r["unit"].startswith("gossip:")) for r in gossip_rows),
+                "unknown_text_fingerprints": sum(not r.get("text_sha256") for r in gossip_rows)}}
 
 
 def recorded_rows(documents, selected=()):
@@ -75,7 +91,7 @@ def recorded_rows(documents, selected=()):
                 raise ValueError("duplicate_recorded_translation_import")
             keys.add(ident)
             result.append({"domain": category, "source": source, "route": route,
-                           "unit": target, "entity": entity})
+                           "unit": target, "entity": entity, "text_sha256": version["text_sha256"]})
     for selection in selected:
         category = "quests" if selection["domain"] == "quest" else "gossip"
         ident = category, selection["target_id"]
@@ -84,6 +100,7 @@ def recorded_rows(documents, selected=()):
         # unbuilt translation count as an installed text.
         result.append({"domain": category, "source": selection["provider"],
                        "route": "source_selected", "unit": selection["target_id"],
+                       "text_sha256": selection.get("text_sha256", ""),
                        "entity": selection["target_id"].split(":")[1] if
                              category == "gossip" else
                              (QUEST_ID.fullmatch(selection["target_id"]).group(1)
@@ -97,29 +114,39 @@ def read_recorded_imports(db_path):
     from adapters.auto_one_to_one import validate_machine_ledger
     from adapters.translation_approvals import validate_ledger as validate_quests
     from tools.gossip_translation_review import validate_ledger as validate_gossip
+    from adapters.gossip_machine import validate_ledger as validate_gossip_machine
 
     validators = {
         "machine-one-to-one.json": validate_machine_ledger,
         "translation-reviews.json": validate_quests,
         "gossip-translation-reviews.json": validate_gossip,
+        "gossip-machine-one-to-one.json": validate_gossip_machine,
     }
     documents = {}
     with connection(db_path) as db:
         for ledger, payload in db.execute(
                 """SELECT ledger_name, payload FROM ledger_documents
-                   WHERE ledger_name IN (?, ?, ?)""",
+                   WHERE ledger_name IN (?, ?, ?, ?)""",
                 tuple(validators)):
             documents[ledger] = validators[ledger](strict_json(payload))
-        selected = db.execute("""SELECT c.domain, c.target_id, s.provider
+        selected = db.execute("""SELECT c.domain, c.target_id, s.provider, c.text_sha256
             FROM source_active_selections a
             JOIN source_candidates c ON c.id = a.candidate_id
             JOIN source_snapshots s ON s.id = c.snapshot_id
             WHERE (SELECT d.decision FROM source_candidate_decisions d
                    WHERE d.candidate_id = c.id
                    ORDER BY d.id DESC LIMIT 1) = 'approved'""").fetchall()
-    selected = [{"domain": domain, "target_id": target, "provider": provider}
-                for domain, target, provider in selected]
+    selected = [{"domain": domain, "target_id": target, "provider": provider, "text_sha256": text_sha}
+                for domain, target, provider, text_sha in selected]
     rows = recorded_rows(documents)
+    machine = documents.get("gossip-machine-one-to-one.json", {"versions": [], "imports": []})
+    versions = {r["id"]: r for r in machine["versions"]}
+    for ref in machine["imports"]:
+        row = versions[ref["version_id"]]
+        scope, hashed = row["target_id"].split(":")[1:]
+        rows.append({"domain": "gossip_common" if scope == "common" else "gossip",
+                     "unit": row["target_id"], "entity": scope, "source": "classicua",
+                     "route": "machine_1to1", "text_sha256": row["text_sha256"]})
     choices = recorded_rows({}, selected)
     return {"recorded_imports": _group(rows),
             "selected_not_necessarily_built": _group(choices)}
@@ -130,8 +157,13 @@ def _validate_build_rows(rows):
         raise ValueError("invalid_build_inventory_rows")
     indexed = {}
     for row in rows:
-        if type(row) is not dict or set(row) != {"domain", "unit", "entity", "source", "route"}:
+        if type(row) is not dict or set(row) not in (
+                {"domain", "unit", "entity", "source", "route"},
+                {"domain", "unit", "entity", "source", "route", "text_sha256"}):
             raise ValueError("invalid_build_inventory_row")
+        if "text_sha256" in row and (type(row["text_sha256"]) is not str
+                                      or not HEX64.fullmatch(row["text_sha256"])):
+            raise ValueError("invalid_build_inventory_text_fingerprint")
         if (row["domain"] not in CATEGORIES or row["route"] not in ROUTES
                 or any(type(row[k]) is not str or not row[k] or len(row[k]) > 256
                        for k in ("unit", "entity", "source"))):
@@ -171,11 +203,13 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
                     (fingerprint, artifact_sha256, spoken_revision, classicua_revision))
                 snapshot_id = cur.lastrowid
                 db.executemany("""INSERT INTO build_import_units
-                    (snapshot_id, domain, unit_key, entity_key, source, route)
-                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    (snapshot_id, domain, unit_key, entity_key, source, route, text_sha256)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     [(snapshot_id, r["domain"], r["unit"], r["entity"],
-                      r["source"], r["route"]) for r in checked])
+                      r["source"], r["route"], r.get("text_sha256", "")) for r in checked])
                 new = True
+            db.execute("""INSERT INTO build_import_head(singleton, snapshot_id) VALUES(1, ?)
+                ON CONFLICT(singleton) DO UPDATE SET snapshot_id=excluded.snapshot_id""", (snapshot_id,))
             db.commit()
         except BaseException:
             db.rollback()
@@ -187,13 +221,13 @@ def latest_successful_build(db_path):
     with connection(db_path) as db:
         head = db.execute("""SELECT id, artifact_sha256, spoken_revision,
             classicua_revision, created_at FROM build_import_snapshots
-            ORDER BY id DESC LIMIT 1""").fetchone()
+            WHERE id = (SELECT snapshot_id FROM build_import_head WHERE singleton=1)""").fetchone()
         if head is None:
             return None
         rows = [
-            {"domain": d, "unit": u, "entity": e, "source": s, "route": r}
-            for d, u, e, s, r in db.execute("""SELECT domain, unit_key, entity_key,
-                source, route FROM build_import_units WHERE snapshot_id = ?""",
+            {"domain": d, "unit": u, "entity": e, "source": s, "route": r, "text_sha256": t}
+            for d, u, e, s, r, t in db.execute("""SELECT domain, unit_key, entity_key,
+                source, route, text_sha256 FROM build_import_units WHERE snapshot_id = ?""",
                                              (head[0],))]
     return {"snapshot_id": head[0], "artifact_sha256": head[1],
             "spoken_revision": head[2], "classicua_revision": head[3],

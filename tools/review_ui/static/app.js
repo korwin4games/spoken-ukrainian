@@ -310,6 +310,7 @@ async function reviewPost(route, payload) {
   if (!response.ok) throw new Error(result.reason || result.error || "evidence_or_storage_conflict");
   // Read-only statistics are recomputed from authoritative SQLite imports.
   window.dispatchEvent(new Event("spoken-import-stats-refresh"));
+  window.dispatchEvent(new Event("spoken-gossip-machine-refresh"));
   return result;
 }
 function resetMappingAttestations() {
@@ -906,7 +907,9 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
       for (const value of [
         names[entry.category] || entry.category,
         entry.source, routes[entry.route] || entry.route,
-        entry.text_records, entry.unique_entities
+        entry.text_records + " / unique texts: " + entry.unique_translation_texts +
+          (entry.unknown_text_fingerprints ? " (без fingerprint: " + entry.unknown_text_fingerprints + ")" : ""),
+        entry.unique_entities
       ]) row.appendChild(make("td", "", value));
       container.appendChild(row);
     }
@@ -955,4 +958,56 @@ loadTranslations().catch(() => setText(t("feedback"), "Не вдалося пе�
   root("refresh").addEventListener("click", loadImportStatistics);
   window.addEventListener("spoken-import-stats-refresh", loadImportStatistics);
   loadImportStatistics();
+})();
+
+(function() {
+  const el = id => document.getElementById("gm-" + id);
+  let offset = 0, busy = false;
+  async function load() {
+    if (busy) return;
+    busy = true;
+    try {
+      const response = await fetch("/api/gossip-machine?status=" +
+        encodeURIComponent(el("filter").value) + "&offset=" + offset + "&limit=40", {cache: "no-store"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.reason || data.error);
+      const s = data.statuses_npc_wordings;
+      setText(el("summary"), "Canonical NPC/hash: " + data.total_canonical_npc_wordings +
+        " · Unique English: " + data.unique_english_wordings +
+        " · Eligible import units: " + data.eligible_1to1_candidates +
+        " · Machine imports (common рахується один раз): " + data.machine_imported_records +
+        " · Human approved NPC/hash: " + (s.approved || 0) +
+        " · Human imported groups: " + data.human_imported_groups +
+        " · Pending: " + ((s.pending || 0) + (s.pending_update || 0) + (s.deferred || 0)) +
+        " · Rejected: " + (s.rejected || 0) + " · Conflicts: " + (s.conflict || 0) +
+        " · Untranslated: " + (s.untranslated || 0) + " · Unknown context rows: " + data.unknown_context_rows);
+      el("items").replaceChildren();
+      for (const item of data.items) {
+        const row = make("tr");
+        for (const value of [item.npc_id, item.english_hash, item.status, item.target_id])
+          row.appendChild(make("td", "", value));
+        el("items").appendChild(row);
+      }
+      el("prev").disabled = offset === 0;
+      el("next").disabled = offset + 40 >= data.total;
+    } catch (error) {
+      setText(el("feedback"), "Помилка: " + error.message +
+        ". Перевірте pinned checkouts і SQLite; після змін перезапустіть UI. Pending update потребує окремого ручного Source Review.");
+    } finally { busy = false; }
+  }
+  el("import").addEventListener("click", async () => {
+    el("import").disabled = true;
+    try {
+      await reviewPost("/api/gossip-machine/import", {});
+      setText(el("feedback"), "Provisional імпорт збережено. Людське схвалення та ZIP включення — окремі стани.");
+      await load();
+    } catch (error) { setText(el("feedback"), "Імпорт відхилено: " + error.message + ". Перевірте джерела та перезапустіть UI."); }
+    finally { el("import").disabled = false; }
+  });
+  el("filter").addEventListener("change", () => { offset = 0; load(); });
+  el("refresh").addEventListener("click", load);
+  el("prev").addEventListener("click", () => { offset = Math.max(0, offset - 40); load(); });
+  el("next").addEventListener("click", () => { offset += 40; load(); });
+  window.addEventListener("spoken-gossip-machine-refresh", load);
+  load();
 })();

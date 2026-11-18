@@ -258,6 +258,29 @@
       </table>
     </section>
 
+    <section class="review translation-section" aria-label="Gossip machine import">
+      <h2>Автоімпорт Gossip 1:1 · ClassicUA</h2>
+      <p>Machine provisional — без людського схвалення якості чи прав. Лише приватний тест.
+        Фактичне включення дивіться окремо в Translation Import Statistics · SQLite.</p>
+      <button type="button" id="gm-import">Імпортувати перевірені 1:1</button>
+      <button type="button" class="secondary" id="gm-refresh">Оновити</button>
+      <label for="gm-filter">Статус NPC/hash</label>
+      <select id="gm-filter">
+        <option value="all">Усі</option><option value="eligible">Доступні 1:1</option>
+        <option value="machine_1to1_provisional">Machine provisional</option>
+        <option value="approved">Human approved</option><option value="pending">Pending</option>
+        <option value="pending_update">Pending update</option><option value="rejected">Rejected</option>
+        <option value="deferred">Deferred</option><option value="conflict">Конфлікти</option>
+        <option value="untranslated">Неперекладені</option><option value="source_selected">Source review</option>
+      </select>
+      <p id="gm-summary" class="stats" aria-live="polite"></p>
+      <p id="gm-feedback" role="status"></p>
+      <button type="button" id="gm-prev">← Попередні</button>
+      <button type="button" id="gm-next">Наступні →</button>
+      <table><thead><tr><th>NPC ID</th><th>English hash</th><th>Статус</th><th>Import identity</th></tr></thead>
+        <tbody id="gm-items"></tbody></table>
+    </section>
+
     <section class="review translation-section" aria-label="Source Revision Review">
       <div class="review-heading">
         <h2>Source Revision Review · ClassicUA / Source B</h2>

@@ -424,3 +424,12 @@ to inspect the original English text.
 - Do not publish or upload the `dist/` ZIP or any generated corpus
   without independently reviewed mapping/content and authorized release
   approval. The historical diagnostic ZIP remains unchanged.
+
+## Gossip ClassicUA machine import
+
+Every local build also refreshes the separate provisional Gossip machine ledger.
+Only current unambiguous pinned Spoken NPC/English-hash matches are embedded;
+common fallbacks are deduplicated. Human reviews and source selections are never
+replaced automatically. See [Gossip machine import, SQLite counts and Forever
+acceptance steps](GOSSIP_MACHINE_IMPORT.md). This remains native Gossip UI test
+content, without Spoken caption/audio changes or publication approval.

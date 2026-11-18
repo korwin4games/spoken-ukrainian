@@ -71,7 +71,7 @@ class SourcePolicy:
         return source in self.auto_approve_sources
 
     def allows_ai_transations(self, source: str) -> bool:
-        """User opt-in for provisional machine Quest imports only (not approval)."""
+        """User opt-in for provisional machine Quest/Gossip imports (not approval)."""
         return source in self.allow_ai_sources
 
     @classmethod

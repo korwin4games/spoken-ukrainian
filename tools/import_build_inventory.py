@@ -16,7 +16,8 @@ QUEST_MOMENT = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z
 
 
 def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
-                       selected_gossip, selected_quest, trusted_gossip, db_path):
+                       selected_gossip, selected_quest, trusted_gossip, db_path,
+                       machine_gossip=None):
     """Build a metadata-only manifest from the same selected texts as the ZIP."""
     rows = []
     by_moment = defaultdict(list)
@@ -82,19 +83,21 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
 
     for hashed in sorted(gossip["common"]):
         rows.append({"domain": "gossip_common", "unit": f"common:{hashed}",
-                     "entity": "common", "source": "classicua", "route": "pinned_source"})
+                     "entity": "common", "source": "classicua",
+                     "route": "machine_1to1" if machine_gossip is not None else "pinned_source"})
     for npc, translations in sorted(gossip["byNpc"].items()):
         for hashed in sorted(translations):
             key = (npc, hashed)
             if key in selected:
                 source, route = selected[key], "source_selected"
-            elif key in reviewed_gossip.get(npc, {}):
+            elif hashed in reviewed_gossip.get(npc, {}):
                 proof = trusted_gossip.get(("gossip", f"gossip:{npc}:{hashed}"))
                 if not proof or proof["english_sha256"] not in reviews:
                     raise ValueError("build_import_gossip_provenance_missing")
                 source, route = reviews[proof["english_sha256"]], "reviewed"
             else:
-                source, route = "classicua", "pinned_source"
+                source, route = "classicua", ("machine_1to1" if machine_gossip is not None
+                                             else "pinned_source")
             rows.append({"domain": "gossip", "unit": f"npc:{npc}:{hashed}",
                          "entity": str(npc), "source": source, "route": route})
 
@@ -104,4 +107,14 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
                          "unit": f"title:{faction}:{quest_id}",
                          "entity": str(quest_id),
                          "source": "classicua", "route": "pinned_source"})
+    from hashlib import sha256
+    for row in rows:
+        if row["domain"] == "gossip":
+            _, npc, hashed = row["unit"].split(":")
+            text = gossip["byNpc"][int(npc)][int(hashed)]
+        elif row["domain"] == "gossip_common":
+            text = gossip["common"][int(row["unit"].split(":")[1])]
+        else:
+            continue
+        row["text_sha256"] = sha256(text.encode("utf-8")).hexdigest()
     return rows

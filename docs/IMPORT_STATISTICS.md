@@ -105,3 +105,25 @@ respective tables.
   includes both import inventories and all previous approval/history records.
 - The ZIP remains a **private test build**, not a release. The numbers are
   auditable metadata, not a claim that NPC/text rendering works in WoW.
+
+## Gossip machine imports (schema v5)
+
+See [the step-by-step Gossip import workflow](GOSSIP_MACHINE_IMPORT.md).
+The sixth strict SQLite document records machine Gossip imports separately
+from all human decisions. `machine_1to1` covers matched NPC/hash imports and
+one record per matched common hash; unmatched ClassicUA hashes no longer enter
+new local ZIPs merely because they occur in the source. Source selections and
+human imports keep their existing precedence and validation.
+
+Each report section now includes `gossip_counts`: unique translation-text
+fingerprints, actual NPC/hash occurrences, distinct NPC IDs, common fallback
+translations and recorded reviewed English groups. Per-route rows additionally
+show `unique_translation_texts` and `unknown_text_fingerprints`. Historical
+snapshots without fingerprints report unknown counts; zero known fingerprints
+is not a claim that the archive contained no text. A common fallback is counted
+once, never once per possible NPC. NPC occurrence counts belong to the NPC table;
+the common table does not fabricate an expanded runtime coverage count.
+
+Schema v5 adds `build_import_units.text_sha256` and the single-row
+`build_import_head` pointer. Immutable snapshots remain intact; the head follows
+the last successful build even when an older identical snapshot is reused.

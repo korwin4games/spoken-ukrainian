@@ -10,6 +10,7 @@ from adapters.source_revision_store import SourceReviewStore, CHECKS
 from tools.gossip_coverage import classicua_hash
 from tools.source_revision_review import gossip_contexts
 from tools import build_ukrainian as builder
+from tools import gossip_machine_import
 
 
 class SourceSelectedBuildTests(unittest.TestCase):
@@ -44,6 +45,11 @@ class SourceSelectedBuildTests(unittest.TestCase):
                 captured.update(files)
                 return Path("dist/synthetic.zip"), "c" * 64
             with enable_sqlite(db), patch.object(
+                gossip_machine_import,
+                "GossipMachineImport", return_value=Mock(
+                    build_lookup=Mock(return_value={"byNpc": {}, "common": {
+                        classicua_hash("Hello traveler."): "Стара версія"}}),
+                    page=Mock(return_value={}))), patch.object(
                 builder, "validate_source_paths"), patch.object(
                 builder, "build_state", return_value=state), patch.object(
                 builder, "current_quest_texts", return_value=(preview, 1, 0)), patch.object(

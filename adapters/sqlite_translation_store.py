@@ -17,6 +17,7 @@ LEDGER_NAMES = frozenset({
     "translation-reviews.json",
     "machine-one-to-one.json",
     "gossip-translation-reviews.json",
+    "gossip-machine-one-to-one.json",
 })
 DB_ENV = "SPOKEN_TRANSLATION_DB"
 
@@ -167,6 +168,20 @@ def connection(path):
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
             INSERT OR IGNORE INTO schema_migrations(version) VALUES (4);
         """)
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            if "text_sha256" not in {r[1] for r in db.execute("PRAGMA table_info(build_import_units)")}:
+                db.execute("ALTER TABLE build_import_units ADD COLUMN text_sha256 TEXT NOT NULL DEFAULT ''")
+            db.execute("""CREATE TABLE IF NOT EXISTS build_import_head (
+                singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
+            db.execute("""INSERT OR IGNORE INTO build_import_head(singleton, snapshot_id)
+                SELECT 1, MAX(id) FROM build_import_snapshots HAVING COUNT(*) > 0""")
+            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (5)")
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
         os.chmod(path, 0o600)
         yield db
     finally:
