@@ -4,7 +4,7 @@ SQLite is the writable source of truth once enabled. Each exact legacy JSON
 ledger is migrated once and retained untouched as an import backup. Normalized
 translation_memory provides cross-revision text reuse without auto-approval.
 """
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 import json
@@ -279,10 +279,13 @@ class SQLiteDocument:
 
 def backup_database(db_path, destination):
     """Consistent online SQLite snapshot (including schema and all review ledgers)."""
-    original = protected_path(db_path)
-    output = protected_path(destination)
-    if original == output or not original.is_file():
-        raise ValueError("sqlite_backup_source_or_target_invalid")
+    # Check symlinks before resolving aliases such as directory/../database.
+    original = protected_path(db_path).resolve()
+    output = protected_path(destination).resolve()
+    if not original.is_file():
+        raise ValueError("sqlite_backup_source_missing")
+    if original == output:
+        raise ValueError("sqlite_backup_same_path")
     output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     # O_EXCL prevents an existing or concurrently created backup being
     # overwritten. O_NOFOLLOW blocks symlink swaps at the destination.
@@ -294,7 +297,12 @@ def backup_database(db_path, destination):
         raise ValueError("sqlite_backup_create_failed") from None
     os.close(fd)
     try:
-        with sqlite3.connect(original) as source, sqlite3.connect(output) as target:
+        # Never create a source that disappears after validation, or initialize
+        # or migrate the source schema as a side effect of backing it up.
+        with (
+            closing(sqlite3.connect(original.as_uri() + "?mode=ro", uri=True)) as source,
+            closing(sqlite3.connect(output)) as target,
+        ):
             source.backup(target)
         os.chmod(output, 0o600)
     except BaseException:
