@@ -20,11 +20,12 @@ class GossipMachineImport:
         self.state, self.spoken = state, spoken
         self.allowed = Path(allowed or state.allowed_directory)
 
-    def inspect(self):
+    def inspect(self, *, revalidate=True):
         from tools.build_ukrainian import local_gossip_texts
         from tools.gossip_coverage import read_pinned_corpus
         from tools.gossip_translation_review import EMPTY, validate_ledger
-        self.state.revalidate_inputs()
+        if revalidate:
+            self.state.revalidate_inputs()
         lines = read_pinned_corpus(self.spoken, self.state.inventory.revision)
         enabled = "classicua" in self.state.policy.sources and self.state.policy.stores("classicua")
         lookup = local_gossip_texts(self.state) if enabled else {"byNpc": {}, "common": {}}

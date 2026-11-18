@@ -139,3 +139,21 @@ uv run --locked python tools/version.py show
 uv run --locked python tools/version.py check
 uv run --locked python tools/version.py bump patch --dry-run
 ```
+
+## Unified Translation Manager
+
+`translation_manager.py reimport` applies the same staged operation as the
+localhost manager. The only supported module is `Spoken_Quests_UA`. The
+checkout flags name the clean pinned repositories; `--db` can select a private
+SQLite database. Use `--dry-run` to build an isolated preview, and `--confirm`
+to promote the validated state and ZIP. `--reset-test-data` clears only the
+selected module's test review/import histories and manual source choices.
+The summary distinguishes database records, effective Quest moments, Gossip
+occurrences and serialized common units. `--json` includes detailed results
+and failure codes. Exit 0 indicates preview or successful promotion, 1 a
+failed operation, and 2 invalid CLI syntax. See the [manager guide](TRANSLATION_MANAGER.md).
+
+```bash
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quests_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --dry-run --json
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quests_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --confirm
+```

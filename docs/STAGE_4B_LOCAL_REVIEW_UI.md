@@ -223,3 +223,11 @@ uv run --locked python -m unittest discover -s tests -v
 Тести охоплюють незалежні mapping proofs, content attestations, редагування,
 версії, декілька synthetic providers, пріоритет, повторне збереження/імпорт,
 застарілі докази, схеми, конфлікти, symlinks та HTTP Host/Origin/CSRF/size.
+
+The localhost root now opens the [Translation Manager](TRANSLATION_MANAGER.md)
+for Quest + Gossip. The existing workbench and all manual review panels are
+available at `/advanced`. The manager derives inclusion from SQLite build
+units and the matching private ZIP SHA-256. It runs the same CLI reimport in
+an isolated worker. The worker stages review/import changes and ZIP generation
+before scoped promotion. Preview and failed builds leave the previous
+effective build available. Human review contracts continue to apply.

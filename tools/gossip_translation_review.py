@@ -244,7 +244,7 @@ class GossipReviews:
         self.file.save(copy)
         return version_status(row)
 
-    def import_approved(self):
+    def import_approved(self, *, skipped=None):
         by_group = defaultdict(list)
         for row in self.file.data["versions"]:
             if self.current(row) and version_status(row) == "approved":
@@ -252,6 +252,9 @@ class GossipReviews:
         output = []
         for group, versions in sorted(by_group.items()):
             if len(versions) != 1:
+                if skipped is not None:
+                    skipped.append((group, "conflicting_gossip_approved_versions"))
+                    continue
                 raise ValueError("conflicting_gossip_approved_versions")
             output.append({"group_id": group, "version_id": versions[0]["id"]})
         copy = deepcopy(self.file.data)

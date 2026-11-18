@@ -259,7 +259,7 @@ class SQLiteDocument:
         with connection(self.db_path) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                row = db.execute("SELECT payload FROM ledger_documents WHERE ledger_name = ?",
+                row = db.execute("SELECT payload, revision FROM ledger_documents WHERE ledger_name = ?",
                                  (self.name,)).fetchone()
                 if row is None:
                     # First run: import existing ignored JSON, do not delete it.
@@ -274,21 +274,22 @@ class SQLiteDocument:
                         """INSERT INTO ledger_documents(ledger_name, payload, revision)
                            VALUES(?, ?, 1)""", (self.name, payload))
                     _memory_versions(db, self.name, data)
+                    revision = 1
                 else:
-                    payload = row[0]
+                    payload, revision = row
                     from adapters.local_review_store import strict_json
                     data = self.validate(strict_json(payload))
                 db.commit()
             except BaseException:
                 db.rollback()
                 raise
-        self.baseline, self.data = payload, data
+        self.baseline, self.revision, self.data = payload, revision, data
 
     def check_unchanged(self):
         with connection(self.db_path) as db:
-            row = db.execute("SELECT payload FROM ledger_documents WHERE ledger_name = ?",
+            row = db.execute("SELECT payload, revision FROM ledger_documents WHERE ledger_name = ?",
                              (self.name,)).fetchone()
-        if row is None or row[0] != self.baseline:
+        if row != (self.baseline, self.revision):
             raise ValueError("local_review_conflict_restart_and_reload")
 
     def save(self, data):
@@ -297,9 +298,9 @@ class SQLiteDocument:
         with connection(self.db_path) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                row = db.execute("SELECT payload FROM ledger_documents WHERE ledger_name = ?",
+                row = db.execute("SELECT payload, revision FROM ledger_documents WHERE ledger_name = ?",
                                  (self.name,)).fetchone()
-                if row is None or row[0] != self.baseline:
+                if row != (self.baseline, self.revision):
                     raise ValueError("local_review_conflict_restart_and_reload")
                 if payload != self.baseline:
                     db.execute(
@@ -312,6 +313,8 @@ class SQLiteDocument:
             except BaseException:
                 db.rollback()
                 raise
+        if payload != self.baseline:
+            self.revision += 1
         self.baseline, self.data = payload, checked
         return checked
 

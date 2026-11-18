@@ -83,7 +83,8 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
 
 def create_handler(state, token, port, gossip_reviews=None,
                    source_reviews=None, source_trusted=None, import_db_path=None,
-                   gossip_machine=None, translation_agent=None):
+                   gossip_machine=None, translation_agent=None, manager=None,
+                   refresh_advanced=None):
     """Return request handler with strict host/origin and anti-CSRF policy."""
     allowed_host = f"127.0.0.1:{port}"
     allowed_origin = f"http://{allowed_host}"
@@ -91,7 +92,16 @@ def create_handler(state, token, port, gossip_reviews=None,
         "/": (STATIC / "index.html", "text/html; charset=utf-8"),
         "/app.js": (STATIC / "app.js", "text/javascript; charset=utf-8"),
         "/styles.css": (STATIC / "styles.css", "text/css; charset=utf-8"),
+        "/advanced": (STATIC / "index.html", "text/html; charset=utf-8"),
+        "/manager.js": (STATIC / "manager.js", "text/javascript; charset=utf-8"),
+        "/manager.css": (STATIC / "manager.css", "text/css; charset=utf-8"),
     }
+    if manager is not None:
+        files["/"] = (STATIC / "manager.html", "text/html; charset=utf-8")
+
+    def reload_advanced():
+        nonlocal state, gossip_reviews, source_trusted, gossip_machine, translation_agent
+        state, gossip_reviews, source_trusted, gossip_machine, translation_agent = refresh_advanced()
 
     class LocalHandler(BaseHTTPRequestHandler):
         def _event(self, event, outcome, reason=None):
@@ -140,6 +150,12 @@ def create_handler(state, token, port, gossip_reviews=None,
                 return
             parts = urlsplit(self.path)
             if parts.path in files and not parts.query:
+                if parts.path == "/advanced" and refresh_advanced is not None:
+                    try:
+                        reload_advanced()
+                    except (ValueError, OSError, TypeError, KeyError) as exc:
+                        self._json(409, {"error": _reason(exc)})
+                        return
                 path, mime = files[parts.path]
                 self._reply(200, path.read_bytes(), mime)
                 return
@@ -149,6 +165,13 @@ def create_handler(state, token, port, gossip_reviews=None,
                                  "text_policy": "private_ignored_local_storage",
                                  "mapping_proof_required": True})
                 return
+            if (state is None and refresh_advanced is not None
+                    and parts.path.startswith("/api/") and parts.path != "/api/import-stats"):
+                try:
+                    reload_advanced()
+                except (ValueError, OSError, TypeError, KeyError) as exc:
+                    self._json(409, {"error": _reason(exc)})
+                    return
             if parts.path == "/api/translations" and not parts.query:
                 try:
                     self._json(200, state.translation_page())
@@ -263,7 +286,8 @@ def create_handler(state, token, port, gossip_reviews=None,
                       "/api/gossip-machine/import",
                       "/api/gossip/propose", "/api/gossip/decide", "/api/gossip/import",
                       "/api/source-reviews/decide", "/api/source-reviews/activate",
-                      "/api/source-reviews/clear", "/api/source-comparison", "/api/agent"}
+                      "/api/source-reviews/clear", "/api/source-comparison", "/api/agent",
+                      "/api/manager/list", "/api/manager/detail", "/api/manager/reimport"}
             if route not in routes or "?" in self.path:
                 self._json(404, {"error": "not_found"})
                 return
@@ -303,13 +327,22 @@ def create_handler(state, token, port, gossip_reviews=None,
                      "/api/source-reviews/activate": "source_review.activate",
                      "/api/source-reviews/clear": "source_review.clear",
                      "/api/source-comparison": "source_review.compare",
-                     "/api/agent": "translation_agent"}[route]
+                     "/api/agent": "translation_agent", "/api/manager/list": "manager.list",
+                     "/api/manager/detail": "manager.detail",
+                     "/api/manager/reimport": "manager.reimport"}[route]
             self._event(event, "requested")
             try:
                 payload = strict_json(self.rfile.read(length))
                 if type(payload) is not dict:
                     raise ValueError("invalid_review_request")
-                if route == "/api/agent":
+                if (state is None and refresh_advanced is not None
+                        and not route.startswith("/api/manager/")):
+                    reload_advanced()
+                if route.startswith("/api/manager/"):
+                    if manager is None:
+                        raise ValueError("manager_unavailable")
+                    result = manager.action(route.rsplit("/", 1)[1], payload)
+                elif route == "/api/agent":
                     keys = {"action", "module", "candidate_ids", "limit", "offset",
                             "status", "dry_run", "confirm", "model"}
                     if translation_agent is None or "action" not in payload or set(payload) - keys:
@@ -486,8 +519,9 @@ def main(argv=None):
                        for path in (args.classicua, args.spoken))
                 or any(out == path.resolve() for out in outputs for path in inputs)):
             raise ValueError("review_storage_conflicts_with_input")
-        state = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
-                            outputs[1], outputs[2], args.policy)
+        if args.auto_import_one_to_one or args.import_approved:
+            state = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
+                                outputs[1], outputs[2], args.policy)
         if args.auto_import_one_to_one:
             LOGGER.info("translation.auto_import_one_to_one requested (CLI)")
             result = state.translation_action(
@@ -509,30 +543,33 @@ def main(argv=None):
         from tools.gossip_coverage import read_pinned_corpus
         from tools.build_ukrainian import local_gossip_texts
         from tools.gossip_translation_review import discover_groups, GossipReviews
-        spoken_lines = read_pinned_corpus(args.spoken, state.inventory.revision)
-        gossip_groups, _ = discover_groups(
-            spoken_lines, local_gossip_texts(state),
-            state.inventory.revision, state.source.revision)
-        gossip_reviews = GossipReviews(
-            gossip_groups, state.inventory.revision, state.source.revision)
         from adapters.source_revision_store import SourceReviewStore
         from adapters.sqlite_translation_store import DB_ENV, default_db_path
         from tools.source_revision_review import trusted_inventory
         import os
-        source_trusted = trusted_inventory(state, spoken_lines)
         source_reviews = SourceReviewStore(os.environ.get(DB_ENV) or default_db_path())
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
         from tools.gossip_machine_import import GossipMachineImport
         from adapters.translation_agent import TranslationAgent
         from tools.translation_agent import evidence
+        from tools.translation_manager import ManagerUI
         db_path = os.environ.get(DB_ENV) or default_db_path()
+        manager = ManagerUI(args.classicua, args.spoken, db_path)
+
+        def refresh_advanced():
+            current = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
+                                  outputs[1], outputs[2], args.policy)
+            lines = read_pinned_corpus(args.spoken, current.inventory.revision)
+            groups, _ = discover_groups(lines, local_gossip_texts(current),
+                                        current.inventory.revision, current.source.revision)
+            return (current, GossipReviews(groups, current.inventory.revision, current.source.revision),
+                    trusted_inventory(current, lines), GossipMachineImport(current, args.spoken),
+                    TranslationAgent(db_path, lambda: evidence(current, args.spoken, db_path)))
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
-            create_handler(state, secrets.token_urlsafe(32), args.port,
-                           gossip_reviews, source_reviews, source_trusted,
-                           db_path, gossip_machine=GossipMachineImport(state, args.spoken),
-                           translation_agent=TranslationAgent(
-                               db_path, lambda: evidence(state, args.spoken, db_path))))
+            create_handler(None, secrets.token_urlsafe(32), args.port,
+                           source_reviews=source_reviews, import_db_path=db_path,
+                           manager=manager, refresh_advanced=refresh_advanced))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)
@@ -543,8 +580,8 @@ def main(argv=None):
         print("review_ui_pinned_sources_or_local_bind_failed", file=sys.stderr)
         return 1
     LOGGER.info("startup succeeded; listening on localhost port %d", args.port)
-    print(f"Spoken_Quests offline translation review/import UI: http://127.0.0.1:{args.port}/", flush=True)
-    print("Offline-only (not a WoW AddOn): Quest and Gossip review; Gossip requires explicit human approval and import. No game installation.", flush=True)
+    print(f"Quest + Gossip Translation Manager: http://127.0.0.1:{args.port}/", flush=True)
+    print("Private local builds. Advanced review is available at /advanced.", flush=True)
     try:
         with server:
             server.serve_forever()

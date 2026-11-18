@@ -65,13 +65,14 @@ def lua_quote(value):
     return "".join(out)
 
 
-def current_quest_texts(state, selected_out=None, agent_rows=()):
+def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None):
     """Only currently imported references after real full-source revalidation."""
     machine = validate_machine_ledger(state.machine_imports.file.data)
     reviewed = _validate_ledger(state.translations.file.data)
     version_by_id = {v["id"]: v for v in reviewed["versions"]}
     machine_by_id = {v["id"]: v for v in machine["versions"]}
     texts = {}
+    conflicted_moments = set()
     supporting_fields = defaultdict(lambda: {"title": set(), "objective": set()})
     source_views = None
     for imports, versions, human in (
@@ -131,33 +132,45 @@ def current_quest_texts(state, selected_out=None, agent_rows=()):
     if db_path:
         from adapters.source_revision_store import SourceReviewStore
         from tools.source_revision_review import quest_contexts
-        selected_quest = SourceReviewStore(db_path).active(quest_contexts(state), domain="quest")
-        if selected_out is not None:
-            selected_out.extend(selected_quest)
+        selected_quest = SourceReviewStore(db_path).active(
+            quest_contexts(state), domain="quest", skipped=skipped)
         if selected_quest:
             mapped = {o.target_id for o in state.translation_observations()}
             for selection in selected_quest:
                 target = selection["target_id"]
                 if target not in mapped:
+                    if skipped is not None:
+                        skipped.append((target, "source_quest_selection_requires_approved_stage3_mapping"))
+                        continue
                     raise ValueError("source_quest_selection_requires_approved_stage3_mapping")
                 already = texts.get(target)
                 if (already and already["reviewed"]
                         and already["text"] != selection["ukrainian_text"]):
+                    if skipped is not None:
+                        skipped.append((target, "conflicting_human_reviewed_quest_selection"))
+                        conflicted_moments.add(QUEST_TARGET.fullmatch(target).groups())
+                        continue
                     raise ValueError("conflicting_human_reviewed_quest_selection")
                 texts[target] = {"text": selection["ukrainian_text"], "reviewed": True}
+                if selected_out is not None:
+                    selected_out.append(selection)
     # The preview only has QuestID and event from public WoW functions.
     # It cannot choose between different NPC voice / wording variants;
     # skip the whole moment when their texts conflict.
     moments = defaultdict(list)
     for target, data in texts.items():
         quest, event = QUEST_TARGET.fullmatch(target).groups()
+        if (quest, event) in conflicted_moments:
+            continue
         moments[(int(quest), event)].append(data)
     result = {}
-    skipped = 0
+    skipped_count = 0
     for (quest, event), rows in sorted(moments.items()):
         unique_texts = {row["text"] for row in rows}
         if len(unique_texts) != 1:
-            skipped += len(rows)
+            if skipped is not None:
+                skipped.append((f"q:{quest}:{event}", "conflicting_quest_runtime_variants"))
+            skipped_count += len(rows)
             continue
         result.setdefault(quest, {})[event] = {
             "text": rows[0]["text"],
@@ -169,7 +182,7 @@ def current_quest_texts(state, selected_out=None, agent_rows=()):
             for key, candidates in fields.items():
                 if len(candidates) == 1:
                     result[quest][key] = next(iter(candidates))
-    return result, len(texts), skipped
+    return result, len(texts), skipped_count
 
 
 def read_classicua_inflections(classicua_path, source_files):
@@ -533,7 +546,7 @@ def write_zip(entries, destination=ARCHIVE):
     return destination, sha
 
 
-def build(classicua, spoken):
+def build(classicua, spoken, *, prepare=None, destination=None, skipped=None):
     """Auto-import is mandatory; there is no build-without-import switch."""
     classicua, spoken = Path(classicua), Path(spoken)
     validate_source_paths(classicua, spoken)
@@ -547,8 +560,11 @@ def build(classicua, spoken):
     # Explicitly call the *same* guarded UI/CLI action. Re-check current
     # canonical mappings, source bytes, rights policy and source versions.
     report_action = state.translation_action(
-        "auto_import_one_to_one", {"source": "classicua"})
+        "auto_import_one_to_one", {"source": "classicua"},
+        **({} if skipped is None else {"skipped": skipped}))
     report = report_action["report"]
+    if prepare is not None:
+        prepare(state)
     from adapters.sqlite_translation_store import DB_ENV
     from adapters.translation_agent import TranslationAgent, has_imports
     db_path = os.environ.get(DB_ENV)
@@ -557,8 +573,9 @@ def build(classicua, spoken):
         from tools.translation_agent import evidence
         agent_rows = TranslationAgent(db_path, lambda: evidence(state, spoken, db_path)).effective_imports()
     selected_quest = []
-    if agent_rows:
-        preview, imported, ambiguous = current_quest_texts(state, selected_quest, agent_rows)
+    if agent_rows or skipped is not None:
+        preview, imported, ambiguous = current_quest_texts(
+            state, selected_quest, agent_rows, skipped=skipped)
     else:
         preview, imported, ambiguous = current_quest_texts(state, selected_quest)
     preview_count = sum(event in ("accept", "progress", "complete")
@@ -595,8 +612,8 @@ def build(classicua, spoken):
         from tools.source_revision_review import gossip_contexts
         from tools.gossip_coverage import read_pinned_corpus
         source_proofs = gossip_contexts(read_pinned_corpus(spoken, state.inventory.revision))
-        selected_gossip = SourceReviewStore(db_path).active(source_proofs, domain="gossip")
-        for selection in selected_gossip:
+        source_choices = SourceReviewStore(db_path).active(source_proofs, domain="gossip", skipped=skipped)
+        for selection in source_choices:
             match = re.fullmatch(r"gossip:([1-9][0-9]*):([1-9][0-9]*)",
                                  selection["target_id"])
             if match is None:
@@ -605,8 +622,16 @@ def build(classicua, spoken):
             existing_reviewed = reviewed_gossip.get(npc_id, {}).get(text_hash)
             if (existing_reviewed is not None
                     and existing_reviewed != selection["ukrainian_text"]):
+                if skipped is not None:
+                    skipped.append((selection["target_id"], "conflicting_human_reviewed_gossip_selection"))
+                    gossip["byNpc"][npc_id].pop(text_hash)
+                    # A common entry would still show a competing version to
+                    # this NPC. Omit it instead of silently choosing a winner.
+                    gossip["common"].pop(text_hash, None)
+                    continue
                 raise ValueError("conflicting_human_reviewed_gossip_selection")
             gossip["byNpc"].setdefault(npc_id, {})[text_hash] = selection["ukrainian_text"]
+            selected_gossip.append(selection)
     entries = template_entries(render_quest_lua(
         preview, state.inventory.revision, forms, titles),
         render_gossip_lua(gossip))
@@ -620,7 +645,7 @@ def build(classicua, spoken):
             state, preview, gossip, titles, reviewed_gossip,
             selected_gossip, selected_quest, source_proofs, db_path, machine_gossip=gossip,
             agent_rows=agent_rows)
-    artifact, digest = write_zip(entries)
+    artifact, digest = write_zip(entries) if destination is None else write_zip(entries, destination)
     if db_path:
         import_inventory = store_successful_build(
             db_path, artifact_sha256=digest,
@@ -664,7 +689,9 @@ def main(argv=None):
     print("Spoken Ukrainian local TEST build: running mandatory ClassicUA 1:1 auto-import...",
           flush=True)
     try:
-        result = build(args.classicua, args.spoken)
+        from tools.translation_manager import manager_lock
+        with manager_lock(DIST):
+            result = build(args.classicua, args.spoken)
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         print("Quest build failed reason=" + _reason(exc), file=sys.stderr)
         return 1

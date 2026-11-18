@@ -139,3 +139,21 @@ uv run --locked python tools/version.py show
 uv run --locked python tools/version.py check
 uv run --locked python tools/version.py bump patch --dry-run
 ```
+
+## Єдиний менеджер перекладів
+
+`translation_manager.py reimport` виконує ту саму операцію, що й локальний
+менеджер. Доступний модуль `Spoken_Quests_UA`. Передайте чисті закріплені
+копії джерел. `--db` дозволяє вибрати приватну SQLite. `--dry-run` збирає
+ізольований пробний ZIP, а `--confirm` застосовує перевірений стан і ZIP.
+`--reset-test-data` очищає лише тестові історії перевірки й імпорту та ручні
+вибори джерел цього модуля. Підсумок розрізняє записи в базі, фактичні
+етапи Quest, входження Gossip і спільні записи ZIP. `--json` показує
+детальні результати й коди помилок. Код 0 означає успішний перегляд або
+застосування, 1 — помилку операції, 2 — помилку синтаксису.
+Див. [посібник менеджера](TRANSLATION_MANAGER.md).
+
+```bash
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quests_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --dry-run --json
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quests_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --confirm
+```

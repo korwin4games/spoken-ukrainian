@@ -339,7 +339,7 @@ class SourceReviewStore:
                  "reviewer": reviewer, "created_at": date}
                 for candidate_id, action, reviewer, date in rows]
 
-    def active(self, trusted, domain=None):
+    def active(self, trusted, domain=None, *, skipped=None):
         """Fail closed if any selected context or human approval has become stale."""
         if domain is not None and domain not in DOMAINS:
             raise ValueError("unknown_source_domain")
@@ -351,9 +351,15 @@ class SourceReviewStore:
             output = []
             for row in rows:
                 candidate = _record(row)
-                _check_proof(candidate, trusted)
-                if self._status(db, candidate["id"]) != "approved":
-                    raise ValueError("stale_source_selection")
+                try:
+                    _check_proof(candidate, trusted)
+                    if self._status(db, candidate["id"]) != "approved":
+                        raise ValueError("stale_source_selection")
+                except ValueError as error:
+                    if skipped is None:
+                        raise
+                    skipped.append((candidate["target_id"], str(error)))
+                    continue
                 output.append(candidate)
         return output
 

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Менеджер перекладів · Spoken Ukrainian</title>
+  <link rel="stylesheet" href="/manager.css">
+  <script defer src="/manager.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap top-inner">
+      <div class="brand"><span class="mark" aria-hidden="true">SU</span><span>Spoken Ukrainian</span></div>
+      <a href="/advanced">Розширена перевірка <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="hero" aria-labelledby="heading">
+      <div>
+        <h1 id="heading">Менеджер перекладів</h1>
+        <p>Переглядайте переклади квестів і діалогів для локальної збірки.</p>
+      </div>
+      <div class="module-select">
+        <label for="module">Модуль</label>
+        <select id="module"><option value="Spoken_Quests_UA">Spoken_Quests_UA · Quest + Gossip</option></select>
+      </div>
+    </section>
+    <section class="overview" aria-label="Стан модуля">
+      <div id="metrics" class="metrics" aria-live="polite"></div>
+      <p id="build-state" class="build-state" role="status">Перевіряємо стан останньої збірки…</p>
+    </section>
+    <section class="operation" aria-labelledby="operation-heading">
+      <div>
+        <h2 id="operation-heading">Оновити переклади модуля</h2>
+        <label class="check"><input type="checkbox" id="reset"> Почати з чистих тестових даних</label>
+      </div>
+      <div class="actions">
+        <button type="button" id="preview">Попередній перегляд</button>
+        <button type="button" id="reimport" class="primary">Переімпортувати Quest + Gossip</button>
+      </div>
+      <p id="operation-status" class="status-line" role="status"></p>
+      <details id="run-summary" hidden><summary>Результат операції</summary><div id="run-details"></div></details>
+    </section>
+    <div class="workspace">
+      <section class="inventory" aria-labelledby="inventory-heading">
+        <header class="inventory-head">
+          <h2 id="inventory-heading">Переклади</h2>
+          <p id="match-count" role="status"></p>
+        </header>
+        <form id="filters">
+          <label class="query">Пошук
+            <input type="search" maxlength="200" id="query" placeholder="ID, назва, NPC або текст">
+          </label>
+          <label>Вміст ZIP
+            <select id="filter">
+              <option value="all">Усі</option><option value="imported">Імпортовані в ZIP</option>
+              <option value="not_imported">Не в ZIP</option><option value="conflicts">Конфлікти</option>
+            </select>
+          </label>
+          <label>Тип
+            <select id="kind">
+              <option value="all">Усі типи</option><option value="quest">Quest</option><option value="gossip">Gossip</option>
+            </select>
+          </label>
+          <label>Переклад
+            <select id="translation-status">
+              <option value="all">Усі статуси</option><option value="missing">Немає перекладу</option>
+              <option value="ready">Готовий</option><option value="review">Потрібна перевірка</option>
+              <option value="invalid">Не пройшов перевірку</option><option value="stale">Застарів</option>
+              <option value="rejected">Відхилено / відкладено</option>
+            </select>
+          </label>
+        </form>
+        <div class="table-scroll" tabindex="0" aria-label="Таблиця перекладів">
+          <table>
+            <thead><tr><th scope="col">Тип</th><th scope="col">ID</th><th scope="col">Назва / NPC</th>
+              <th scope="col">Імпорт</th><th scope="col">Переклад</th><th scope="col"><span class="sr-only">Проблема</span>⚑</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p id="list-message" role="status">Завантажуємо записи…</p>
+        <nav class="pager" aria-label="Сторінки перекладів">
+          <button type="button" id="prev" disabled>← Назад</button><span id="page"></span>
+          <button type="button" id="next" disabled>Далі →</button>
+        </nav>
+      </section>
+      <aside id="inspector" class="inspector" aria-labelledby="inspector-heading" aria-live="polite">
+        <h2 id="inspector-heading">Деталі запису</h2>
+        <div id="selected"><p class="muted">Виберіть квест або репліку у списку.</p></div>
+      </aside>
+    </div>
+  </main>
+  <dialog id="confirm" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title">Переімпорт Quest + Gossip</h2>
+      <p id="confirm-text"></p>
+      <div class="actions">
+        <button type="submit" value="cancel" autofocus>Скасувати</button>
+        <button type="submit" value="commit" class="primary">Підтвердити</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

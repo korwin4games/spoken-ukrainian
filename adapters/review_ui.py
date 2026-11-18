@@ -169,7 +169,7 @@ class LocalReviewState:
                 "current_candidates": [o.row() | {"stored_locally": self.policy.stores(o.candidate.provider),
                                                    "english_original": o.original} for o in observations]}
 
-    def translation_action(self, action, payload):
+    def translation_action(self, action, payload, *, skipped=None):
         with self._lock:
             if self.revalidate_inputs is not None:
                 self.revalidate_inputs()
@@ -205,12 +205,17 @@ class LocalReviewState:
                 saved = self.translations.observe(
                     observations, self.policy, one_to_one_pairs=pairs)
                 result = self.translations.import_approved(
-                    observations, self.policy, one_to_one_pairs=pairs)
+                    observations, self.policy, one_to_one_pairs=pairs, skipped=skipped)
                 machine_rows = machine_candidates(
                     self.dataset, self.source, self.inventory,
                     self.original_index, self._hints,
                     allow_ai_transations=self.policy.allows_ai_transations("classicua"))
                 blocked = {row["target_id"] for row in self.translations.file.data["versions"]}
+                if skipped is not None:
+                    decisions = self.decisions["decisions"]
+                    blocked.update(row["target_id"] for row in decisions)
+                    skipped.extend((row["target_id"], "quest_mapping_rejected_or_deferred")
+                                   for row in decisions)
                 machine_result = self.machine_imports.run(machine_rows, blocked_targets=blocked)
                 summary = import_summary(
                     self.inventory, observations, self.policy, self.translations,

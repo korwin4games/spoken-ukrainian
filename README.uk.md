@@ -1,6 +1,7 @@
 # Spoken Ukrainian 🇺🇦
 
 [Посібник з командного рядка](docs/CLI.uk.md) · [English CLI guide](docs/CLI.md)
+Переглядайте Quest і Gossip разом та збирайте приватний ZIP у локальному менеджері перекладів. [Посібник менеджера](docs/TRANSLATION_MANAGER.md)
 
 **[English](README.md) | [Українська](README.uk.md)**
 

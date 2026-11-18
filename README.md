@@ -1,6 +1,7 @@
 # Spoken Ukrainian 🇺🇦
 
 [Complete CLI guide](docs/CLI.md) · [Посібник українською](docs/CLI.uk.md)
+Open the local Translation Manager to browse Quest and Gossip together and rebuild the private ZIP. [Manager guide](docs/TRANSLATION_MANAGER.md)
 
 **[English](README.md) | [Українська](README.uk.md)**
 
