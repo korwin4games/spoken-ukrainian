@@ -326,8 +326,10 @@ def create_handler(state, token, port, gossip_reviews=None,
                         required = keys - {"change_filter", "offset", "limit"}
                         if not required <= set(payload) <= keys:
                             raise ValueError("invalid_source_comparison")
-                        result = source_reviews.compare_snapshots(
-                            **({"limit": 10} | payload))
+                        options = {"limit": 10} | payload
+                        if type(options["limit"]) is not int:
+                            raise ValueError("source_comparison_requires_bounded_page")
+                        result = source_reviews.compare_snapshots(**options)
                 elif route == "/api/gossip-machine/import":
                     if payload or gossip_machine is None:
                         raise ValueError("invalid_gossip_machine_import_request")

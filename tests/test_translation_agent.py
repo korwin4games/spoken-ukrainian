@@ -45,6 +45,10 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(assess(candidate_row)["status"], "agent_verified")
         bad = row(text="Вітаю!")
         self.assertEqual(assess(bad)["status"], "agent_reject_recommended")
+        raw = assess(row(text="Вітаю, $N!"))
+        self.assertTrue(raw["checks"]["placeholder_correspondence"])
+        self.assertFalse(raw["checks"]["runtime_placeholders_supported"])
+        self.assertEqual(raw["status"], "agent_reject_recommended")
         self.assertEqual(assess(row(text="Вітаю, {ім'я:bad}!"))["status"], "agent_reject_recommended")
         self.assertEqual(assess(row(identity=False))["status"], "needs_human_review")
         self.assertEqual(assess(row(rights=False))["status"], "needs_human_review")
@@ -123,6 +127,35 @@ class AgentTests(unittest.TestCase):
         result = self.agent.run("import-verified", module="gossip", confirm=True)
         self.assertEqual(result["conflict"], 2)
         self.assertEqual(result["imported"], 0)
+
+    def test_stats_stop_counting_a_previously_imported_conflicting_moment(self):
+        self.agent.run("one", candidate_ids=[self.quest["id"]])
+        self.agent.run("import-verified", confirm=True)
+        self.assertEqual(read_recorded_imports(self.db)["recorded_imports"]["categories"]["quests"], 1)
+        variant = row("q:42:accept:variant", text="Добридень, {ім'я}!")
+        self.evidence.append(variant)
+        self.agent.run("one", candidate_ids=[variant["id"]])
+        self.assertEqual(read_recorded_imports(self.db)["recorded_imports"]["categories"]["quests"], 0)
+        self.assertEqual(self.agent.effective_imports(), [])
+
+    def test_source_diff_cli_retains_full_output_without_explicit_pagination(self):
+        from tools.source_revision_review import main
+
+        store = SourceReviewStore(self.db)
+        records = [{"domain": "gossip", "target_id": f"gossip:{i}:123",
+                    "english_sha256": "a" * 64, "context_sha256": "b" * 64,
+                    "source_ref": "fixture", "ukrainian_text": "Вітаю."}
+                   for i in range(1, 42)]
+        trusted = {(r["domain"], r["target_id"]): r for r in records}
+        for revision in ("1" * 40, "2" * 40):
+            store.ingest({"provider": "classicua", "revision": revision, "records": records}, trusted)
+        args = ["diff", "--db", str(self.db), "--provider", "classicua",
+                "--before", "1" * 40, "--after", "2" * 40]
+        for extra, expected in (([], 41), (["--limit", "40"], 40)):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main(args + extra), 0)
+            self.assertEqual(len(json.loads(output.getvalue())["changes"]), expected)
 
     def test_pending_manual_gossip_edit_protects_previously_imported_content(self):
         from adapters.sqlite_translation_store import enable_sqlite

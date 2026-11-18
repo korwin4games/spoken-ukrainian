@@ -224,7 +224,7 @@ def run(argv=None):
     parser.add_argument("--before")
     parser.add_argument("--after")
     parser.add_argument("--offset", type=int, default=0)
-    parser.add_argument("--limit", type=int, default=40)
+    parser.add_argument("--limit", type=int)
     parser.add_argument("--candidate")
     parser.add_argument("--decision", choices=("approved", "rejected", "deferred"))
     parser.add_argument("--reviewer")
@@ -246,7 +246,8 @@ def run(argv=None):
         if not args.output or not args.revision:
             raise ValueError("source_template_needs_output_and_revision")
         result = {"created_records": write_template(trusted, args.output, args.provider,
-                                                   args.revision, args.offset, args.limit)}
+                                                   args.revision, args.offset,
+                                                   40 if args.limit is None else args.limit)}
     elif args.action == "ingest":
         if not args.input:
             raise ValueError("source_review_needs_private_input")
@@ -262,7 +263,7 @@ def run(argv=None):
         result = store.compare_snapshots(
             args.provider, args.before, args.other_provider or args.provider, args.after,
             mode="revision" if same_provider else "providers", change_filter=args.change,
-            offset=args.offset, limit=args.limit)
+            offset=args.offset, limit=(40 if not same_provider and args.limit is None else args.limit))
     elif args.action == "conflicts":
         priority = [p["name"] for p in strict_json(
             (ROOT / "config/translation_sources.json").read_text(encoding="utf-8"))["sources"]]

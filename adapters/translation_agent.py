@@ -8,13 +8,14 @@ from adapters.classicua.grammar import inventory
 from adapters.source_revision_store import digest, sha
 from adapters.sqlite_translation_store import connection
 
-AGENT = "spoken-deterministic-v1"
+AGENT = "spoken-deterministic-v2"
 MODULES = {"all": None, "quests": "quest", "gossip": "gossip"}
 STATUSES = ("unreviewed", "agent_verified", "needs_human_review",
             "agent_reject_recommended", "agent_unavailable", "stale")
 QUEST = re.compile(r"(q:[1-9][0-9]*:(?:accept|progress|complete))(?::.*)?\Z")
 GOSSIP = re.compile(r"gossip:(common|[1-9][0-9]*):([1-9][0-9]*)\Z")
 TOKENS = re.compile(r"\$[NnCcRrBbGg]|\|[cCrRhHtTaA]|%(?:\d+\$)?[sdif]|\{[^{}]*\}")
+CLIENT_TOKENS = re.compile(r"\$[A-Za-z]|%(?:\d+\$)?[sdif]")
 TEMPLATES = {"player_name": "$n", "player_class": "$c",
              "player_race": "$r", "player_gender": "$g"}
 TERMS = {"Alliance": ("Альянс", "альянс"), "Horde": ("Орда", "орд")}
@@ -72,6 +73,7 @@ def assess(row, model=None):
         "original_fingerprint": sha(original) == row["original_sha256"],
         "placeholder_correspondence": english_tokens == ukrainian_tokens,
         "supported_templates": all(f.status == "supported" for f in inventory(translated)),
+        "runtime_placeholders_supported": not CLIENT_TOKENS.search(translated),
         "safe_controls": not re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", translated),
         "line_breaks": original.count("\n") == translated.count("\n"),
         "ukrainian_script_present": bool(re.search(r"[А-Яа-яІіЇїЄєҐґ]", translated)),
@@ -89,6 +91,8 @@ def assess(row, model=None):
             corrections.append(f"Verify whether {ukrainian} fits the context.")
     if english_tokens != ukrainian_tokens:
         corrections.append("Check the player variables and formatting markers against the English original.")
+    if not checks["runtime_placeholders_supported"]:
+        corrections.append("Replace raw client variables with supported local addon templates.")
     if not checks["ukrainian_alphabet"]:
         findings.append("Inspect characters outside the Ukrainian alphabet in the translation.")
     if not checks["complex_markup_requires_inspection"]:
@@ -96,7 +100,7 @@ def assess(row, model=None):
     missing = [key for key in ("canonical_context", "local_test_rights_evidence",
                                "source_provenance") if not checks[key]]
     hard = ("translation_fingerprint", "original_fingerprint", "placeholder_correspondence",
-            "supported_templates", "safe_controls")
+            "supported_templates", "runtime_placeholders_supported", "safe_controls")
     if not all(checks[key] for key in hard):
         status = "agent_reject_recommended"
     elif model and model["status"] == "unavailable":
@@ -222,7 +226,8 @@ class TranslationAgent:
                         {"candidate": metadata(row), "status": "unreviewed"}
                         for key, row in rows.items() if key not in latest]
                 results = [{**r, "status": "stale" if (r["candidate"]["id"] not in rows
-                            or r["candidate"]["id"] in stale) else r["status"],
+                            or r["candidate"]["id"] in stale
+                            or r.get("agent", AGENT) != AGENT) else r["status"],
                             "assessed_status": r["status"]} for r in results
                            if scoped(r["candidate"])
                            and (not candidate_ids or r["candidate"]["id"] in candidate_ids)]
@@ -243,7 +248,8 @@ class TranslationAgent:
                 r for r in rows.values() if scoped(r) and r["id"] not in latest]
             if status is not None:
                 selected = [r for r in selected if (
-                    "stale" if r["id"] in stale else latest.get(r["id"], {}).get("status", "unreviewed")) == status]
+                    "stale" if r["id"] in stale or latest.get(r["id"], {}).get("agent", AGENT) != AGENT
+                    else latest.get(r["id"], {}).get("status", "unreviewed")) == status]
             results = [assess(r, model) for r in selected[offset:offset + limit]]
             if write:
                 db.executemany("""INSERT INTO agent_assessments(candidate_id, status, payload)
@@ -260,8 +266,7 @@ class TranslationAgent:
         current = {a["candidate_id"]: a for a in import_rows(db)}
         selected = [(i, a) for i, a in latest.items() if (domain is None or a["candidate"]["domain"] == domain)
                     and (not candidate_ids or i in candidate_ids)]
-        counts = Counter(runtime_key(r["domain"], r["target_id"]) for i, r in rows.items()
-                         if i not in stale and i in latest and latest[i]["status"] == "agent_verified")
+        counts = verified_targets(latest, stale, rows)
         result = dict(eligible=0, imported=0, already_imported=0, skipped=0,
                       conflict=0, would_import=0, reasons=[], dry_run=dry_run)
         selected_ids = {identity for identity, _ in selected}
@@ -301,8 +306,7 @@ class TranslationAgent:
             record_staleness(db, latest, rows)
             stale = stale_ids(db)
             protections = protected(db)
-            counts = Counter(runtime_key(r["domain"], r["target_id"]) for i, r in rows.items()
-                             if i not in stale and i in latest and latest[i]["status"] == "agent_verified")
+            counts = verified_targets(latest, stale, rows)
             result = []
             for entry in import_rows(db):
                 identity = entry["candidate_id"]
@@ -329,6 +333,13 @@ def eligibility(row, assessment, protections, counts):
     if counts[runtime_key(row["domain"], row["target_id"])] > 1:
         return "multiple_verified_versions"
     return None
+
+
+def verified_targets(latest, stale, evidence_ids):
+    return Counter(runtime_key(row["candidate"]["domain"], row["candidate"]["target_id"])
+                   for identity, row in latest.items()
+                   if identity in evidence_ids and identity not in stale
+                   and row["agent"] == AGENT and row["status"] == "agent_verified")
 
 
 def record_staleness(db, assessments, current):
@@ -378,10 +389,13 @@ def recorded_imports(db):
     stale = stale_ids(db)
     protection = protected(db)
     latest = {a["candidate"]["id"]: a for a in assessment_rows(db, latest=True)}
+    counts = verified_targets(latest, stale, latest)
     for entry in imports:
         assessment = latest.get(entry["candidate_id"])
-        if (entry["candidate_id"] not in stale and assessment
+        if (entry["candidate_id"] not in stale and assessment and assessment["agent"] == AGENT
                 and assessment["assessment_id"] == entry["assessment_id"]
                 and assessment["status"] == "agent_verified"
-                and not blocked(assessment["candidate"], protection)):
+                and not blocked(assessment["candidate"], protection)
+                and counts[runtime_key(assessment["candidate"]["domain"],
+                                       assessment["candidate"]["target_id"])] == 1):
             yield assessment["candidate"]

@@ -126,6 +126,7 @@ def read_recorded_imports(db_path):
     }
     documents = {}
     with connection(db_path) as db:
+        db.execute("BEGIN")
         agent = list(recorded_imports(db))
         for ledger, payload in db.execute(
                 """SELECT ledger_name, payload FROM ledger_documents
