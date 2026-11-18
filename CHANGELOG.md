@@ -6,6 +6,7 @@ Dated version sections describe project baselines; they do not imply that a Git 
 or GitHub Release has been published.
 
 ## [Unreleased]
+- Add the optional local Translation Review Agent, explicit verified import for private test builds, separate source/provider comparisons and bilingual CLI guides.
 
 ### Gossip provisional machine imports
 

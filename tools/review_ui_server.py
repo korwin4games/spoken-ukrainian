@@ -83,7 +83,7 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
 
 def create_handler(state, token, port, gossip_reviews=None,
                    source_reviews=None, source_trusted=None, import_db_path=None,
-                   gossip_machine=None):
+                   gossip_machine=None, translation_agent=None):
     """Return request handler with strict host/origin and anti-CSRF policy."""
     allowed_host = f"127.0.0.1:{port}"
     allowed_origin = f"http://{allowed_host}"
@@ -263,7 +263,7 @@ def create_handler(state, token, port, gossip_reviews=None,
                       "/api/gossip-machine/import",
                       "/api/gossip/propose", "/api/gossip/decide", "/api/gossip/import",
                       "/api/source-reviews/decide", "/api/source-reviews/activate",
-                      "/api/source-reviews/clear"}
+                      "/api/source-reviews/clear", "/api/source-comparison", "/api/agent"}
             if route not in routes or "?" in self.path:
                 self._json(404, {"error": "not_found"})
                 return
@@ -301,13 +301,34 @@ def create_handler(state, token, port, gossip_reviews=None,
                      "/api/gossip/import": "gossip.import",
                      "/api/source-reviews/decide": "source_review.decision",
                      "/api/source-reviews/activate": "source_review.activate",
-                     "/api/source-reviews/clear": "source_review.clear"}[route]
+                     "/api/source-reviews/clear": "source_review.clear",
+                     "/api/source-comparison": "source_review.compare",
+                     "/api/agent": "translation_agent"}[route]
             self._event(event, "requested")
             try:
                 payload = strict_json(self.rfile.read(length))
                 if type(payload) is not dict:
                     raise ValueError("invalid_review_request")
-                if route == "/api/gossip-machine/import":
+                if route == "/api/agent":
+                    keys = {"action", "module", "candidate_ids", "limit", "offset",
+                            "status", "dry_run", "confirm", "model"}
+                    if translation_agent is None or "action" not in payload or set(payload) - keys:
+                        raise ValueError("invalid_agent_request")
+                    result = translation_agent.run(**payload)
+                elif route == "/api/source-comparison":
+                    if source_reviews is None:
+                        raise ValueError("source_review_unavailable")
+                    if not payload:
+                        result = {"revisions": source_reviews.revisions()}
+                    else:
+                        keys = {"left_provider", "before", "right_provider", "after", "mode",
+                                "change_filter", "offset", "limit"}
+                        required = keys - {"change_filter", "offset", "limit"}
+                        if not required <= set(payload) <= keys:
+                            raise ValueError("invalid_source_comparison")
+                        result = source_reviews.compare_snapshots(
+                            **({"limit": 10} | payload))
+                elif route == "/api/gossip-machine/import":
                     if payload or gossip_machine is None:
                         raise ValueError("invalid_gossip_machine_import_request")
                     result = gossip_machine.run()
@@ -500,12 +521,16 @@ def main(argv=None):
         source_reviews = SourceReviewStore(os.environ.get(DB_ENV) or default_db_path())
         # Not 0.0.0.0 or a hostname resolving to all interfaces.
         from tools.gossip_machine_import import GossipMachineImport
+        from adapters.translation_agent import TranslationAgent
+        from tools.translation_agent import evidence
+        db_path = os.environ.get(DB_ENV) or default_db_path()
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
             create_handler(state, secrets.token_urlsafe(32), args.port,
                            gossip_reviews, source_reviews, source_trusted,
-                           os.environ.get(DB_ENV) or default_db_path(),
-                           gossip_machine=GossipMachineImport(state, args.spoken)))
+                           db_path, gossip_machine=GossipMachineImport(state, args.spoken),
+                           translation_agent=TranslationAgent(
+                               db_path, lambda: evidence(state, args.spoken, db_path))))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)

@@ -281,7 +281,66 @@
         <tbody id="gm-items"></tbody></table>
     </section>
 
-    <section class="review translation-section" aria-label="Source Revision Review">
+    <section class="review translation-section" aria-labelledby="agent-heading">
+      <h2 id="agent-heading">Агент перевірки перекладів</h2>
+      <label for="agent-module">Модуль</label>
+      <select id="agent-module"><option value="all">Усі</option><option value="quests">Квести</option>
+        <option value="gossip">Gossip</option></select>
+      <label for="agent-status">Статус</label>
+      <select id="agent-status"><option value="">Усі</option><option value="unreviewed">Без перевірки</option>
+        <option value="agent_verified">Пройшли перевірку агента</option>
+        <option value="needs_human_review">Потрібна ручна перевірка</option>
+        <option value="agent_reject_recommended">Рекомендовано відхилити</option>
+        <option value="agent_unavailable">Модель недоступна</option>
+        <option value="stale">Застаріли</option></select>
+      <label for="agent-limit">Розмір сторінки й пакета</label>
+      <input id="agent-limit" type="number" min="1" max="100" value="25">
+      <div class="actions">
+        <button type="button" id="agent-list">Показати записи</button>
+        <button type="button" id="agent-prev">Попередні</button>
+        <button type="button" id="agent-next">Наступні</button>
+        <button type="button" id="agent-one">Перевірити вибраний</button>
+        <button type="button" id="agent-batch">Перевірити позначені</button>
+        <button type="button" id="agent-pending">Перевірити записи без оцінки</button>
+        <button type="button" id="agent-history">Історія вибраного</button>
+      </div>
+      <label for="agent-model">Необов’язковий JSON з порадами моделі для вибраного запису</label>
+      <textarea id="agent-model" rows="2" maxlength="16000"></textarea>
+      <label><input id="agent-dry" type="checkbox"> Перевірка без збереження оцінок</label>
+      <div id="agent-items" class="queue-items"></div>
+      <pre id="agent-details" class="story-text"></pre>
+      <div class="actions">
+        <button type="button" id="agent-preview">Попередній перегляд імпорту</button>
+        <button type="button" id="agent-import">Імпортувати всі перевірені агентом</button>
+      </div>
+      <p id="agent-message" role="status"></p>
+      <pre id="agent-result" class="story-text"></pre>
+    </section>
+
+    <section class="review translation-section" aria-labelledby="comparison-heading">
+      <h2 id="comparison-heading">Порівняння джерел і ревізій</h2>
+      <label for="comparison-mode">Режим порівняння</label>
+      <select id="comparison-mode"><option value="revision">Ревізії одного джерела</option>
+        <option value="providers">Різні джерела</option></select>
+      <div class="comparison">
+        <div><label for="comparison-left">Початкове джерело та ревізія</label>
+          <select id="comparison-left"></select></div>
+        <div><label for="comparison-right">Друге джерело та ревізія</label>
+          <select id="comparison-right"></select></div>
+      </div>
+      <label for="comparison-filter">Результат</label>
+      <select id="comparison-filter"><option value="all">Усі</option><option value="added">Додано</option>
+        <option value="removed">Вилучено</option><option value="changed">Змінено / конфлікт</option>
+        <option value="unchanged">Без змін</option></select>
+      <button type="button" id="comparison-load">Оновити перелік знімків</button>
+      <button type="button" id="comparison-run">Порівняти</button>
+      <button type="button" id="comparison-prev">Попередні</button>
+      <button type="button" id="comparison-next">Наступні</button>
+      <p id="comparison-message" role="status"></p>
+      <div id="comparison-results"></div>
+    </section>
+
+    <section id="source-review-panel" class="review translation-section" aria-label="Source Revision Review">
       <div class="review-heading">
         <h2>Source Revision Review · ClassicUA / Source B</h2>
         <button type="button" class="secondary" id="source-refresh">Оновити історію джерел</button>

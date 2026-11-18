@@ -1,5 +1,7 @@
 # Spoken Ukrainian 🇺🇦
 
+[Посібник з командного рядка](docs/CLI.uk.md) · [English CLI guide](docs/CLI.md)
+
 **[English](README.md) | [Українська](README.uk.md)**
 
 **Spoken Ukrainian** — спільнотний проєкт української текстової локалізації та майбутнього українського озвучування для [Spoken](https://github.com/rusty-key/spoken-wow) у **World of Warcraft Forever**. Він розвивається як незалежний набір Spoken Community Packs (пакетів спільноти), а оригінальний Spoken Player встановлюється окремо.

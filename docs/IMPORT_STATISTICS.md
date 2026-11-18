@@ -127,3 +127,11 @@ the common table does not fabricate an expanded runtime coverage count.
 Schema v5 adds `build_import_units.text_sha256` and the single-row
 `build_import_head` pointer. Immutable snapshots remain intact; the head follows
 the last successful build even when an older identical snapshot is reused.
+
+The `agent_verified` route counts explicitly recorded local-test agent imports
+separately from assessments, machine imports and human decisions. Known stale,
+superseded and manually blocked versions do not count as current imports.
+The ZIP section follows the route that supplied the actual serialized text.
+A common fallback remains one entry in the aggregate Gossip counts even when
+both the machine ledger and the agent ledger have recorded it. The route rows
+show that each ledger recorded the import.
