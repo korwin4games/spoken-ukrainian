@@ -18,6 +18,7 @@ const errors = {
   manager_reimport_timed_out_check_build: "Час очікування минув. Оновіть список, щоб перевірити стан збірки.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
+let loading = 0;
 const pageSize = 30;
 
 function make(tag, text, cls) {
@@ -29,15 +30,28 @@ function make(tag, text, cls) {
 function badge(text, state) { return make("span", text, "badge " + state); }
 function errorMessage(error) { return errors[error.message] || "Перевірте локальні джерела й повторіть: " + error.message; }
 
+async function whileLoading(work) {
+  loading += 1;
+  el("loading-bar").hidden = false;
+  try {
+    return await work();
+  } finally {
+    loading -= 1;
+    el("loading-bar").hidden = loading === 0;
+  }
+}
+
 async function call(action, payload) {
-  const response = await fetch("/api/manager/" + action, {
-    method: "POST", cache: "no-store",
-    headers: {"Content-Type": "application/json", "X-Review-Token": csrf},
-    body: JSON.stringify({module: el("module").value, ...payload}),
+  return whileLoading(async () => {
+    const response = await fetch("/api/manager/" + action, {
+      method: "POST", cache: "no-store",
+      headers: {"Content-Type": "application/json", "X-Review-Token": csrf},
+      body: JSON.stringify({module: el("module").value, ...payload}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.reason || result.error || "manager_request_failed");
+    return result;
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.reason || result.error || "manager_request_failed");
-  return result;
 }
 
 function metrics(summary, build) {
@@ -226,7 +240,10 @@ el("reimport").addEventListener("click", () => {
 el("confirm").addEventListener("close", () => {
   if (el("confirm").returnValue === "commit") reimport(false);
 });
-fetch("/api/bootstrap", {cache: "no-store"}).then(response => response.json()).then(data => {
+whileLoading(async () => {
+  const response = await fetch("/api/bootstrap", {cache: "no-store"});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "manager_request_failed");
   csrf = data.csrf_token;
-  list();
+  await list();
 }).catch(error => { el("list-message").textContent = errorMessage(error); });
