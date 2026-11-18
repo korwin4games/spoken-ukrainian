@@ -360,6 +360,10 @@ def main(argv=None):
                   f"{row['recorded']} backed by DB imports, {row['missing']} missing, "
                   f"{row['conflicts']} conflicts, {row['pending_review']} pending review")
             print("  Not in ZIP by status:", row["not_included_by_status"])
+            print("  Mapping:", row["mapping_states"], "· translation:", row["translation_states"])
+            print("  Import:", row["import_states"], "· in a review queue:", row["in_review_queue"])
+            print("  Agent warnings:", row["agent_warnings"],
+                  "· unverified alternative matches:", row["unverified_alternatives"])
         print("Gossip serialized units:", result["summary"]["gossip_archive_units"])
         print("Agent import: eligible", result["agent"]["eligible"],
               "· skipped", result["agent"]["skipped"])

@@ -149,7 +149,10 @@ SQLite database. Use `--dry-run` to build an isolated preview, and `--confirm`
 to promote the validated state and ZIP. `--reset-test-data` clears only the
 selected module's test review/import histories and manual source choices.
 The summary distinguishes database records, effective Quest moments, Gossip
-occurrences and serialized common units. `--json` includes detailed results
+occurrences and serialized common units. It reports mapping, translation and
+import states separately, with review queue coverage, agent warnings by
+assessed version and unverified Gossip alternatives by NPC/hash occurrence.
+`--json` includes detailed results
 and failure codes. Exit 0 indicates preview or successful promotion, 1 a
 failed operation, and 2 invalid CLI syntax. See the [manager guide](TRANSLATION_MANAGER.md).
 

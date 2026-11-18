@@ -27,6 +27,7 @@ EN = "Invented English"
 
 class SyntheticDataset:
     def __init__(self, units):
+        self.records = {}
         self.views = {"horde": {}, "alliance": {}}
         pos = {"accept": 2, "progress": 4, "complete": 5}
         for identity, unit in units.items():

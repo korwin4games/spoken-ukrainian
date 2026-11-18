@@ -72,6 +72,19 @@ def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None
     version_by_id = {v["id"]: v for v in reviewed["versions"]}
     machine_by_id = {v["id"]: v for v in machine["versions"]}
     texts = {}
+    from adapters.crosswalk import quest_moment
+    from adapters.spoken.text_index import ambiguous_quest_moments
+    blocked = (state.blocked_quest_moments() if hasattr(state, "blocked_quest_moments") else set())
+    ambiguous = ambiguous_quest_moments(getattr(state, "original_index", None))
+
+    def excluded(target):
+        moment = quest_moment(target)
+        reason = ("quest_mapping_rejected_or_deferred" if moment in blocked else
+                  "quest_multiple_verified_originals" if moment in ambiguous else None)
+        if reason and skipped is not None and (target, reason) not in skipped:
+            skipped.append((target, reason))
+        return reason is not None
+
     conflicted_moments = set()
     supporting_fields = defaultdict(lambda: {"title": set(), "objective": set()})
     source_views = None
@@ -88,6 +101,8 @@ def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None
                 raise ValueError("unexpected_nonquest_import")
             if not QUEST_TARGET.fullmatch(target_id):
                 raise ValueError("invalid_canonical_quest_id")
+            if excluded(target_id):
+                continue
             row = versions[ref["version_id"]]
             if row["target_id"] != target_id:
                 raise ValueError("quest_import_target_mismatch")
@@ -120,7 +135,7 @@ def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None
     for row in agent_rows:
         if row["domain"] == "quest":
             target = row["target_id"]
-            if not texts.get(target, {}).get("reviewed"):
+            if not excluded(target) and not texts.get(target, {}).get("reviewed"):
                 texts[target] = {"text": row["text"], "reviewed": False}
 
     # A source-review Quest override is valid only on top of a separately
@@ -138,6 +153,8 @@ def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None
             mapped = {o.target_id for o in state.translation_observations()}
             for selection in selected_quest:
                 target = selection["target_id"]
+                if excluded(target):
+                    continue
                 if target not in mapped:
                     if skipped is not None:
                         skipped.append((target, "source_quest_selection_requires_approved_stage3_mapping"))

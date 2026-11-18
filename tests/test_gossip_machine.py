@@ -138,9 +138,30 @@ class GossipMachineTests(unittest.TestCase):
         for common in (False, True):
             state = state_for(self.allowed, common=common)
             with patch('tools.gossip_coverage.classicua_hash', return_value=H):
-                rows, items, _ = self.rows(state, [corpus(), corpus(43, 'Different sentence')])
+                lines = [corpus(), corpus(43, 'Different sentence')]
+                rows, items, _ = self.rows(state, lines)
+                self.assertFalse(discover_groups(lines, {'byNpc': {}, 'common': {}}, SP, REV)[0])
+                from tools.source_revision_review import gossip_contexts
+                self.assertEqual(gossip_contexts(lines), {})
             self.assertEqual(rows, [])
             self.assertTrue(all(i['status'] == 'conflict' for i in items))
+
+    def test_npc_type_ambiguity_is_blocked_by_every_review_path(self):
+        from tools.source_revision_review import gossip_contexts
+        lines = [corpus(), corpus() | {'npcType': 'vehicle'}, corpus(43)]
+        state = state_for(self.allowed, common=True)
+        lookup = builder.local_gossip_texts(state)
+        rows, items, _ = self.rows(state, lines)
+        self.assertEqual(rows, [])
+        self.assertEqual([item['status'] for item in items], ['conflict', 'conflict'])
+        groups, _ = discover_groups(lines, {'byNpc': {}, 'common': {}}, SP, REV)
+        self.assertEqual([c['npc_id'] for g in groups for c in g['contexts']], [43])
+        trusted = gossip_contexts(lines)
+        self.assertNotIn(('gossip', f'gossip:42:{H}'), trusted)
+        self.assertFalse(trusted['gossip', f'gossip:43:{H}']['common_safe'])
+        from tools.source_revision_review import classicua_snapshot
+        state.translation_observations = lambda: []
+        self.assertEqual(classicua_snapshot(state, trusted, lookup)['records'], [])
 
     def test_ai_policy_and_source_file_verification(self):
         state = state_for(self.allowed, ai=True)

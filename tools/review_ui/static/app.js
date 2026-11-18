@@ -36,6 +36,12 @@ const state = {
   report: null, selectedSourceId: null, selectedTargetId: null,
   loading: false,
 };
+const reviewLink = new URLSearchParams(location.search);
+const linkedFaction = reviewLink.get("faction");
+if (["alliance", "horde"].includes(linkedFaction)) {
+  state.faction = linkedFaction;
+  ui.faction.value = linkedFaction;
+}
 function make(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -118,9 +124,6 @@ function renderDetail() {
   setText(ui.targetHash, option.target_context_sha256);
   setText(ui.targetRef, option.target_reference);
   setText(ui.targetBlob, option.target_blob_sha256);
-  setText(ui.enText, option.english_verified
-    ? option.english_original : "Оригінальний English-текст не підтверджений або неоднозначний.");
-  ui.enText.classList.toggle("unverified", !option.english_verified);
   setText(ui.status, option.manual_decision === "deferred"
     ? "Відкладено" : "Потребує перевірки");
   ui.options.replaceChildren();
@@ -148,6 +151,11 @@ function renderDetail() {
     entry.value = String(index);
     contextSelect.appendChild(entry);
   });
+  const linkedContext = (option.variants || []).findIndex(
+    (variant, index) => variant.wording_sha256 === reviewLink.get("wording") &&
+      (!reviewLink.has("context") || String(index) === reviewLink.get("context")));
+  if (linkedContext >= 0) contextSelect.value = String(linkedContext);
+  showSelectedOriginal();
   const keys = [
     ["npc_id", "NPC"], ["npc_type", "NPC type"], ["voice", "Voice"],
     ["faction", "Faction"], ["player_gender", "Gender"],
@@ -164,6 +172,13 @@ function renderDetail() {
       ui.facts.appendChild(fact);
     });
   });
+}
+function showSelectedOriginal() {
+  const option = selectedOption();
+  const index = Number(document.getElementById("mapping-context").value);
+  const text = option?.variants?.[index]?.english_original;
+  setText(ui.enText, text || "Оригінал для цього контексту недоступний.");
+  ui.enText.classList.toggle("unverified", !text);
 }
 function render() {
   if (!state.report) return;
@@ -215,6 +230,7 @@ async function loadPage() {
     const query = new URLSearchParams({
       faction: state.faction, offset: String(state.offset), limit: String(state.limit),
     });
+    if (reviewLink.has("target")) query.set("target", reviewLink.get("target"));
     const response = await fetch("/api/queue?" + query.toString(), {cache: "no-store"});
     if (!response.ok) throw new Error("queue");
     state.report = await response.json();
@@ -321,7 +337,10 @@ function resetMappingAttestations() {
 }
 ui.queue.addEventListener("click", resetMappingAttestations);
 ui.options.addEventListener("click", resetMappingAttestations);
-document.getElementById("mapping-context").addEventListener("change", resetMappingAttestations);
+document.getElementById("mapping-context").addEventListener("change", () => {
+  showSelectedOriginal();
+  resetMappingAttestations();
+});
 document.getElementById("mapping-approve").addEventListener("click", async function() {
   try {
     const item = selectCurrent(), option = selectedOption();
@@ -333,7 +352,7 @@ document.getElementById("mapping-approve").addEventListener("click", async funct
     const facts = option?.variants?.[contextIndex];
     const required = ["npc_id", "npc_type", "voice", "faction",
       "player_gender", "wording_sha256", "source", "quest_id"];
-    if (!item || !option || !option.english_verified || !facts ||
+    if (!item || !option || !facts?.english_original ||
         !required.every(key => Object.hasOwn(facts, key)) ||
         !evidenceReviewer || !mappingReviewer ||
         evidenceReviewer === mappingReviewer || !inspected || !independent) {

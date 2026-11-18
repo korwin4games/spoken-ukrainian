@@ -49,6 +49,34 @@ def classicua_hash(value):
     return count % MODULUS
 
 
+def gossip_evidence(lines):
+    """Collect exact Spoken originals and identify unsafe runtime identities."""
+    from tools.gossip_translation_review import normalized
+    words, pairs, types = defaultdict(set), defaultdict(set), defaultdict(set)
+    rows = []
+    unknown = 0
+    for row in lines:
+        if type(row) is not dict:
+            raise ValueError("invalid_gossip_corpus_row")
+        if row.get("source") != "gossip":
+            continue
+        npc, kind, english = row.get("npcId"), row.get("npcType"), row.get("originalText")
+        clean = normalized(english).translate(str.maketrans("ЇЄІҐ", "їєіґ"))
+        hashed = classicua_hash(english)
+        if clean and hashed:
+            words[hashed].add(clean)
+            if kind in ("creature", "vehicle") and type(npc) is int and npc > 0:
+                pairs[npc, hashed].add(clean)
+                types[npc, hashed].add(kind)
+                rows.append((row, npc, hashed))
+                continue
+        unknown += 1
+    collisions = {hashed for hashed, variants in words.items() if len(variants) > 1}
+    ambiguous = {pair for pair, variants in types.items() if len(variants) > 1}
+    unsafe = {pair for pair in pairs if pair in ambiguous or pair[1] in collisions}
+    return rows, pairs, unsafe, {hashed for _, hashed in ambiguous}, unknown
+
+
 def audit_gossip_rows(lines, gossip):
     """Count distinct English wordings per NPC; deduplicate corpus variants.
 

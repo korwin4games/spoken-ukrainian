@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from lua_runtime import run_lua
+from adapters.spoken.text_index import TextIndex
 from tools import build_ukrainian as builder
 from tools import gossip_machine_import
 
@@ -73,6 +74,8 @@ class BuildUkrainianTests(unittest.TestCase):
 
     def test_ambiguous_quest_event_suppressed_from_preview(self):
         state = Mock()
+        state.blocked_quest_moments.return_value = set()
+        state.original_index = TextIndex({}, (), {})
         state.inventory.targets = {
             "q:42:accept": SimpleNamespace(family="quest"),
             "q:42:accept:w2": SimpleNamespace(family="quest"),
@@ -100,6 +103,8 @@ class BuildUkrainianTests(unittest.TestCase):
         row = {"id": "machine-version", "target_id": target, "source_id": source_id,
                "decision": "machine_1to1_provisional", "text": "Вигаданий текст."}
         state = Mock()
+        state.blocked_quest_moments.return_value = set()
+        state.original_index = TextIndex({}, (), {})
         state.machine_imports.file.data = {
             "versions": [row], "imports": [{"target_id": target, "version_id": row["id"]}]}
         state.translations.file.data = {"versions": [], "imports": []}
@@ -128,6 +133,8 @@ class BuildUkrainianTests(unittest.TestCase):
              "decision": "machine_1to1_provisional", "text": "Другий текст."},
         ]
         state = Mock()
+        state.blocked_quest_moments.return_value = set()
+        state.original_index = TextIndex({}, (), {})
         state.machine_imports.file.data = {
             "versions": rows, "imports": [
                 {"target_id": item["target_id"], "version_id": item["id"]}

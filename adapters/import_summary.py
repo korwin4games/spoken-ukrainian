@@ -37,7 +37,7 @@ def one_to_one_hints(hints, source_units, inventory):
 
 
 def import_summary(inventory, observations, policy, translations, hints, source_units,
-                   auto_approved=0, changed=False, machine_targets=()):
+                   auto_approved=0, changed=False, machine_targets=(), machine_candidate_count=None):
     """Summarize *actual current import references*, never candidate-only results."""
     total = len(inventory.targets)
     current = translations.page(observations, policy)
@@ -81,7 +81,9 @@ def import_summary(inventory, observations, policy, translations, hints, source_
         "schema_version": 1,
         "scope": "offline, inert local review import; NOT a WoW Community Pack",
         "total_spoken_records": total,
-        "unreviewed_one_to_one_candidates": one_to_one_hints(hints, source_units, inventory),
+        "unreviewed_one_to_one_candidates": (
+            one_to_one_hints(hints, source_units, inventory)
+            if machine_candidate_count is None else machine_candidate_count),
         "verified_source_to_target_bindings": mapped,
         "auto_approved_now": auto_approved,
         "imported_total": imported_total,

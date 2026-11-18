@@ -79,6 +79,7 @@ class ManagerTests(unittest.TestCase):
     def test_catalog_joins_verified_placements_to_effective_common_unit(self):
         from adapters.crosswalk import digest
         from adapters.source_revision_store import sha
+        from adapters.translation_agent import TranslationAgent, candidate
         from tools.gossip_coverage import classicua_hash
         from tools.gossip_translation_review import normalized
 
@@ -89,7 +90,7 @@ class ManagerTests(unittest.TestCase):
             {"lineId": "g:first", "source": "gossip", "npcId": 3, "npcType": "creature",
              "npcName": "Guide", "originalText": english},
             {"lineId": "g:missing", "source": "gossip", "npcId": 4, "npcType": "creature",
-             "npcName": "Visitor", "originalText": "No translation"},
+             "npcName": "Visitor", "originalText": "No translation", "text": english},
             {"lineId": "g:conflict", "source": "gossip", "npcId": 5, "npcType": "creature",
              "npcName": "Conflicted NPC", "originalText": english},
         ]
@@ -122,18 +123,67 @@ class ManagerTests(unittest.TestCase):
                    "source": "reviewed+source_selected", "route": "excluded"}])
         self.assertEqual(stats["total_text_records"], 1)
         self.assertEqual(stats["gossip_excluded_npc_hashes"], 1)
+        text = "Вітаю, {ім'я}!"
+        target = f"gossip:common:{hashed}"
+        def assessment(context):
+            return candidate(domain="gossip", target_id=target, provider="classicua",
+                revision="b" * 40, target_revision="a" * 40, original=english + "\n", text=text,
+                context=context, provenance={"source_file": target}, identity=True, rights=True)
+        current = [assessment("one")]
+        TranslationAgent(self.db, lambda: current).run("one", candidate_ids=[current[0]["id"]])
         with patch("tools.manager_inventory.read_pinned_corpus", return_value=lines), patch.object(
-                builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {hashed: "Вітаю, {ім'я}!"}}), patch(
-                "tools.manager_inventory.GossipMachineImport.inspect", return_value=([], placements, 0, set(), empty)):
+                builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {hashed: text}}), patch(
+                "tools.manager_inventory.GossipMachineImport.inspect", return_value=([], placements, 0, set(), empty)), patch(
+                "tools.translation_agent.evidence", side_effect=lambda *a, **k: current):
             result = load_inventory(*self.paths, self.db, self.archive, state=state)
+            current[:] = [assessment("changed")]
+            stale = load_inventory(*self.paths, self.db, self.archive, state=state)
         self.assertEqual(result.summary()["gossip"]["included"], 1)
         self.assertEqual(result.summary()["gossip"]["missing"], 1)
+        self.assertEqual(result.summary()["gossip"]["unverified_alternatives"], 1)
+        self.assertEqual(result.summary()["gossip"]["agent_warnings"], 1)
         self.assertEqual(result.summary()["gossip"]["conflicts"], 1)
         self.assertIsNone(result.page(filter_by="conflicts")["items"][0]["built"])
         self.assertEqual(result.summary()["gossip_archive_units"]["common_hashes"], 1)
         included = result.page(filter_by="imported")["items"][0]
         self.assertFalse(included["recorded"])
-        self.assertIn("{ім'я}", result.detail(identity=included["id"])["candidates"][0]["text"])
+        assessed = result.detail(identity=included["id"])["candidates"][0]
+        self.assertIn("{ім'я}", assessed["text"])
+        self.assertEqual(assessed["validation"], "needs_human_review")
+        self.assertFalse(assessed["checks"]["line_breaks"])
+        past = stale.detail(identity=included["id"])["candidates"][0]
+        self.assertEqual(past["validation"], "stale")
+        self.assertNotIn("checks", past)
+
+    def test_quest_multiple_originals_are_bound_to_their_contexts(self):
+        from adapters.crosswalk import digest
+        from adapters.spoken.text_index import TextIndex
+        from test_stage3 import Fixture, synthetic_inventory
+        from adapters.review_ui import LocalReviewState
+
+        identity = "q:8:progress"
+        texts = ("First invented original.", "Second invented original.")
+        contexts = [dict(quest_id=8, source="progress", faction="horde", npc_id=20 + i,
+                         npc_type="creature", voice="invented", player_gender=None,
+                         wording_sha256=digest(text)) for i, text in enumerate(texts)]
+        inventory = synthetic_inventory(identity=identity, contexts=contexts)
+        fixture = Fixture().add("quest_both", "classic", '{[8]={nil,nil,nil,"Вигаданий переклад."}}')
+        state = LocalReviewState(fixture.dataset, fixture.inventory(), inventory,
+            TextIndex({}, (identity,), {}, {identity: texts}), self.root / "decisions.json", self.root)
+        with patch("tools.manager_inventory.read_pinned_corpus", return_value=[]), patch(
+                "tools.gossip_coverage.read_pinned_corpus", return_value=[]):
+            catalog = load_inventory(*self.paths, self.db, self.archive, state=state)
+        detail = catalog.detail(identity=identity)
+        self.assertEqual(detail["status"], "multiple_originals")
+        self.assertEqual(detail["mapping_state"], "mapping_conflict")
+        self.assertEqual(detail["translation_state"], "translation_available")
+        self.assertEqual(catalog.page(status="mapping_conflict")["total"], 1)
+        self.assertFalse(detail["built"])
+        self.assertEqual([(v["text"], v["contexts"][0]["npc_id"]) for v in detail["original_variants"]],
+                         list(zip(texts, (20, 21))))
+        option = state.page(target_filter=identity)["items"][0]["target_options"][0]
+        self.assertEqual(tuple(v["english_original"] for v in option["variants"]), texts)
+        self.assertFalse(option["english_verified"])
 
     def test_scoped_preview_reset_and_repeat(self):
         with connection(self.db) as db:

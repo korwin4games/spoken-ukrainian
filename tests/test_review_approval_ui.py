@@ -1,6 +1,8 @@
 """End-to-end synthetic independent mapping → content review → inert import."""
 from copy import deepcopy
 from dataclasses import asdict, replace
+from contextlib import redirect_stdout
+from io import StringIO
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -16,7 +18,9 @@ from adapters.review_ui import LocalReviewState
 from adapters.spoken.text_index import TextIndex
 from adapters.mapping import review_file, load_reviews
 from adapters.translation_sources import SourcePolicy, TranslationCandidate, CandidateState
+from adapters.sqlite_translation_store import enable_sqlite
 from tools.review_ui_server import create_handler
+from tools import build_ukrainian, review_ui_server
 
 CHECKS = dict(text=True, grammar=True, ai=True, rights=True)
 
@@ -53,6 +57,44 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.state.approve_mapping(self.request)
         self.state.translation_action("refresh", {})
         return self.state.translation_page()["versions"][0]["id"]
+
+    def test_mapping_decisions_block_every_automatic_entry_point(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True, "auto_approve_one_to_one": True}]})
+        payload = {"source": "classicua"}
+        for decision in ("rejected", "deferred"):
+            with self.subTest(decision=decision), enable_sqlite(self.base.parent / (decision + ".sqlite3")):
+                state = LocalReviewState(self.dataset, self.source, self.inventory, self.originals,
+                    self.base / "stage4b-decisions.json", self.base, policy=policy)
+                self.assertEqual(state.translation_action("auto_import_one_to_one", payload)["machine_imported"], 1)
+                state.decide(self.unit.source_id, "q:42:accept", decision, "wrong_speaker", "Fixture reviewer")
+                self.assertEqual(build_ukrainian.current_quest_texts(state)[0], {})
+                reasons = []
+                self.assertEqual(state.translation_action("auto_import_one_to_one", payload,
+                                                         skipped=reasons)["machine_imported"], 0)
+                self.assertIn(("q:42:accept", "quest_mapping_rejected_or_deferred"), reasons)
+                with patch.object(review_ui_server, "build_state", return_value=state), patch.object(
+                        review_ui_server, "validate_source_paths"), redirect_stdout(StringIO()):
+                    self.assertEqual(review_ui_server.main(["--classicua", "invented-classicua", "--spoken",
+                        "invented-spoken", "--auto-import-one-to-one"]), 0)
+                reopened = LocalReviewState(self.dataset, self.source, self.inventory, self.originals,
+                    self.base / "stage4b-decisions.json", self.base, policy=policy)
+                self.assertEqual(reopened.machine_imports.current_import_targets(), set())
+                self.assertEqual(len(reopened.machine_imports.file.data["versions"]), 1)
+                self.assertEqual(reopened.decisions["decisions"][0]["decision"], decision)
+
+    def test_defer_blocks_content_import_and_preserves_previous_approval(self):
+        identity = self.approve_and_collect()
+        self.state.translation_action("decide", {"identity": identity, "decision": "approved",
+            "reviewer": "Fixture content reviewer", "checks": CHECKS})
+        self.assertEqual(self.state.translation_action("import", {})["imported"], 1)
+        before = deepcopy(self.state.translations.file.data["versions"])
+        self.state.decide(self.unit.source_id, "q:42:accept", "deferred", "wrong_speaker",
+                          "Fixture mapping reviewer")
+        self.assertEqual(build_ukrainian.current_quest_texts(self.state)[0], {})
+        self.assertEqual(self.state.translation_action("import", {})["imported"], 0)
+        self.assertEqual(self.state.translations.file.data["versions"], before)
+        self.assertEqual(len(self.state.reviews), 1)
 
     def test_full_mapping_edit_review_import_restart_workflow(self):
         self.assertEqual(self.state.translation_page()["versions"], [])

@@ -5,6 +5,7 @@ import json
 import re
 
 from adapters.classicua.grammar import inventory
+from adapters.crosswalk import TARGET_PATTERNS, quest_moment
 from adapters.source_revision_store import digest, sha
 from adapters.sqlite_translation_store import connection
 
@@ -116,8 +117,8 @@ def assess(row, model=None):
 
 
 def runtime_key(domain, target):
-    if domain == "quest" and (match := QUEST.fullmatch(target)):
-        return match.group(1)
+    if domain == "quest" and (QUEST.fullmatch(target) or TARGET_PATTERNS["quest"].fullmatch(target)):
+        return quest_moment(target)
     if domain == "gossip" and GOSSIP.fullmatch(target):
         return target
     return None

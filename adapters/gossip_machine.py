@@ -84,36 +84,11 @@ def candidates(state, lines, lookup):
     proven by the pinned Spoken corpus; the ClassicUA identity remains a
     provisional hash match. NPC names never participate in this evidence.
     """
-    from tools.gossip_coverage import classicua_hash
-    from tools.gossip_translation_review import normalized
-    words, pairs, types = defaultdict(set), defaultdict(set), defaultdict(set)
-    unknown = 0
-    for line in lines:
-        if type(line) is not dict:
-            raise ValueError("invalid_gossip_machine_corpus_row")
-        if line.get("source") != "gossip":
-            continue
-        npc = line.get("npcId")
-        english = line.get("originalText")
-        if type(english) is not str or not english.strip():
-            english = line.get("text")
-        clean = normalized(english).translate(str.maketrans("ЇЄІҐ", "їєіґ"))
-        hashed = classicua_hash(english)
-        if not clean or hashed is None:
-            unknown += 1
-            continue
-        words[hashed].add(clean)
-        if (line.get("npcType") not in ("creature", "vehicle")
-                or type(npc) is not int or npc <= 0):
-            unknown += 1
-            continue
-        pairs[npc, hashed].add(clean)
-        types[npc, hashed].add(line["npcType"])
-    collisions = {h for h, variants in words.items() if len(variants) != 1}
-    ambiguous_common = {h for (_, h), values in types.items() if len(values) != 1}
+    from tools.gossip_coverage import gossip_evidence
+    _, pairs, unsafe, ambiguous_common, unknown = gossip_evidence(lines)
     grouped, items = defaultdict(list), []
     for (npc, hashed), variants in sorted(pairs.items()):
-        status = "conflict" if hashed in collisions or len(types[npc, hashed]) != 1 else "untranslated"
+        status = "conflict" if (npc, hashed) in unsafe else "untranslated"
         scope = npc if hashed in lookup["byNpc"].get(npc, {}) else "common"
         if scope == "common" and hashed in ambiguous_common:
             status = "conflict"
@@ -133,7 +108,7 @@ def candidates(state, lines, lookup):
         if (origin.revision != state.source.revision
                 or state.source.files.get(origin.file) != origin.sha256):
             raise ValueError("unverified_classicua_gossip_machine_source")
-        english_sha = text_sha(next(iter(words[hashed])))
+        english_sha = text_sha(next(iter(pairs[npcs[0], hashed])))
         row = {"target_id": f"gossip:{scope}:{hashed}", "english_sha256": english_sha,
                "bindings": sorted(set(npcs)),
                "context_sha256": digest([english_sha, sorted(set(npcs)), hashed]),

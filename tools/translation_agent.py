@@ -15,32 +15,35 @@ from adapters.auto_one_to_one import machine_candidates
 from adapters.gossip_machine import candidates as gossip_candidates
 from adapters.local_review_store import strict_json
 from adapters.source_revision_store import SourceReviewStore, digest, sha
+from adapters.spoken.text_index import ambiguous_quest_moments
+from adapters.crosswalk import quest_moment
 from adapters.sqlite_translation_store import DB_ENV, default_db_path, enable_sqlite
 from adapters.translation_agent import MODULES, STATUSES, TranslationAgent, candidate
 
 RIGHTS = "docs/CLASSICUA_PERMISSION.md#classicua-permission-record"
 
 
-def evidence(state, spoken, db_path, *, revalidate=True):
+def evidence(state, spoken, db_path, *, revalidate=True, lines=None,
+             observations=None, quest_machine=None, gossip_machine=None):
     from tools.build_ukrainian import local_gossip_texts
     from adapters.crosswalk import digest as spoken_digest
     from adapters.mapping import target_context
     from tools.gossip_coverage import classicua_hash, read_pinned_corpus
-    from adapters.local_review_store import LocalFile
-    from tools.gossip_translation_review import EMPTY, LEDGER, normalized, validate_ledger
+    from tools.gossip_translation_review import normalized
     from tools.source_revision_review import trusted_inventory
 
     if revalidate:
         state.revalidate_inputs()
-    LocalFile(state.allowed_directory / LEDGER.name, state.allowed_directory, EMPTY, validate_ledger)
-    lines = read_pinned_corpus(spoken, state.inventory.revision)
+    if lines is None:
+        lines = read_pinned_corpus(spoken, state.inventory.revision)
     trusted = trusted_inventory(state, lines)
     target_revision = state.inventory.revision
+    ambiguous_quests = ambiguous_quest_moments(state.original_index)
     rows = []
     mapped = set()
     joins = {review.decision.target_id: review.decision.source_evidence_sha256
              for review in state.reviews}
-    for observation in state.translation_observations():
+    for observation in state.translation_observations() if observations is None else observations:
         row = observation.row()
         provenance = row["provenance"][0]
         if provenance["provider"] != "classicua":
@@ -56,13 +59,15 @@ def evidence(state, spoken, db_path, *, revalidate=True):
                             row["source_id"], row["grammar_sha256"], joins[target]]),
             provenance={**provenance, "rights_ref": RIGHTS, "mapping_evidence": joins[target],
                         "target_file_sha256": state.inventory.targets[target].evidence_sha256},
-            identity=True,
+            identity=quest_moment(target) not in ambiguous_quests,
             rights=row["rights_status"] == "reviewed"))
     if "classicua" in state.policy.sources and state.policy.stores("classicua"):
         # Quest 1:1 hints are reviewable, but require a Stage 3 join for import.
-        for row in machine_candidates(state.dataset, state.source, state.inventory,
+        if quest_machine is None:
+            quest_machine = machine_candidates(state.dataset, state.source, state.inventory,
                 state.original_index, state._hints,
-                allow_ai_transations=state.policy.allows_ai_transations("classicua")):
+                allow_ai_transations=state.policy.allows_ai_transations("classicua"))
+        for row in quest_machine:
             if row["target_id"] in mapped:
                 continue
             rows.append(candidate(domain="quest", target_id=row["target_id"], provider="classicua",
@@ -71,10 +76,12 @@ def evidence(state, spoken, db_path, *, revalidate=True):
                 text=row["text"], context=digest([row["target_context_sha256"],
                                                 row["source_context_sha256"]]),
                 provenance={k: row[k] for k in ("source_id", "source_file", "source_file_sha256",
-                                                "source_layer", "field_sha256")} |
-                           {"rights_ref": RIGHTS}, rights=True,
+                            "source_layer", "field_sha256")} |
+                           {"rights_ref": RIGHTS} |
+                           ({"shared_bindings": row["shared_bindings"]} if "shared_bindings" in row else {}), rights=True,
                 ai=state.source.units[row["source_id"]].ai))
-        gossip, _, _ = gossip_candidates(state, lines, local_gossip_texts(state))
+        if gossip_machine is None:
+            gossip_machine, _, _ = gossip_candidates(state, lines, local_gossip_texts(state))
         canonical = defaultdict(set)
         for line in lines:
             moment = line.get("lineId")
@@ -88,7 +95,7 @@ def evidence(state, spoken, db_path, *, revalidate=True):
                     and context["wording_sha256"] == spoken_digest(original)
                     for context in state.inventory.contexts.get(moment, ()))):
                 canonical[npc, classicua_hash(original)].add(moment)
-        for row in gossip:
+        for row in gossip_machine:
             hashed = row["target_id"].rsplit(":", 1)[1]
             originals = [trusted["gossip", f"gossip:{npc}:{hashed}"]["english_original"]
                          for npc in row["bindings"]]

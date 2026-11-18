@@ -29,6 +29,11 @@ def digest(value):
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+def quest_moment(identity):
+    """Quest ID and event used by the local runtime, without voice variants."""
+    return ":".join(identity.split("~", 1)[0].split(":")[:3])
+
+
 def _nonempty_text(leaf):
     return type(leaf.node.value) is str and bool(leaf.node.value)
 

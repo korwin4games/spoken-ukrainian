@@ -258,7 +258,7 @@ def create_handler(state, token, port, gossip_reviews=None,
                 return
             try:
                 params = parse_qs(parts.query, keep_blank_values=True)
-                if (set(params) - {"faction", "offset", "limit"}
+                if (set(params) - {"faction", "offset", "limit", "target"}
                         or any(len(values) != 1 for values in params.values())):
                     raise ValueError("invalid_query")
                 faction = params.get("faction", ["horde"])[0]
@@ -270,7 +270,11 @@ def create_handler(state, token, port, gossip_reviews=None,
                 offset, limit = int(offset_value), int(limit_value)
                 if offset > 100000:
                     raise ValueError("invalid_query")
-                report = state.page(faction=faction, offset=offset, limit=limit)
+                target = params.get("target", [None])[0]
+                if target is not None and len(target) > 200:
+                    raise ValueError("invalid_query")
+                report = state.page(faction=faction, offset=offset, limit=limit,
+                                    **({"target_filter": target} if target is not None else {}))
                 self._json(200, report)
             except (ValueError, TypeError):
                 self._json(400, {"error": "invalid_review_queue_request"})

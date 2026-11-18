@@ -61,8 +61,9 @@ class GossipMachineImport:
                     # Source review is NPC scoped. The builder masks its fallback
                     # only for this pair when it has no explicit winning text.
                     blocked.add(npc_target)
-                item["status"] = ("conflict" if len(decisions) > 1 else
-                                  next(iter(decisions)) if decisions else "source_selected")
+                if item["status"] != "conflict":
+                    item["status"] = ("conflict" if len(decisions) > 1 else
+                                      next(iter(decisions)) if decisions else "source_selected")
         for item in items:
             if item["target_id"] in blocked and item["status"] == "eligible":
                 item["status"] = "conflict"

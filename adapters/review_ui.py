@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import RLock
 
 from adapters.classicua.evidence import SourceInventory
-from adapters.crosswalk import QUEST_EVENTS, digest
+from adapters.crosswalk import QUEST_EVENTS, digest, quest_moment
 from adapters.mapping import candidates, load_reviews, review_file, target_context
 from adapters.review_workbench import (approve_explicit_join, build_workbench,
                                        empty_decisions, record_decision, validate_decisions)
@@ -64,7 +64,10 @@ class LocalReviewState:
             self.decisions_file, self.allowed_directory)
         # Defense-in-depth: the caller may only display text whose digest
         # belongs to the exact pinned canonical Spoken target context.
-        for identity, text in self.original_index.original_english.items():
+        verified = list(self.original_index.original_english.items())
+        verified.extend((identity, text) for identity, texts in self.original_index.variants.items()
+                        for text in texts if len(texts) > 1)
+        for identity, text in verified:
             if (type(identity) is not str or type(text) is not str
                     or identity not in self.inventory.targets
                     or not any(row.get("wording_sha256") == digest(text)
@@ -141,8 +144,16 @@ class LocalReviewState:
         registry = {"classicua": ClassicUAProvider({source: field for source, field in bindings.values()}),
                     "another": AlternativeSourceStub(), "own_translator": OwnTranslatorMock()}
         observations = []
+        blocked = self.blocked_quest_moments()
+        proven_wording = {r.decision.target_id: r.evidence["facts"]["wording_sha256"]
+                          for r in self.reviews}
         for target, (source_id, _) in sorted(bindings.items()):
+            if quest_moment(target) in blocked:
+                continue
             original = self.original_index.original_english.get(target)
+            if original is None:
+                original = next((text for text in self.original_index.variants.get(target, ())
+                                 if digest(text) == proven_wording[target]), None)
             if original is None:
                 raise ValueError("approved_identity_lacks_verified_original")
             if not any(row.get("wording_sha256") == digest(original)
@@ -160,6 +171,14 @@ class LocalReviewState:
                     unit.grammar_sha256, candidate))
         return observations
 
+    def blocked_quest_moments(self):
+        return {quest_moment(r["target_id"]) for r in self.decisions["decisions"]}
+
+    def auto_review_pairs(self):
+        return {pair for pair in unique_one_to_one_hint_pairs(
+            self._hints, self.source.units, self.inventory)
+            if pair[1] in self.original_index.original_english}
+
     def translation_page(self):
         with self._lock:
             observations = self.translation_observations()
@@ -176,8 +195,7 @@ class LocalReviewState:
             observations = self.translation_observations()
             if action == "refresh" and payload == {}:
                 result = self.translations.observe(observations, self.policy,
-                    one_to_one_pairs=unique_one_to_one_hint_pairs(
-                        self._hints, self.source.units, self.inventory))
+                    one_to_one_pairs=self.auto_review_pairs())
                 return result | {"activated": False}
             elif action == "edit" and set(payload) == {"identity", "text", "reviewer"}:
                 return {"version_id": self.translations.edit(**payload, observations=observations, policy=self.policy)}
@@ -185,12 +203,12 @@ class LocalReviewState:
                 self.translations.decide(**payload, observations=observations, policy=self.policy)
             elif action == "import" and payload == {}:
                 result = self.translations.import_approved(observations, self.policy,
-                    one_to_one_pairs=unique_one_to_one_hint_pairs(
-                        self._hints, self.source.units, self.inventory))
+                    one_to_one_pairs=self.auto_review_pairs())
                 summary = import_summary(
                     self.inventory, observations, self.policy, self.translations,
                     self._hints, self.source.units, changed=result["changed"],
-                    machine_targets=self.machine_imports.current_import_targets())
+                    machine_targets={target for target in self.machine_imports.current_import_targets()
+                                     if quest_moment(target) not in self.blocked_quest_moments()})
                 return result | {"imported": summary["imported_total"],
                                  "report": summary}
             elif action == "auto_import_one_to_one" and payload == {"source": "classicua"}:
@@ -200,8 +218,7 @@ class LocalReviewState:
                     raise ValueError("one_to_one_auto_import_not_enabled_for_source")
                 if any(o.candidate.provider != "classicua" for o in observations):
                     raise ValueError("multi_source_auto_import_not_supported")
-                pairs = unique_one_to_one_hint_pairs(
-                    self._hints, self.source.units, self.inventory)
+                pairs = self.auto_review_pairs()
                 saved = self.translations.observe(
                     observations, self.policy, one_to_one_pairs=pairs)
                 result = self.translations.import_approved(
@@ -211,18 +228,20 @@ class LocalReviewState:
                     self.original_index, self._hints,
                     allow_ai_transations=self.policy.allows_ai_transations("classicua"))
                 blocked = {row["target_id"] for row in self.translations.file.data["versions"]}
+                rejected_moments = self.blocked_quest_moments()
+                blocked.update(row["target_id"] for row in machine_rows
+                               if quest_moment(row["target_id"]) in rejected_moments)
                 if skipped is not None:
-                    decisions = self.decisions["decisions"]
-                    blocked.update(row["target_id"] for row in decisions)
                     skipped.extend((row["target_id"], "quest_mapping_rejected_or_deferred")
-                                   for row in decisions)
+                                   for row in self.decisions["decisions"])
                 machine_result = self.machine_imports.run(machine_rows, blocked_targets=blocked)
                 summary = import_summary(
                     self.inventory, observations, self.policy, self.translations,
                     self._hints, self.source.units,
                     auto_approved=saved["auto_approved"],
                     changed=result["changed"] or machine_result["changed"],
-                    machine_targets=self.machine_imports.current_import_targets())
+                    machine_targets=self.machine_imports.current_import_targets(),
+                    machine_candidate_count=sum(row["target_id"] not in blocked for row in machine_rows))
                 return {"imported": summary["imported_total"],
                         "changed": summary["changed"],
                         "auto_approved": saved["auto_approved"],
@@ -253,21 +272,26 @@ class LocalReviewState:
             raise ValueError("effective_quest_source_fingerprint_mismatch")
         return field.node.value
 
-    def page(self, faction="horde", offset=0, limit=12):
+    def page(self, faction="horde", offset=0, limit=12, target_filter=None):
         if (faction not in FACTIONS or type(offset) is not int or offset < 0
                 or type(limit) is not int or limit < 1 or limit > 40):
             raise ValueError("invalid_review_ui_page")
         with self._lock:
             report = build_workbench(
                 self.source, self.inventory, decisions=self.decisions,
-                reviews=self.reviews, faction=faction, offset=offset, limit=limit)
+                reviews=self.reviews, faction=faction, offset=offset, limit=limit, target_filter=target_filter)
             items = []
             for item in report["queue"]:
                 variants = []
                 for option in item["target_options"]:
                     original = self.original_index.original_english.get(option["target_id"])
+                    texts = self.original_index.variants.get(
+                        option["target_id"], (original,) if original is not None else ())
+                    by_wording = {digest(text): text for text in texts}
                     variants.append({
                         **option,
+                        "variants": [v | {"english_original": by_wording.get(v.get("wording_sha256"))}
+                                     for v in option["variants"]],
                         # None means no verified unique English original. Never
                         # substitute text from a different variant or locale.
                         "english_original": original,

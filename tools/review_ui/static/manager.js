@@ -5,6 +5,35 @@ const number = new Intl.NumberFormat("uk");
 const labels = {
   ready: "Готовий", missing: "Немає перекладу", review: "Потрібна перевірка",
   conflict: "Конфлікт", rejected: "Відхилено / відкладено", invalid: "Не пройшов перевірку", stale: "Застарів",
+  multiple_originals: "Кілька оригіналів",
+};
+const mappingLabels = {
+  mapping_verified: "Зіставлено вручну", mapping_provisional: "Попереднє зіставлення",
+  mapping_pending: "Зіставлення потребує перевірки", mapping_conflict: "Неоднозначне зіставлення",
+  mapping_rejected: "Зіставлення відхилено або відкладено", invalid_context: "Непідтримуваний контекст",
+  stale: "Докази застаріли",
+};
+const translationLabels = {
+  translation_available: "Переклад доступний", translation_missing: "Немає перекладу",
+  translation_pending: "Переклад на перевірці", translation_approved: "Переклад схвалено",
+  translation_rejected: "Переклад відхилено або відкладено",
+};
+const queueLabels = {
+  quest_mapping: "Зіставлення Quest", quest_translation: "Перевірка перекладу Quest",
+  gossip_translation: "Переклад Gossip", agent: "Оцінки агента",
+};
+const problems = {
+  quest_mapping_rejected_or_deferred: "Рев’юер відхилив або відклав зіставлення. Перегляньте рішення.",
+  quest_multiple_verified_originals: "Перегляньте кожен оригінал окремо. Для цієї події автоматичний імпорт заблоковано.",
+  quest_original_missing: "У закріпленому корпусі немає підтвердженого оригіналу.",
+  quest_mapping_unverified: "Для цього кандидата бракує доказів фракції, відповідності контексту або незалежної перевірки AI.",
+  gossip_context_unsupported: "Для цього типу співрозмовника локальний ZIP не підтримує підстановку тексту.",
+  gossip_original_missing: "У закріпленому корпусі немає підтвердженої репліки.",
+};
+const checkLabels = {
+  line_breaks: "кількість переносів рядків",
+  placeholder_correspondence: "відповідність змінних і позначок форматування",
+  canonical_context: "підтвердження контексту",
 };
 const routes = {
   machine_1to1: "Машинний збіг 1:1", reviewed: "Перевірено вручну",
@@ -62,10 +91,12 @@ async function call(action, payload) {
 }
 
 function metrics(summary, build) {
-  const tally = key => summary.quest[key] + summary.gossip[key];
+  const selectedKind = el("kind").value;
+  const tally = key => selectedKind === "all" ? summary.quest[key] + summary.gossip[key] : summary[selectedKind][key];
   const cells = [
     ["Усього записів", "total"], ["Імпортовано в ZIP", "included"], ["Не в ZIP", "not_included"],
     ["Конфлікти", "conflicts"], ["Без перекладу", "missing"], ["Готові до імпорту", "ready"],
+    ["Зауваження агента", "agent_warnings"], ["Непідтверджені збіги Gossip", "unverified_alternatives"],
   ];
   el("metrics").replaceChildren(...cells.map(([label, key]) => {
     const card = make("div", undefined, "metric");
@@ -91,11 +122,13 @@ function renderList(data) {
     tr.appendChild(make("td")).append(name);
     tr.appendChild(make("td")).append(
       badge(item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано", item.built ? "built" : ""));
-    tr.appendChild(make("td")).append(badge(labels[item.status], item.status));
-    const problem = item.status !== "ready";
+    const statuses = tr.appendChild(make("td"));
+    statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
+    if (item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
+    const problem = item.status !== "ready" || item.agent_warning;
     const flag = make("td", problem ? "⚑" : "—");
-    flag.title = labels[item.status];
-    if (problem) flag.setAttribute("aria-label", labels[item.status]);
+    flag.title = item.agent_warning ? "Є зауваження агента" : labels[item.status];
+    if (problem) flag.setAttribute("aria-label", flag.title);
     tr.append(flag);
     return tr;
   });
@@ -132,29 +165,58 @@ function renderDetail(row) {
   const built = row.built ? "У ZIP · " + (routes[row.built.route] || row.built.route) + " · " + row.built.source :
     row.recorded ? "Записано в базі, до ZIP не ввійшло" : "Не імпортовано";
   blocks.push(badge(built, row.built ? "built" : ""), make("p", row.help));
+  blocks.push(make("p", [mappingLabels[row.mapping_state], translationLabels[row.translation_state]].filter(Boolean).join(" · ")));
+  blocks.push(make("p", row.review_queue ? "Черга: " + queueLabels[row.review_queue] : "У черзі перевірки запису немає.", "muted"));
   const en = make("section");
-  en.append(make("h3", "Англійський оригінал"),
-    ...((row.originals.length ? row.originals : ["Перевірений оригінал недоступний."])
+  en.append(make("h3", "Англійський оригінал"));
+  if (row.original_variants?.length) {
+    for (const variant of row.original_variants) {
+      en.append(make("p", variant.text, "original"));
+      for (const context of variant.contexts) {
+        en.append(make("p", [variant.target_id, context.npc_id != null ? "NPC " + context.npc_id : "",
+          context.npc_type, context.faction, context.voice, context.player_gender].filter(Boolean).join(" · "), "muted"));
+        for (const faction of variant.review_factions) {
+          const link = make("a", "Перевірити цей варіант · " + (faction === "alliance" ? "Альянс" : "Орда"));
+          const query = new URLSearchParams({target: variant.target_id, faction,
+            wording: context.wording_sha256, context: context.index});
+          link.href = "/advanced?" + query + "#mapping-context";
+          en.append(make("p")).appendChild(link);
+        }
+      }
+    }
+  } else {
+    en.append(...((row.originals.length ? row.originals : ["Перевірений оригінал недоступний."])
       .map(text => make("p", text, "original"))));
+  }
   const uk = make("section");
   uk.append(make("h3", "Український переклад"));
   if (!row.candidates.length) uk.append(make("p", "Перекладу немає.", "muted"));
   for (const item of row.candidates) {
     const details = make("details", undefined, "candidate");
-    details.open = row.candidates.length === 1 || row.status === "conflict" || row.built?.text_sha256 === item.sha256;
+    details.open = row.candidates.length === 1 || row.status === "conflict" ||
+      row.built?.text_sha256 === item.sha256 || Boolean(item.validation && item.validation !== "agent_verified");
     details.append(make("summary", item.provider + " · " + item.review),
       make("pre", item.text),
-      make("p", [item.reference, item.revision, item.validation].filter(Boolean).join(" · "), "muted"));
+      make("p", [item.reference, item.revision].filter(Boolean).join(" · "), "muted"));
+    if (item.validation === "stale") details.append(make("p", "Оцінка агента застаріла.", "muted"));
+    if (item.shared_bindings) details.append(make("p", "Спільний запис ClassicUA для Альянсу й Орди.", "muted"));
     if (item.checks) {
       const failed = Object.keys(item.checks).filter(key => !item.checks[key]);
-      if (failed.length) details.append(make("p", "Потребує уваги: " + failed.join(", "), "muted"));
+      if (failed.length) details.append(make("p", "Зауваження агента: " +
+        failed.map(key => checkLabels[key] || key).join(", "), "muted"));
     }
     uk.append(details);
   }
   const evidence = make("details");
   evidence.append(make("summary", "Контекст джерела"), make("pre", JSON.stringify(row.contexts, null, 2)));
   blocks.push(en, uk, evidence);
-  if (row.problem) blocks.push(make("p", "Причина: " + row.problem));
+  if (row.problem) blocks.push(make("p", problems[row.problem] || row.problem));
+  if (row.unverified_alternatives?.length) {
+    blocks.push(make("p", "Є збіг за обробленим текстом Spoken. Потрібна перевірка оригіналу в грі."));
+    for (const item of row.unverified_alternatives) {
+      blocks.push(make("p", item.hash + " · " + (item.scope === "common" ? "спільний запис" : "запис цього NPC"), "muted"));
+    }
+  }
   const link = make("a", row.status === "ready" ? "Переглянути історію та джерела" : "Відкрити розширену перевірку");
   link.href = row.type === "quest" ? "/advanced#translation-candidates" : "/advanced#gossip-stats";
   blocks.push(make("p"));

@@ -65,12 +65,27 @@
               <option value="all">Усі типи</option><option value="quest">Quest</option><option value="gossip">Gossip</option>
             </select>
           </label>
-          <label>Переклад
+          <label>Стан
             <select id="translation-status">
-              <option value="all">Усі статуси</option><option value="missing">Немає перекладу</option>
+              <option value="all">Усі статуси</option>
+              <optgroup label="Зіставлення">
+                <option value="mapping_verified">Перевірено вручну</option>
+                <option value="mapping_provisional">Попереднє зіставлення</option>
+                <option value="mapping_pending">Потребує перевірки</option>
+                <option value="mapping_conflict">Неоднозначне зіставлення</option>
+                <option value="invalid_context">Непідтримуваний контекст</option>
+                <option value="multiple_originals">Кілька оригіналів</option>
+                <option value="mapping_rejected">Зіставлення відхилено або відкладено</option>
+              </optgroup>
+              <optgroup label="Переклад">
+                <option value="translation_available">Переклад доступний</option>
+                <option value="translation_missing">Немає перекладу</option>
+                <option value="translation_pending">Переклад на перевірці</option>
+                <option value="translation_approved">Переклад схвалено</option>
+                <option value="translation_rejected">Переклад відхилено або відкладено</option>
+              </optgroup>
               <option value="ready">Готовий</option><option value="review">Потрібна перевірка</option>
-              <option value="invalid">Не пройшов перевірку</option><option value="stale">Застарів</option>
-              <option value="rejected">Відхилено / відкладено</option>
+              <option value="stale">Докази застаріли</option>
             </select>
           </label>
         </form>

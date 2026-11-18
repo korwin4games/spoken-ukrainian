@@ -194,8 +194,8 @@ class ImportSummaryTests(unittest.TestCase):
             [])
 
     def test_ai_opt_in_does_not_break_global_bipartite_uniqueness(self):
-        f = Fixture().add("quest_both", "classic",
-                          '{[42]={nil,"Вигаданий ШІ переклад.",ai=true}}')
+        f = (Fixture().add("quest_horde", "classic", '{[42]={nil,"Вигаданий ШІ переклад.",ai=true}}')
+             .add("quest_alliance", "classic", '{[42]={nil,"Вигаданий ШІ переклад.",ai=true}}'))
         source = f.inventory()
         inv = synthetic_inventory()
         hints = candidates(source.units, inv)
@@ -249,23 +249,34 @@ class ImportSummaryTests(unittest.TestCase):
                              {"machine_1to1_provisional", "pending_update"})
             self.assertEqual(reopened.current_import_targets(), set())
 
-    def test_machine_import_rejects_shared_faction_and_manual_override(self):
+    def test_machine_import_resolves_shared_faction_and_respects_manual_override(self):
         f = Fixture().add("quest_both", "classic",
                           '{[42]={nil,"Вигаданий текст."}}')
         inv = synthetic_inventory()
         originals = TextIndex({"q:42:accept": "invented wording"}, (), {})
-        self.assertEqual(machine_candidates(f.dataset, f.inventory(), inv, originals,
-                                            candidates(f.inventory().units, inv)), [])
-        unique = Fixture().add("quest_horde", "classic",
-                               '{[42]={nil,"Вигаданий текст."}}')
-        rows = machine_candidates(unique.dataset, unique.inventory(), inv, originals,
-                                  candidates(unique.inventory().units, inv))
+        source = f.inventory()
+        rows = machine_candidates(f.dataset, source, inv, originals, candidates(source.units, inv))
         self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source_id"], "quest:horde:42:accept")
+        self.assertEqual(rows[0]["shared_bindings"],
+                         {key: unit.context_sha256 for key, unit in source.units.items()})
+        self.assertEqual(rows[0]["decision"], "machine_1to1_provisional")
+        context = inv.contexts["q:42:accept"][0]
+        for contexts in ([context | {"faction": "other"}],
+                         [context, context | {"npc_id": 99}]):
+            with self.subTest(contexts=contexts):
+                ambiguous = synthetic_inventory(contexts=contexts)
+                self.assertEqual(machine_candidates(f.dataset, source, ambiguous, originals,
+                    candidates(source.units, ambiguous)), [])
         with tempfile.TemporaryDirectory() as d:
             base = Path(d) / "build"
             store = MachineOneToOneStore(base / "machine.json", base)
             self.assertEqual(store.run(rows, blocked_targets={"q:42:accept"})["imported"], 0)
             self.assertEqual(store.file.data["versions"], [])
+            self.assertEqual(store.run(rows)["imported"], 1)
+            restarted = MachineOneToOneStore(base / "machine.json", base)
+            self.assertEqual(restarted.file.data["versions"][0]["shared_bindings"], rows[0]["shared_bindings"])
+            self.assertFalse(restarted.run(rows)["changed"])
 
     def test_cli_bulk_flag_prints_table_and_selects_explicit_classicua(self):
         summary = {
