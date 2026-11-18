@@ -57,7 +57,26 @@ Invalid or stale identity reviews fail closed and cannot be silently imported.
 If a source revision changes, previously stored translation bodies survive,
 but approval for changed source/NPC contexts must be revalidated.
 
-## Check the database / create a backup
+## Explicit initialization, status and backup
+
+`status` is read-only and reports `database_exists: false` when the configured
+database is missing. It does not create directories, initialize or migrate SQLite.
+For a **new store only**, explicitly run `init` to create the existing schema:
+
+```bash
+uv sync --locked
+uv run --locked python tools/translation_db.py status
+uv run --locked python tools/translation_db.py init
+```
+
+`init` preserves existing rows and does not import legacy JSON. To migrate old
+ledgers, use the normal review workflow above with the existing pinned sources.
+If you expected saved reviews, locate or restore their database instead of
+initializing an empty replacement. All these commands accept
+`--db /path/to/translations.sqlite3`; `SPOKEN_TRANSLATION_DB` sets the default
+for all tools.
+
+Once a database exists, create a backup:
 
 ```bash
 uv run --locked python tools/translation_db.py status
@@ -66,8 +85,15 @@ uv run --locked python tools/translation_db.py backup
 uv run --locked python tools/translation_db.py backup --output ~/backups/spoken-translation-2026.sqlite3
 ```
 
-Online SQLite backups are consistent and fail if an output file already
-exists. Keep a separate copy off the machine for disaster recovery.
+Online SQLite backups are consistent and include schema, approvals and review
+history. The source is opened read-only: backup never initializes or migrates it,
+and never creates a missing source database. Paths are resolved after rejecting
+symlinks (including parent directories). Missing sources, identical resolved
+paths and existing destinations have distinct errors with local source/destination
+paths and corrective suggestions. A backup never overwrites an existing file;
+choose another `--output` if a timestamped backup already exists. Diagnostics omit
+translation bodies and raw database exceptions; redact personal paths before
+sharing logs. Keep a separate copy off the machine for disaster recovery.
 **Never commit or publish your personal database**, old ignored JSON
 ledgers, translation batches or model-generated drafts.
 

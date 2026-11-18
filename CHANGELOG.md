@@ -38,6 +38,7 @@ or GitHub Release has been published.
 
 ### Fixed
 
+- Distinguish missing SQLite backup sources from identical paths, show corrective CLI diagnostics, preserve exclusive destination creation and reject symlinks. Open backup sources read-only, add explicit `translation_db.py init`, and keep status inspection read-only; preserve schema, approvals and review history.
 - Stage 4A empty-provider policy now selects client locale for every canonical Spoken ID, independently tracking whether an English original is verified; align optional source identity typing and clarify four modules vs five content families.
 - Align single-record translation source priority with the batch resolver (first real candidate wins), verify translation candidate field SHA-256 against UTF-8 text, and correct Markdown code fences in source-chain documentation.
 - Bind Stage 3 source evidence to independently audited ClassicUA revision/file/field provenance; reject forged or unverifiable persisted evidence while retaining reviewed canonical IDs across translation-only updates.

@@ -1,10 +1,13 @@
 """SQLite persistence, legacy import, review-memory reuse and transactional safety."""
 import json
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import sqlite3
 import unittest
+from unittest.mock import patch
 
 from adapters.local_review_store import LocalFile
 from adapters.sqlite_translation_store import (
@@ -13,6 +16,7 @@ from adapters.sqlite_translation_store import (
 )
 from tools.gossip_translation_review import GossipReviews, discover_groups, create_batches
 from tools.gossip_coverage import classicua_hash
+from tools.translation_db import main as translation_db_main
 
 A = "a" * 40
 B = "b" * 40
@@ -98,6 +102,17 @@ class SQLiteStorageTests(unittest.TestCase):
             self.assertEqual(len(restarted.file.data["imports"]), 1)
             self.assertEqual(restarted.imported_by_npc(known)[12][
                 classicua_hash("Hello traveler.")], "Вітаю, мандрівнику!")
+            destination = self.db.parent / "review-history.sqlite3"
+            before = self.db.read_bytes()
+            backup_database(self.db, destination)
+            self.assertEqual(self.db.read_bytes(), before)
+            with sqlite3.connect(self.db) as source, sqlite3.connect(destination) as target:
+                self.assertEqual(target.execute("PRAGMA integrity_check").fetchall(), [("ok",)])
+                self.assertEqual(list(source.iterdump()), list(target.iterdump()))
+            with enable_sqlite(destination):
+                restored = GossipReviews(groups, A, B, self.gossip_path, self.build)
+                self.assertEqual(restored.file.data, restarted.file.data)
+                self.assertEqual(restored.imported_by_npc(known), restarted.imported_by_npc(known))
             # New NPC context changes the proof: old translation stays in DB,
             # reappears only as a pending DRAFT, with no inherited approval.
             rows = corpus + [{"source": "gossip", "npcType": "creature",
@@ -168,6 +183,129 @@ class SQLiteStorageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sqlite_backup_target_already_exists"):
             backup_database(self.db, destination)
         self.assertEqual(destination.read_bytes(), b"unrelated pre-existing backup")
+
+    def run_cli(self, *args):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            result = translation_db_main(list(args))
+        return result, stdout.getvalue(), stderr.getvalue()
+
+    def test_missing_backup_source_is_explicit_and_creates_nothing(self):
+        destination = Path(self.tmp.name) / "backups" / "copy.sqlite3"
+        with self.assertRaisesRegex(ValueError, "sqlite_backup_source_missing"):
+            backup_database(self.db, destination)
+        result, _, error = self.run_cli("backup", "--db", str(self.db), "--output", str(destination))
+        self.assertEqual(result, 1)
+        for text in ("sqlite_backup_source_missing", "does not exist", "init", "restore",
+                     str(self.db), str(destination)):
+            self.assertIn(text, error)
+        self.assertFalse(self.db.parent.exists())
+        self.assertFalse(destination.parent.exists())
+
+    def test_backup_rejects_identical_and_normalized_paths(self):
+        with connection(self.db):
+            pass
+        before = self.db.read_bytes()
+        child = self.db.parent / "child"
+        child.mkdir()
+        for destination in (self.db, child / ".." / self.db.name):
+            with self.subTest(destination=destination):
+                with self.assertRaisesRegex(ValueError, "sqlite_backup_same_path"):
+                    backup_database(self.db, destination)
+                result, _, error = self.run_cli("backup", "--db", str(self.db),
+                                                "--output", str(destination))
+                self.assertEqual(result, 1)
+                self.assertIn("Choose a different --output", error)
+        self.assertEqual(self.db.read_bytes(), before)
+
+    def test_backup_symlinks_are_rejected_before_resolution(self):
+        with connection(self.db):
+            pass
+        root = Path(self.tmp.name)
+        link = root / "link.sqlite3"
+        link.symlink_to(self.db)
+        dangling = root / "dangling.sqlite3"
+        dangling.symlink_to(root / "absent.sqlite3")
+        parent_link = root / "linked-data"
+        parent_link.symlink_to(self.db.parent, target_is_directory=True)
+        output = root / "copy.sqlite3"
+        for source, destination in ((link, output), (dangling, output),
+                                    (self.db, link), (self.db, dangling),
+                                    (parent_link / self.db.name, output),
+                                    (self.db, parent_link / "copy.sqlite3")):
+            with self.subTest(source=source, destination=destination):
+                with self.assertRaisesRegex(ValueError, "sqlite_translation_db_symlink"):
+                    backup_database(source, destination)
+                result, _, error = self.run_cli("backup", "--db", str(source),
+                                                "--output", str(destination))
+                self.assertEqual(result, 1)
+                self.assertIn("without symlinks", error)
+        self.assertFalse(output.exists())
+        self.assertFalse((root / "absent.sqlite3").exists())
+
+    def test_backup_does_not_recreate_source_removed_after_validation(self):
+        with connection(self.db):
+            pass
+        destination = self.db.parent / "copy.sqlite3"
+        connect = sqlite3.connect
+
+        def remove_source_then_connect(*args, **kwargs):
+            self.db.unlink()
+            return connect(*args, **kwargs)
+
+        with patch("adapters.sqlite_translation_store.sqlite3.connect", remove_source_then_connect):
+            with self.assertRaises(sqlite3.OperationalError):
+                backup_database(self.db, destination)
+        self.assertFalse(self.db.exists())
+        self.assertFalse(destination.exists())
+
+    def test_backup_copies_existing_schema_without_initializing_or_migrating(self):
+        self.db.parent.mkdir()
+        with sqlite3.connect(self.db) as db:
+            db.execute("CREATE TABLE existing_history (decision TEXT)")
+            db.execute("INSERT INTO existing_history VALUES ('synthetic approval')")
+        before = self.db.read_bytes()
+        destination = self.db.parent / "copy.sqlite3"
+        backup_database(self.db, destination)
+        self.assertEqual(self.db.read_bytes(), before)
+        with sqlite3.connect(destination) as db:
+            self.assertEqual(db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(),
+                             [("existing_history",)])
+            self.assertEqual(db.execute("SELECT * FROM existing_history").fetchall(),
+                             [("synthetic approval",)])
+
+    def test_cli_explicit_init_status_backup_and_existing_destination(self):
+        result, output, error = self.run_cli("status", "--db", str(self.db))
+        self.assertEqual((result, error), (0, ""))
+        self.assertFalse(json.loads(output)["database_exists"])
+        self.assertFalse(self.db.parent.exists())
+        self.assertEqual(self.run_cli("init", "--db", str(self.db))[0], 0)
+        before = self.db.read_bytes()
+        self.assertEqual(self.run_cli("status", "--db", str(self.db))[0], 0)
+        self.assertEqual(self.db.read_bytes(), before)
+        destination = self.db.parent / "copy.sqlite3"
+        result, output, error = self.run_cli("backup", "--db", str(self.db), "--output", str(destination))
+        self.assertEqual((result, error), (0, ""))
+        self.assertIn(str(destination), output)
+        backup_bytes = destination.read_bytes()
+        result, _, error = self.run_cli("backup", "--db", str(self.db), "--output", str(destination))
+        self.assertEqual(result, 1)
+        self.assertIn("Choose an unused --output", error)
+        self.assertIn(str(destination), error)
+        self.assertEqual(destination.read_bytes(), backup_bytes)
+        self.assertEqual(self.db.read_bytes(), before)
+
+    def test_backup_diagnostics_omit_raw_errors_and_escape_path_controls(self):
+        destination = self.db.parent / "copy\n.sqlite3"
+        with patch("tools.translation_db.backup_database",
+                   side_effect=sqlite3.DatabaseError("private translation body")):
+            result, _, error = self.run_cli("backup", "--db", str(self.db),
+                                            "--output", str(destination))
+        self.assertEqual(result, 1)
+        self.assertNotIn("private translation body", error)
+        self.assertIn("sqlite_store_error: DatabaseError", error)
+        self.assertIn(json.dumps(str(destination)), error)
+        self.assertIn("readable SQLite database", error)
 
     def test_path_and_context_restore(self):
         original = os.environ.get("SPOKEN_TRANSLATION_DB")
