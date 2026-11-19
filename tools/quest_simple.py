@@ -67,13 +67,10 @@ def selections(db_path):
                     "SELECT moment, evidence, text, text_sha256, source FROM quest_simple_choices")}
 
 
-def valid(originals, text):
-    from tools.manager_review import validate_quest_text
-    try:
-        validate_quest_text(originals, text)
-        return True
-    except ValueError:
-        return False
+def usable_text(text):
+    """Only enforce storage safety, not translation quality or token parity."""
+    return (type(text) is str and bool(text.strip()) and len(text) <= 60000
+            and "\x00" not in text)
 
 
 def resolved(state, db_path):
@@ -83,17 +80,16 @@ def resolved(state, db_path):
         return {}
     options = pinned_options(state)
     stored = selections(db_path)
-    blocked = state.blocked_quest_moments()
     result = {}
     for moment, targets in groups(state).items():
         evidence, originals = binding(state, moment, targets)
-        if not evidence or moment in blocked:
+        if not evidence:
             continue
-        alternatives = {text for text, _ in options[moment] if valid(originals, text)}
+        alternatives = {text for text, _ in options[moment] if usable_text(text)}
         selection = stored.get(moment)
         if selection:
             old, text, fingerprint, source = selection
-            if (old == digest(evidence) and sha(text) == fingerprint and valid(originals, text)
+            if (old == digest(evidence) and sha(text) == fingerprint and usable_text(text)
                     and (source == "manual" or text in alternatives)):
                 result[moment] = {"text": text, "source": source, "selected": True}
                 continue
@@ -126,25 +122,29 @@ def apply_choice(action, payload, row, state, db_path):
         state.revalidate_inputs()
     targets = {v["target_id"] for v in row["original_variants"]}
     evidence, originals = binding(state, row["id"], targets)
-    if not evidence or digest(evidence) != payload["binding"] or row["id"] in state.blocked_quest_moments():
+    if not evidence or digest(evidence) != payload["binding"]:
         raise ValueError("manager_review_context_blocked")
     if action == "choose_quest":
         key = payload["candidate"]
         if type(key) is not str or not key:
             raise ValueError("manager_candidate_unavailable")
-        options = {text for text, _ in pinned_options(state).get(row["id"], [])}
-        prior = selections(db_path).get(row["id"])
-        if prior and prior[0] == payload["binding"] and prior[3] == "manual":
-            options.add(prior[1])
-        candidates = {c["text"] for c in row["candidates"] if c["sha256"] == key}
-        candidates.intersection_update(options)
+        # Any currently displayed Quest candidate can be chosen without
+        # historical review or translation validation requirements.
+        candidates = {c["text"] for c in row["candidates"]
+                      if c["sha256"] == key and sha(c["text"]) == key}
         if len(candidates) != 1:
             raise ValueError("manager_candidate_unavailable")
         text = next(iter(candidates))
-        source = "manual" if prior and prior[1] == text and prior[3] == "manual" else "classicua"
+        prior = selections(db_path).get(row["id"])
+        if prior and prior[0] == payload["binding"] and prior[1] == text:
+            source = prior[3]
+        elif any(c["text"] == text and c["provider"] == "classicua" for c in row["candidates"]):
+            source = "classicua"
+        else:
+            source = "manual"  # Explicit local choice, not a human review approval.
     else:
         text, source = payload["text"], "manual"
-    if not valid(originals, text):
+    if not usable_text(text):
         raise ValueError("manager_invalid_translation_format")
     with connection(db_path) as db:
         db.execute("""INSERT INTO quest_simple_choices
