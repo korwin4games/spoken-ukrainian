@@ -4,6 +4,19 @@
 
 [Українська](CLI.uk.md)
 
+
+## Incremental Quest import (only ready records)
+
+Saving a Quest translation or choosing an existing candidate stores the selection in SQLite only. It **does not rebuild a ZIP**. The Quest UI shows three buckets: Imported, Ready to import, and Problematic. The **Import all (N)** button performs a ready-only incremental import: it copies previously imported Quest ID/event texts and provenance from the current checksum-verified ZIP, adding or replacing only ready moments. All other candidate texts are excluded. It rebuilds the ZIP file as a deployment artifact, not as a second database. Gossip is not touched.
+
+The same operation is available through the CLI:
+
+```bash
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm --import-ready
+```
+
+The legacy command without `--import-ready` remains a separate full rebuild. The ready-only operation fails closed if the existing Quest ZIP is missing, untracked, modified, or has stale import metadata. Back up your DB/ZIP before a recovery or full rebuild. Never treat a SQLite-only selection as already installed in WoW.
+
 ## Setup and source pins
 
 Install Git, uv and Python 3.12 (uv can install the version in `.python-version`). Tests require the Lua 5.4 shared library; CI uses `liblua5.4-0` on Ubuntu. Node is needed only for the Review UI JavaScript syntax check. Clone sibling repositories, then detach them at the revisions in [sources.lock.json](../sources.lock.json). These setup commands fetch upstream repositories. Project commands use local, clean checkouts and fail when a pin or audited file hash differs. In the examples, run from the project root and replace uppercase values such as `CANDIDATE_ID` with real IDs reported by the local workflow.
