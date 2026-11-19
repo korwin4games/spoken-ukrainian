@@ -470,7 +470,7 @@ class ManagerTests(unittest.TestCase):
 
         with urlopen(url + "/", timeout=5) as response:
             body = response.read().decode()
-        self.assertEqual(body.count("Переімпортувати Quest"), 1)
+        self.assertEqual(body.count("Створити модуль"), 1)
         self.assertNotIn('/advanced', body)
         with self.assertRaises(HTTPError) as missing:
             urlopen(url + "/advanced", timeout=5)
