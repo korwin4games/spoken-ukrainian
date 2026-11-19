@@ -2,6 +2,7 @@
 from contextlib import redirect_stdout, redirect_stderr
 from hashlib import sha256
 from io import StringIO
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -224,7 +225,8 @@ class ImportSummaryTests(unittest.TestCase):
             self.assertEqual(result["imported"], 1)
             self.assertEqual(result["new_machine_1to1"], 1)
             self.assertEqual(store.run(rows)["changed"], False)
-            self.assertEqual(base.joinpath("machine.json").stat().st_mode & 0o777, 0o600)
+            if os.name == "posix":
+                self.assertEqual(base.joinpath("machine.json").stat().st_mode & 0o777, 0o600)
             reopened = MachineOneToOneStore(base / "machine.json", base)
             self.assertEqual(reopened.current_import_targets(), {"q:42:accept"})
             human = TranslationApprovals(base / "reviews.json", base)
