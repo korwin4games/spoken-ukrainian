@@ -32,6 +32,16 @@ TRANSLATION_STATES = {"translation_available", "translation_missing", "translati
                       "translation_approved", "translation_rejected"}
 
 
+def quest_bucket(row):
+    """Exactly one UI bucket per Quest, independent of old review statuses."""
+    if row.get("ready_to_import"):
+        return "quest_ready"
+    if row.get("built"):
+        return "quest_imported"
+    return "quest_problem"
+
+
+
 def latest_units(db, archive, spoken_revision, classicua_revision, module=MODULE):
     db.execute("BEGIN")
     try:
@@ -73,6 +83,10 @@ class ModuleInventory:
                             "conflicting_candidates": conflicts, "missing": counts["missing"],
                             "ready": sum(bool(r.get("ready_to_import")) if kind == "quest"
                                          else r["status"] == "ready" and not r["built"] for r in rows),
+                            "quest_imported": sum(quest_bucket(r) == "quest_imported" for r in rows)
+                                if kind == "quest" else 0,
+                            "quest_problem": sum(quest_bucket(r) == "quest_problem" for r in rows)
+                                if kind == "quest" else 0,
                             "pending_review": pending["review"] + pending["stale"],
                             "mapping_states": dict(Counter(r.get("mapping_state", r["status"]) for r in rows)),
                             "translation_states": dict(Counter(r.get("translation_state", r["status"]) for r in rows)),
@@ -92,7 +106,9 @@ class ModuleInventory:
 
     def page(self, *, module=MODULE, query="", kind="all", filter_by="all", status="all", offset=0, limit=30):
         if (module != self.module or kind not in ("all", MODULE_DOMAINS[self.module])
-                or filter_by not in ("all", "imported", "not_imported", "conflicts", "multiple_originals")
+                or filter_by not in ("all", "imported", "not_imported", "conflicts", "multiple_originals",
+                                     *("quest_imported", "quest_ready", "quest_problem")
+                                     if self.module == MODULE else ())
                 or status not in {"all", *STATUS_HELP, *MAPPING_STATES, *TRANSLATION_STATES}
                 or type(query) is not str or len(query) > 200
                 or type(offset) is not int or offset < 0
@@ -109,6 +125,8 @@ class ModuleInventory:
             if filter_by == "conflicts" and not row.get("candidate_conflict", row["status"] == "conflict"):
                 continue
             if filter_by == "multiple_originals" and (row["type"] != "quest" or len(row["originals"]) < 2):
+                continue
+            if filter_by.startswith("quest_") and quest_bucket(row) != filter_by:
                 continue
             if needles:
                 text = " ".join([row["id"], row["label"], *row["originals"],
@@ -534,10 +552,6 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
         status = ("rejected" if moment in rejected_moments else "ready" if approved else
                   "conflict" if moment in runtime_approved else "multiple_originals" if multiple else
                   status_for(english, choices, conflict=conflict, ready=ready))
-        if quick_ready:
-            # The saved Quest choice is a pending import even if an older
-            # translation for this moment is still present in the ZIP.
-            status, reason, conflict = "ready", None, False
         rows.append(decorate({"id": moment, "type": "quest", "label": title, "originals": english},
                     targets + [moment], built, choices, recorded, status, mapping=mapping, reason=reason,
                     review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
