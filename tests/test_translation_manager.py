@@ -53,7 +53,8 @@ class ManagerTests(unittest.TestCase):
             stub.start()
             self.addCleanup(stub.stop)
 
-    def fake_build(self, classicua, spoken, *, module, before_import, prepare, destination, skipped):
+    def fake_build(self, classicua, spoken, *, module, before_import, prepare, destination, skipped,
+                   incremental=False):
         self.assertEqual((classicua, spoken), self.paths)
         artifact, digest = builder.write_zip({"Spoken_Quest_UA/Translations.lua":
                 'local sample = "Вітаю, {ім\'я}!"'.encode()}, destination)
