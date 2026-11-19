@@ -2,7 +2,6 @@
 from copy import deepcopy
 from dataclasses import replace
 import json
-import os
 from pathlib import Path
 from unittest.mock import patch
 import tempfile
@@ -56,8 +55,7 @@ class TranslationApprovalTests(unittest.TestCase):
         self.assertFalse(reopened.import_approved(self.obs, self.policy)["changed"])
         self.assertEqual(self.path.read_bytes(), disk)
         self.assertEqual(self.path.stat().st_mtime_ns, mtime)
-        if os.name == "posix":
-            self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
         self.assertTrue(reopened.page(self.obs, self.policy)["versions"][0]["imported"])
 
     def test_approval_requires_all_explicit_checks_and_named_reviewer(self):

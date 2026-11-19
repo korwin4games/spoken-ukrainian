@@ -1,6 +1,6 @@
 """SQLite persistence, legacy import, review-memory reuse and transactional safety."""
 import json
-from contextlib import closing, redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import io
 import os
 from pathlib import Path
@@ -58,8 +58,7 @@ class SQLiteStorageTests(unittest.TestCase):
             restarted.save({"schema_version": 1,
                             "versions": [{"id": "synthetic"}, {"id": "new"}, {"id": "newer"}],
                             "imports": []})
-            if os.name == "posix":
-                self.assertEqual(self.db.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(self.db.stat().st_mode & 0o777, 0o600)
             self.assertEqual(len(list(self.db.parent.glob("*.sqlite3"))), 1)
             # A stale writer must NOT overwrite a later transaction.
             with self.assertRaisesRegex(ValueError, "local_review_conflict_restart_and_reload"):
@@ -107,7 +106,7 @@ class SQLiteStorageTests(unittest.TestCase):
             before = self.db.read_bytes()
             backup_database(self.db, destination)
             self.assertEqual(self.db.read_bytes(), before)
-            with closing(sqlite3.connect(self.db)) as source, closing(sqlite3.connect(destination)) as target:
+            with sqlite3.connect(self.db) as source, sqlite3.connect(destination) as target:
                 self.assertEqual(target.execute("PRAGMA integrity_check").fetchall(), [("ok",)])
                 self.assertEqual(list(source.iterdump()), list(target.iterdump()))
             with enable_sqlite(destination):
@@ -141,7 +140,7 @@ class SQLiteStorageTests(unittest.TestCase):
             store.save({"schema_version": 1, "versions": [{"id": "saved"}], "imports": []})
         destination = self.db.parent / "backups" / "backup.sqlite3"
         backup_database(self.db, destination)
-        with closing(sqlite3.connect(destination)) as db:
+        with sqlite3.connect(destination) as db:
             data = db.execute("SELECT payload FROM ledger_documents").fetchone()[0]
         self.assertEqual(json.loads(data)["versions"], [{"id": "saved"}])
         with self.assertRaisesRegex(ValueError, "sqlite_backup_target_already_exists"):
@@ -198,7 +197,7 @@ class SQLiteStorageTests(unittest.TestCase):
         result, _, error = self.run_cli("backup", "--db", str(self.db), "--output", str(destination))
         self.assertEqual(result, 1)
         for text in ("sqlite_backup_source_missing", "does not exist", "init", "restore",
-                     json.dumps(str(self.db)), json.dumps(str(destination))):
+                     str(self.db), str(destination)):
             self.assertIn(text, error)
         self.assertFalse(self.db.parent.exists())
         self.assertFalse(destination.parent.exists())
@@ -262,14 +261,14 @@ class SQLiteStorageTests(unittest.TestCase):
 
     def test_backup_copies_existing_schema_without_initializing_or_migrating(self):
         self.db.parent.mkdir()
-        with closing(sqlite3.connect(self.db)) as db, db:
+        with sqlite3.connect(self.db) as db:
             db.execute("CREATE TABLE existing_history (decision TEXT)")
             db.execute("INSERT INTO existing_history VALUES ('synthetic approval')")
         before = self.db.read_bytes()
         destination = self.db.parent / "copy.sqlite3"
         backup_database(self.db, destination)
         self.assertEqual(self.db.read_bytes(), before)
-        with closing(sqlite3.connect(destination)) as db:
+        with sqlite3.connect(destination) as db:
             self.assertEqual(db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(),
                              [("existing_history",)])
             self.assertEqual(db.execute("SELECT * FROM existing_history").fetchall(),
@@ -292,7 +291,7 @@ class SQLiteStorageTests(unittest.TestCase):
         result, _, error = self.run_cli("backup", "--db", str(self.db), "--output", str(destination))
         self.assertEqual(result, 1)
         self.assertIn("Choose an unused --output", error)
-        self.assertIn(json.dumps(str(destination)), error)
+        self.assertIn(str(destination), error)
         self.assertEqual(destination.read_bytes(), backup_bytes)
         self.assertEqual(self.db.read_bytes(), before)
 

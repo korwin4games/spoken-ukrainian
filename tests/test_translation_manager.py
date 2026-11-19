@@ -338,24 +338,21 @@ class ManagerTests(unittest.TestCase):
         self.addCleanup(lambda: (http.shutdown(), http.server_close(), thread.join(5)))
         origin = f"http://127.0.0.1:{port}"
         standard = {"Content-Type": "application/json", "Origin": origin, "X-Review-Token": "token"}
-        # These early rejection checks need only headers. Sending an unread body
-        # can cause Windows to reset the connection before the response arrives.
         cases = [
-            (standard | {"Host": "invalid.example"}, b"", 403),
-            (standard | {"Origin": "http://invalid.example"}, b"", 403),
-            (standard | {"X-Review-Token": ""}, b"", 403),
-            (standard | {"Content-Type": "text/plain"}, b"", 403),
+            (standard | {"Host": "invalid.example"}, b"{}", 403),
+            (standard | {"Origin": "http://invalid.example"}, b"{}", 403),
+            (standard | {"X-Review-Token": ""}, b"{}", 403),
+            (standard | {"Content-Type": "text/plain"}, b"{}", 403),
             (standard, b'{"module":1,"module":2}', 400),
-            (standard | {"Content-Length": "262145"}, b"", 413),
+            (standard, b"x" * 262145, 413),
         ]
         with patch.object(manager, "action") as dispatch:
             for action in ("confirm_candidate", "review_mapping", "save_translation", "register_candidate"):
                 for headers, body, status in cases:
-                    with self.subTest(action=action, status=status):
-                        with self.assertRaises(HTTPError) as err:
-                            urlopen(Request(origin + "/api/manager/" + action, headers=headers,
-                                            data=body), timeout=5)
-                        self.assertEqual(err.exception.code, status)
+                    with self.subTest(action=action, status=status), self.assertRaises(HTTPError) as err:
+                        urlopen(Request(origin + "/api/manager/" + action, headers=headers,
+                                        data=body), timeout=5)
+                    self.assertEqual(err.exception.code, status)
             dispatch.assert_not_called()
 
     def test_reset_rejects_sqlite_path_in_sources_and_stale_writer(self):
@@ -396,8 +393,7 @@ class ManagerTests(unittest.TestCase):
         url = f"http://127.0.0.1:{port}"
 
         def post(path, fields, *, token="test"):
-            request = Request(url + "/api/manager/" + path,
-                              data=b"" if fields is None else json.dumps(fields).encode(),
+            request = Request(url + "/api/manager/" + path, data=json.dumps(fields).encode(),
                               headers={"Content-Type": "application/json", "Origin": url,
                                        "X-Review-Token": token})
             with urlopen(request, timeout=10) as response:
@@ -421,7 +417,7 @@ class ManagerTests(unittest.TestCase):
             post("reimport", {"module": MODULE, "confirm": True, "path": "/anything"})
         self.assertEqual(error.exception.code, 400)
         with self.assertRaises(HTTPError) as error:
-            post("reimport", None, token="wrong")
+            post("reimport", {"module": MODULE, "confirm": True}, token="wrong")
         self.assertEqual(error.exception.code, 403)
 
         def run_cli(args, **kwargs):

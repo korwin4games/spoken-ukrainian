@@ -290,10 +290,9 @@ class OfflineWorkflowTests(unittest.TestCase):
         import sys
         for dest in ['/tmp/forbidden-stage3.json',str(ROOT/'build/failure-stage3.json')]:
             result=subprocess.run([sys.executable,str(ROOT/'tools/stage3_report.py'),
-                '--classicua','/does/not/exist','--spoken','/does/not/exist','--output',dest],
-                capture_output=True, encoding='utf-8')
+                '--classicua','/does/not/exist','--spoken','/does/not/exist','--output',dest],capture_output=True)
             self.assertEqual(result.returncode,1)
-            self.assertEqual(result.stderr,'stage3_input_or_review_validation_failed\n')
+            self.assertEqual(result.stderr,b'stage3_input_or_review_validation_failed\n')
             self.assertFalse(Path(dest).exists())
 
     def test_tampered_stored_proof_is_rejected(self):
