@@ -43,6 +43,9 @@ WORKER_ERRORS = frozenset({
     "duplicate_gossip_version", "duplicate_translation_edit",
     "conflicting_quest_runtime_variants",
     "invalid_quest_runtime_review",
+    "manager_quest_existing_zip_untracked", "manager_quest_existing_zip_changed",
+    "manager_quest_existing_zip_invalid", "manager_quest_ready_translation_missing",
+    "manager_invalid_quest_ready_selection", "manager_incremental_database_required",
 })
 DOMAINS = "('quest','gossip')"
 MODULE_LEDGERS = (
@@ -305,8 +308,9 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
             if review_only:
                 before_import(local_test_state(classicua, spoken))
             else:
+                extra = {"incremental": True} if module == QUEST_MODULE and review is None and not reset else {}
                 result = build(classicua, spoken, module=module, before_import=before_import if review else None,
-                           prepare=prepare, destination=incoming, skipped=skipped)
+                           prepare=prepare, destination=incoming, skipped=skipped, **extra)
                 view = load_inventory(classicua, spoken, staged, incoming, skipped=skipped,
                                       state=state_for_inventory, module=module)
                 if selected_hash:
