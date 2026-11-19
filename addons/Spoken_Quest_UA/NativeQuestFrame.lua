@@ -106,7 +106,7 @@ local function HandleText(widget, value, field)
             or activeID ~= LiveID() then return end
     local translation = SelectedTranslation(activeID, activeMoment, field)
     if not translation then return end
-    translation = SU:ExpandQuestText(translation)
+    translation = SU:ExpandLocalQuestText(translation)
     if type(translation) ~= "string" or translation == "" then return end
 
     -- Native rendered text, even if it already substitutes player tokens,
