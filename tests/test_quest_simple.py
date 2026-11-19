@@ -103,6 +103,88 @@ class SimpleQuestTests(TestCase):
             with connection(db) as sql:
                 self.assertEqual(sql.execute("SELECT COUNT(*) FROM quest_simple_choices").fetchone()[0], 0)
 
+    def test_manager_fast_save_reuses_cached_quest_and_leaves_zip_unchanged(self):
+        from unittest.mock import patch
+
+        from tools import build_ukrainian as builder
+        from tools import translation_manager as manager_module
+        from tools.manager_inventory import ModuleInventory
+
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            db = root / "translation.sqlite3"
+            archive = root / "old_quest.zip"
+            gossip = root / "old_gossip.zip"
+            archive.write_bytes(b"unchanged Quest ZIP")
+            gossip.write_bytes(b"unchanged Gossip ZIP")
+            with connection(db):
+                pass
+            state = self.state(texts=())
+            state.revalidate_inputs = lambda: self.fail(
+                "fast save must not repeat the complete ClassicUA audit")
+            row = self.row(state, ())
+            row.update({"label": "Synthetic Quest", "status": "missing",
+                        "recorded": False, "built": None, "draft_available": True})
+            view = ModuleInventory([row], None, {}, state=state)
+            manager = manager_module.ManagerUI(root / "ClassicUA", root / "Spoken", db)
+            self.addCleanup(manager.close)
+            with patch.object(builder, "DIST", root), patch.object(
+                    manager_module, "ARCHIVES", {builder.QUEST_MODULE: archive,
+                                                 builder.GOSSIP_MODULE: gossip}), patch.object(
+                    manager, "validate_checkouts", return_value=("pins",)), patch(
+                    "tools.manager_inventory.load_inventory", return_value=view) as catalog, patch(
+                    "tools.translation_manager.subprocess.run") as worker:
+                manager.action("list", {"module": builder.QUEST_MODULE})
+                result = manager.action("save_quest", {
+                    "module": builder.QUEST_MODULE, "identity": self.target,
+                    "binding": row["review_binding"], "text": "Мій переклад.",
+                    "confirm": True})
+                self.assertEqual(result, {"module": builder.QUEST_MODULE,
+                                          "build": "review_saved"})
+                self.assertEqual(catalog.call_count, 1)
+                worker.assert_not_called()
+            with connection(db) as conn:
+                self.assertEqual(conn.execute(
+                    "SELECT text, source FROM quest_simple_choices WHERE moment=?",
+                    (self.target,)).fetchone(), ("Мій переклад.", "manual"))
+            self.assertEqual(archive.read_bytes(), b"unchanged Quest ZIP")
+            self.assertEqual(gossip.read_bytes(), b"unchanged Gossip ZIP")
+
+    def test_fast_save_rolls_back_when_source_pin_changes_before_commit(self):
+        from unittest.mock import patch
+
+        from tools import build_ukrainian as builder
+        from tools import translation_manager as manager_module
+        from tools.manager_inventory import ModuleInventory
+
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            db = root / "translation.sqlite3"
+            with connection(db):
+                pass
+            state = self.state(texts=())
+            row = self.row(state, ())
+            row.update({"label": "Synthetic Quest", "status": "missing",
+                        "recorded": False, "built": None, "draft_available": True})
+            manager = manager_module.ManagerUI(root / "ClassicUA", root / "Spoken", db)
+            self.addCleanup(manager.close)
+            with patch.object(builder, "DIST", root), patch.object(
+                    manager_module, "ARCHIVES", {
+                        builder.QUEST_MODULE: root / "not-built.zip"}), patch.object(
+                    manager, "validate_checkouts", side_effect=[
+                        ("pins",), ("pins",), ("pins",), ("changed",)]), patch(
+                    "tools.manager_inventory.load_inventory",
+                    return_value=ModuleInventory([row], None, {}, state=state)):
+                manager.action("list", {"module": builder.QUEST_MODULE})
+                with self.assertRaisesRegex(ValueError, "manager_source_configuration_changed"):
+                    manager.action("save_quest", {
+                        "module": builder.QUEST_MODULE, "identity": self.target,
+                        "binding": row["review_binding"], "text": "Не зберігати.",
+                        "confirm": True})
+            with connection(db) as conn:
+                self.assertEqual(conn.execute(
+                    "SELECT COUNT(*) FROM quest_simple_choices").fetchone()[0], 0)
+
     def test_manual_translation_without_reviews(self):
         state = self.state(texts=())
         with TemporaryDirectory() as temp:
