@@ -87,7 +87,7 @@ test("worker timeout shows Ukrainian recovery instructions and no success summar
 test("detail renders multiple originals, contextual evidence, candidates and missing text", async () => {
   const b = browser((action, body) => listing(body.module));
   await flush();
-  b.vm.row = {...fixture, status: "multiple_originals", original_variants: [
+  b.vm.row = {...fixture, status: "multiple_originals", originals: ["One", "Two"], original_variants: [
     {text: "One", target_id: "q:42:accept", contexts: [{npc_id: 42, faction: "horde"}],
       review_factions: ["horde"]},
     {text: "Two", target_id: "q:42:accept", contexts: [{npc_id: 43, faction: "alliance"}],
@@ -147,7 +147,7 @@ test("Quest selection shows all candidates without reviewer forms or checkboxes"
   assert.equal(nodes.filter(x => x.tag === "fieldset").length, 0);
   const select = nodes.find(x => x.tag === "select");
   assert.equal(select.children.length, 2);
-  assert.ok(nodes.some(x => x.textContent === "Доброго дня."));
+  assert.ok(select.children.some(x => x.textContent.includes("Доброго дня.")));
   select.value = "choice-b";
   select.events.change();
   nodes.find(x => x.textContent === "Використати переклад").events.click();
