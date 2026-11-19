@@ -1,0 +1,47 @@
+name: Linux Docker test runner
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/docker-tests.yml'
+      - 'tools/docker-tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: spoken-ukrainian
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: spoken-ukrainian
+          persist-credentials: false
+
+      - name: Read pinned Spoken revision
+        id: pin
+        run: |
+          revision=$(jq -er '.spoken.revision | select(test("^[0-9a-f]{40}$"))' sources.lock.json)
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: rusty-key/spoken-wow
+          ref: ${{ steps.pin.outputs.revision }}
+          path: spoken-wow
+          persist-credentials: false
+
+      - name: Build and run with read-only host inputs
+        run: |
+          mkdir -p build
+          git -c core.autocrlf=false archive --format=tar -o build/docker-tests-source.tar HEAD
+          docker build --tag spoken-ukrainian-tests tools/docker-tests
+          docker run --rm --network none \
+            --mount "type=bind,source=$PWD/build/docker-tests-source.tar,target=/input/source.tar,readonly" \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/spoken-wow,target=/input/spoken-wow,readonly" \
+            spoken-ukrainian-tests

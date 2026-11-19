@@ -19,6 +19,8 @@ uv run --locked python -m unittest discover -s tests -v
 uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
 ```
 
+On Windows, [run the tests in a Linux Docker container](tools/docker-tests/README.md) to use the CI suite’s OS, Python and Lua without installing those dependencies on the host.
+
 After quitting WoW Forever, validate and install the local test ZIP (no unzip command needed):
 
 ```sh

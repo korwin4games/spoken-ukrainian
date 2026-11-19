@@ -19,6 +19,8 @@ uv run --locked python -m unittest discover -s tests -v
 uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
 ```
 
+У Windows [запускайте тести в контейнері Docker з Linux](tools/docker-tests/README.md), щоб використовувати ОС, Python і Lua зі складу CI без встановлення цих залежностей на основній системі.
+
 **Встановлення білда в WoW Forever без ручного розпакування:**
 
 ```bash
