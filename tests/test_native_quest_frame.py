@@ -114,6 +114,10 @@ for _, item in ipairs(frames) do
     if item.registered.MODIFIER_STATE_CHANGED then nativeListener = item end
 end
 assert(nativeListener, "native QuestFrame event handler not installed")
+assert(SpokenUkrainian:ExpandLocalQuestText("Привіт, $N!$B$BІнший абзац.") ==
+    "Привіт, Гравець!\n\nІнший абзац.")
+assert(SpokenUkrainian:ExpandLocalQuestText("Привіт, {ім'я}!$bТекст.") ==
+    "Привіт, Гравець!\nТекст.")
 local function moment(event)
     nativeListener:Fire(event)
 end
