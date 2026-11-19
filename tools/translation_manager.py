@@ -511,7 +511,8 @@ def main(argv=None):
     parser.add_argument("--confirm", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--review-stdin", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--import-ready", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--import-ready", action="store_true",
+                        help="Quest only: preserve previous imports and add or replace ready translations")
     parser.add_argument("--stage-in", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
