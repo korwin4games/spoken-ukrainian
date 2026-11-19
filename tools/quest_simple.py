@@ -80,6 +80,7 @@ def resolved(state, db_path):
         return {}
     options = pinned_options(state)
     stored = selections(db_path)
+    previously_rejected = state.blocked_quest_moments()
     result = {}
     for moment, targets in groups(state).items():
         evidence, originals = binding(state, moment, targets)
@@ -87,6 +88,10 @@ def resolved(state, db_path):
             continue
         alternatives = {text for text, _ in options[moment] if usable_text(text)}
         selection = stored.get(moment)
+        # A prior explicit rejection still prevents *automatic* re-import.
+        # A new user choice is explicit and can replace it in this local pack.
+        if moment in previously_rejected and not selection:
+            continue
         if selection:
             old, text, fingerprint, source = selection
             if (old == digest(evidence) and sha(text) == fingerprint and usable_text(text)
@@ -138,7 +143,7 @@ def apply_choice(action, payload, row, state, db_path):
         prior = selections(db_path).get(row["id"])
         if prior and prior[0] == payload["binding"] and prior[1] == text:
             source = prior[3]
-        elif any(c["text"] == text and c["provider"] == "classicua" for c in row["candidates"]):
+        elif any(c["text"] == text and c.get("provider") == "classicua" for c in row["candidates"]):
             source = "classicua"
         else:
             source = "manual"  # Explicit local choice, not a human review approval.
