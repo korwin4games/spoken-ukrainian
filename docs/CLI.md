@@ -15,7 +15,7 @@ The same operation is available through the CLI:
 uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm --import-ready
 ```
 
-The legacy command without `--import-ready` remains a separate full rebuild. The ready-only operation fails closed if the existing Quest ZIP is missing, untracked, modified, or has stale import metadata. Back up your DB/ZIP before a recovery or full rebuild. Never treat a SQLite-only selection as already installed in WoW.
+The legacy command without `--import-ready` remains a separate full rebuild. A first import can start without an existing ZIP if no prior build is recorded. Otherwise, the ready-only operation fails closed if a previously recorded Quest ZIP is missing, untracked, modified, or has stale import metadata. Back up your DB/ZIP before a recovery or full rebuild. Never treat a SQLite-only selection as already installed in WoW.
 
 ## Setup and source pins
 
