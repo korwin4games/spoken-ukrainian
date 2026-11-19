@@ -68,7 +68,7 @@ class ModuleInventory:
             result[kind] = {"total": len(rows), "included": built, "not_included": len(rows) - built,
                             "recorded": sum(r["recorded"] for r in rows),
                             "conflicts": conflicts,
-                            "multiple_originals": sum(len(r["originals"]) > 1 for r in rows
+                            "multiple_originals": sum(len(r.get("originals", ())) > 1 for r in rows
                                                       if r["type"] == "quest"),
                             "conflicting_candidates": conflicts, "missing": counts["missing"],
                             "ready": sum(r["status"] == "ready" and not r["built"] for r in rows),
