@@ -64,6 +64,45 @@ class SimpleQuestTests(TestCase):
             state.inventory.revision = "c" * 40
             self.assertTrue(resolved(state, db)[self.target]["conflict"])
 
+    def test_save_raw_quest_text_without_language_or_placeholder_validation(self):
+        state = self.state(originals=("Hello, $N.$BReturn.", "Greetings."), texts=())
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "test.sqlite3"
+            row = self.row(state, ())
+            payload = {"identity": self.target, "binding": row["review_binding"], "confirm": True}
+            text = "Вітаю!$B$BЦе {нестандартний:код} і довільний переклад."
+            apply_choice("save_quest", payload | {"text": text}, row, state, db)
+            self.assertEqual(resolved(state, db)[self.target]["text"], text)
+            self.assertTrue(resolved(state, db)[self.target]["selected"])
+
+    def test_automatic_shared_translation_ignores_english_token_differences(self):
+        state = self.state(originals=("Hello, $N.", "Greetings!"), texts=("Вітаю.",))
+        self.assertEqual(resolved(state, None)[self.target]["text"], "Вітаю.")
+
+    def test_displayed_candidate_can_be_chosen_without_old_review_approval(self):
+        state = self.state(texts=())
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "test.sqlite3"
+            row = self.row(state, ("Поза старим журналом.",))
+            row["candidates"][0]["provider"] = "manual"
+            apply_choice("choose_quest",
+                {"identity": self.target, "binding": row["review_binding"],
+                 "candidate": sha("Поза старим журналом."), "confirm": True},
+                row, state, db)
+            self.assertEqual(resolved(state, db)[self.target]["text"], "Поза старим журналом.")
+
+    def test_empty_text_still_cannot_create_an_import(self):
+        state = self.state(texts=())
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "test.sqlite3"
+            row = self.row(state, ())
+            with self.assertRaisesRegex(ValueError, "manager_invalid_translation_format"):
+                apply_choice("save_quest", {"identity": self.target,
+                    "binding": row["review_binding"], "text": " ",
+                    "confirm": True}, row, state, db)
+            with connection(db) as sql:
+                self.assertEqual(sql.execute("SELECT COUNT(*) FROM quest_simple_choices").fetchone()[0], 0)
+
     def test_manual_translation_without_reviews(self):
         state = self.state(texts=())
         with TemporaryDirectory() as temp:
