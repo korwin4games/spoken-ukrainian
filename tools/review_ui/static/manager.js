@@ -610,6 +610,20 @@ async function detail(id, button) {
 }
 
 function renderResult(result) {
+  if (domain() === "quest") {
+    const q = result.summary.quest;
+    const rows = [
+      make("p", "Імпортовано: " + number.format(q.quest_imported ?? q.included) +
+        " · Готові: " + number.format(q.ready ?? 0) +
+        " · Проблемні: " + number.format(q.quest_problem ?? 0)),
+    ];
+    if (result.artifact) rows.push(make("p", result.artifact, "muted"));
+    rows.push(make("p", "SHA-256 " + result.sha256, "muted"));
+    el("run-details").replaceChildren(...rows);
+    el("run-summary").hidden = false;
+    el("run-summary").open = true;
+    return;
+  }
   const rows = [];
   for (const [key, name] of [[domain(), domainName()]]) {
     const v = result.summary[key];
