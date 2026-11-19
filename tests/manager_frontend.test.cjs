@@ -96,7 +96,8 @@ test("detail renders multiple originals, contextual evidence, candidates and mis
   b.run("renderDetail(row)");
   const text = () => b.el("selected").all().map(node => node.textContent).join(" ");
   assert.match(text(), /One.*Two/s);
-  assert.ok(b.el("selected").all().some(node => node.textContent === "Вітаю."));
+  assert.ok(b.el("selected").all().some(node =>
+    node.tag === "textarea" && node.value === "Вітаю."));
   b.vm.row = {...fixture, type: "gossip", status: "missing", originals: [], candidates: []};
   b.run("renderDetail(row)");
   assert.match(text(), /Перекладу немає/);
