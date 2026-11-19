@@ -329,6 +329,46 @@ class ManagerTests(unittest.TestCase):
                              {"gossip-translation-reviews.json": "fixture gossip",
                               "translation-reviews.json": "fixture quest"})
 
+    def test_saving_quest_stages_only_database_until_explicit_import_all(self):
+        # Save is not a ZIP build; every already-published Quest and Gossip
+        # archive/checksum must remain byte-for-byte unchanged.
+        original_quest, original_gossip = b"original quest ZIP", b"original gossip ZIP"
+        self.archive.write_bytes(original_quest)
+        self.gossip_archive.write_bytes(original_gossip)
+        checksum = self.archive.with_suffix(".zip.sha256")
+        checksum.write_bytes(b"original checksum")
+
+        def save(action, payload, module, row, state, spoken, db_path):
+            self.assertEqual((action, module), ("save_quest", MODULE))
+            with connection(db_path) as db:
+                db.execute("""INSERT INTO quest_simple_choices
+                    (moment, evidence, text, text_sha256, source) VALUES (?, ?, ?, ?, ?)""",
+                    ("q:42:accept", "test-binding", "Новий текст.", "fingerprint", "manual"))
+            return "fingerprint"
+
+        with patch.object(builder, "build") as build, patch.object(builder, "local_test_state"), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view), patch(
+                "tools.manager_review.apply_review", side_effect=save):
+            result = reimport(*self.paths, self.db, confirm=True,
+                              review=("save_quest", {"identity": "q:42:accept"}))
+            build.assert_not_called()
+        self.assertEqual(result, {"module": MODULE, "build": "review_saved"})
+        self.assertEqual(self.archive.read_bytes(), original_quest)
+        self.assertEqual(checksum.read_bytes(), b"original checksum")
+        self.assertEqual(self.gossip_archive.read_bytes(), original_gossip)
+        with connection(self.db) as db:
+            self.assertEqual(db.execute(
+                "SELECT text FROM quest_simple_choices WHERE moment='q:42:accept'"
+            ).fetchone()[0], "Новий текст.")
+
+        # Only the explicit bulk-import operation is permitted to build the ZIP.
+        with patch.object(builder, "build", side_effect=self.fake_build), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view):
+            result = reimport(*self.paths, self.db, confirm=True)
+        self.assertEqual(result["build"], "success")
+        self.assertNotEqual(self.archive.read_bytes(), original_quest)
+        self.assertEqual(self.gossip_archive.read_bytes(), original_gossip)
+
     def test_new_review_routes_reject_unsafe_http_before_dispatch(self):
         manager = ManagerUI(*self.paths, self.db)
         http = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("token", 0))
