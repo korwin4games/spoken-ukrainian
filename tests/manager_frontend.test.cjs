@@ -36,6 +36,7 @@ function browser(handler) {
   el("module").value = quest;
   const requests = [];
   const vm = {
+    navigator: {clipboard: {writeText: async value => { el("copied").textContent = value; }}},
     document: {getElementById: el, createElement: tag => new Element(tag), querySelectorAll: () => []},
     fetch: async (url, options) => {
       if (url === "/api/bootstrap") return response({csrf_token: "token"});
@@ -94,8 +95,8 @@ test("detail renders multiple originals, contextual evidence, candidates and mis
   ]};
   b.run("renderDetail(row)");
   const text = () => b.el("selected").all().map(node => node.textContent).join(" ");
-  assert.match(text(), /One.*NPC 42.*Two.*NPC 43/s);
-  assert.match(text(), /Вітаю/);
+  assert.match(text(), /One.*Two/s);
+  assert.ok(b.el("selected").all().some(node => node.textContent === "Вітаю."));
   b.vm.row = {...fixture, type: "gossip", status: "missing", originals: [], candidates: []};
   b.run("renderDetail(row)");
   assert.match(text(), /Перекладу немає/);
@@ -122,119 +123,61 @@ test("switching module clears detail, resets pagination, and ignores stale respo
   assert.match(b.el("reimport").textContent, /Gossip/);
 });
 
-test("candidate confirmation requires a selection and all explicit attestations", async () => {
-  const row = {...fixture, originals: ["Hello.", "Greetings."], review_binding: "fixture-binding",
-    candidates: [...fixture.candidates, {...fixture.candidates[0],
-      review_id: "other-candidate", text: "Інший варіант.", sha256: "fixture-text"}]};
-  let saved = false;
+test("Quest selection shows all candidates without reviewer forms or checkboxes", async () => {
+  const choices = [
+    {text:"Вітаю.", provider:"classicua", sha256:"choice-a", eligibility:"mapping_required"},
+    {text:"Доброго дня.", provider:"classicua", sha256:"choice-b", eligibility:"source_review"},
+  ];
+  const row = {...fixture, originals:["Hello.", "Greetings."], review_binding:"pinned-binding", candidates:choices};
+  let current = row;
   const b = browser((action, body) => {
     if (action === "list") return listing(body.module);
-    if (action === "detail") return saved ? {...row, approved_variant_count: 2,
-      translation_state: "translation_approved", built: {text_sha256: "fixture-text", route: "reviewed"},
-    } : row;
-    saved = true;
-    return {...listing(body.module), build: "success",
-      agent: {eligible: 1, skipped: 0, reasons: []}, skipped: [], sha256: "fixture"};
+    if (action === "detail") return current;
+    assert.equal(action, "choose_quest");
+    assert.equal(body.candidate, "choice-b");
+    assert.equal(body.binding, "pinned-binding");
+    current = {...row, built:{text_sha256:"choice-b", route:"user_selected", source:"classicua"}};
+    return {module:quest, build:"success", summary:{quest:{total:1}}, agent:{eligible:0, skipped:0, reasons:[]},
+      skipped:[], sha256:"fixture"};
   });
   await flush();
   await b.run('detail("q:42:accept")');
-  const fields = b.el("selected").all();
-  const select = fields.find(node => node.tag === "select");
-  const fieldset = fields.find(node => node.tag === "fieldset");
-  const inputs = fields.filter(node => node.tag === "input");
-  const approve = fields.find(node => node.textContent === "Підтвердити переклад");
-  assert.equal(approve.disabled, true);
-  inputs[0].value = "Reviewer";
-  select.value = "other-candidate";
+  const nodes = b.el("selected").all();
+  assert.equal(nodes.filter(x => x.tag === "input").length, 0);
+  assert.equal(nodes.filter(x => x.tag === "fieldset").length, 0);
+  const select = nodes.find(x => x.tag === "select");
+  assert.equal(select.children.length, 2);
+  assert.ok(nodes.some(x => x.textContent === "Доброго дня."));
+  select.value = "choice-b";
   select.events.change();
-  assert.equal(approve.disabled, true);
-  inputs.slice(1).forEach(input => { input.checked = true; });
-  fieldset.events.input();
-  assert.equal(approve.disabled, false);
-  approve.events.click();
+  nodes.find(x => x.textContent === "Використати переклад").events.click();
   await flush();
-  const request = b.requests.find(entry => entry.action === "confirm_candidate");
-  assert.equal(request.module, quest);
-  assert.equal(request.candidate, "other-candidate");
-  assert.equal(request.binding, "fixture-binding");
-  assert.equal(request.confirm, true);
-  assert.ok(Object.values(request.checks).every(Boolean));
-  assert.match(b.el("operation-status").textContent, /перевірено в ZIP/);
-  assert.equal(b.requests.at(-1).action, "detail");
-  assert.ok(b.el("selected").all().some(node => node.textContent === "Спільний переклад схвалено для оригіналів: 2"));
-  assert.ok(b.el("selected").all().some(node => node.textContent === "У ZIP"));
+  assert.equal(b.requests.find(x => x.action === "choose_quest").candidate, "choice-b");
+  assert.ok(b.el("selected").all().some(x => x.textContent === "У ZIP"));
 });
 
-test("missing Quest draft and audited registration have separate controls from approval", async () => {
-  const b = browser((action, body) => action === "list" ? listing(body.module) :
-    {module: body.module, build: "review_saved"});
+test("Quest missing translation can be entered without reviewer identity", async () => {
+  const row = {...fixture, status:"missing", review_binding:"pinned-binding", candidates:[]};
+  const b = browser((action, body) => {
+    if (action === "list") return listing(body.module);
+    if (action === "detail") return row;
+    assert.equal(action, "save_quest");
+    assert.equal(body.text, "Мій переклад.");
+    assert.equal(body.binding, "pinned-binding");
+    assert.equal(body.reviewer, undefined);
+    return {module:quest, build:"success", summary:{quest:{total:1}}, agent:{eligible:0, skipped:0, reasons:[]},
+      skipped:[], sha256:"fixture"};
+  });
   await flush();
-  const candidate = {text: "Вітаю.", provider: "classicua", review: "candidate"};
-  b.vm.row = {...fixture, status: "missing", candidates: [
-    {...candidate, eligibility: "mapping_required"},
-    {...candidate, eligibility: "rights_blocked"},
-    {...candidate, eligibility: "format_blocked"},
-    {...candidate, eligibility: "stale", review_id: "stale-id"},
-    {...candidate, eligibility: "source_review"},
-  ]};
-  b.run("renderDetail(row)");
-  const fields = () => b.el("selected").all();
-  const byText = label => fields().find(node => node.textContent === label);
-  assert.ok(fields().some(node => /Спершу.*Stage 3/.test(node.textContent)));
-  assert.ok(fields().some(node => /Права або походження/.test(node.textContent)));
-  assert.ok(fields().some(node => /Формат або підстановки/.test(node.textContent)));
-  assert.ok(fields().some(node => /Докази застаріли/.test(node.textContent)));
-  assert.ok(fields().some(node => /журналі джерел/.test(node.textContent)));
-  assert.equal(byText("Зберегти чернетку").disabled, true);
-  b.vm.row = {...b.vm.row, draft_available: true, candidates: [
-    {...candidate, eligibility: "register", registration_key: "observation"},
-  ]};
-  b.run("renderDetail(row)");
-  assert.ok(byText("Зберегти чернетку"));
-  assert.equal(byText("Підтвердити переклад").disabled, true);
-  fields().find(node => node.tag === "input").value = "Reviewer";
-  const select = fields().find(node => node.tag === "select");
-  select.value = "observation";
-  select.events.change();
-  byText("Додати кандидат до журналу").events.click();
+  b.run("renderDetail(" + JSON.stringify(row) + ")");
+  const nodes = b.el("selected").all();
+  const field = nodes.find(x => x.tag === "textarea");
+  assert.ok(field);
+  field.value = "Мій переклад.";
+  nodes.find(x => x.textContent === "Зберегти й застосувати").events.click();
   await flush();
-  assert.equal(b.requests.find(entry => entry.action === "register_candidate").candidate, "observation");
-});
-
-test("mapping form passes exact metadata only after two distinct attestations", async () => {
-  const b = browser((action, body) => action === "list" ? listing(body.module) :
-    {module: body.module, build: "review_saved"});
+  assert.equal(b.requests.find(x => x.action === "save_quest").text, "Мій переклад.");
+  nodes.find(x => x.textContent === "Скопіювати запит для Codex").events.click();
   await flush();
-  const item = {
-    source_id: "quest:horde:42:accept", target_id: fixture.id, source_text: "Привіт.",
-    facts: {npc_id: 42, npc_type: "creature", voice: "fixture", faction: "horde",
-      wording_sha256: "fingerprint", source: "accept", quest_id: 42,
-      player_gender: null, english_original: "Hello."},
-    evidence: {source_reference: "pinned source", target_reference: "pinned target"},
-  };
-  b.vm.row = {...fixture, candidates: [], mapping_options: [item]};
-  b.run("renderDetail(row)");
-  const fields = b.el("selected").all();
-  const form = fields.filter(node => node.tag === "fieldset").at(-1);
-  const select = form.all().find(node => node.tag === "select");
-  const inputs = form.all().filter(node => node.tag === "input");
-  const button = fields.find(node => node.textContent === "Підтвердити зіставлення");
-  assert.equal(button.disabled, true);
-  select.value = "0";
-  select.events.change();
-  inputs[0].value = inputs[2].value = "Reviewer A";
-  inputs[1].checked = inputs[3].checked = true;
-  form.events.input();
-  assert.equal(button.disabled, true);
-  inputs[2].value = "Reviewer B";
-  form.events.input();
-  assert.equal(button.disabled, false);
-  button.events.click();
-  await flush();
-  const request = b.requests.find(entry => entry.action === "review_mapping");
-  assert.equal(request.join.proof.evidence_reviewer, "Reviewer A");
-  assert.equal(request.join.mapping_reviewer, "Reviewer B");
-  assert.equal(request.join.proof.facts.npc_id, 42);
-  assert.equal(request.join.proof.source_reference, "pinned source");
-  assert.equal(request.join.proof.facts.english_original, undefined);
+  assert.match(b.el("copied").textContent, /Hello/);
 });

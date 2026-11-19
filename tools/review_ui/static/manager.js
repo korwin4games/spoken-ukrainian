@@ -148,6 +148,7 @@ function renderList(data) {
         "Готовий до імпорту", item.built ? "built" : ""));
     } else {
       statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
+    }
     if (item.type !== "quest" && item.candidate_conflict) statuses.append(make("div", labels.conflict));
     if (item.type !== "quest" && item.status === "multiple_originals") statuses.append(make("div", labels.multiple_originals));
     if (item.type !== "quest" && item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
@@ -212,7 +213,7 @@ function simpleQuestControls(row) {
     try {
       const result = await call(action, {...data, identity: row.id,
         binding: row.review_binding, confirm: true});
-      renderResult(result);
+      el("run-summary").hidden = true;
       el("operation-status").textContent = "Переклад застосовано та перевірено у ZIP.";
       await list();
       if (selected === row.id) await detail(row.id);

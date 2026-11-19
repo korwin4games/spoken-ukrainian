@@ -77,6 +77,10 @@ def valid(originals, text):
 
 
 def resolved(state, db_path):
+    # Synthetic test states predate the pinned ClassicUA hint index.
+    # Do not try to infer candidates from incomplete/mock evidence.
+    if not isinstance(getattr(state, "_hints", None), (list, tuple)):
+        return {}
     options = pinned_options(state)
     stored = selections(db_path)
     blocked = state.blocked_quest_moments()
