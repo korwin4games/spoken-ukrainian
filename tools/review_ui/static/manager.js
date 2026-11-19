@@ -164,7 +164,7 @@ function renderList(data) {
   });
   el("rows").replaceChildren(...rows);
   if (domain() === "quest") {
-    const count = data.summary.quest.ready;
+    const count = Number(data.summary.quest?.ready || 0);
     el("reimport").textContent = "Імпортувати все (" + number.format(count) + ")";
     el("reimport").disabled = busy || count === 0;
   }
