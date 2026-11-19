@@ -357,14 +357,15 @@ class GossipMachineTests(unittest.TestCase):
                     self.assertEqual(str(exc), 'pinned_source_changed')
                     return SimpleNamespace(returncode=1, stdout=b'{"error":"public_revision_mismatch"}')
                 payload = {"build": "success", "module": builder.GOSSIP_MODULE,
-                           "agent": {}, "summary": result, "skipped": []}
+                           "agent": {}, "summary": result, "skipped": [], "sha256": "fixture"}
                 return SimpleNamespace(returncode=0, stdout=json.dumps(payload).encode())
             try:
                 self.assertEqual(service.page(status='eligible')['total'], 1)
                 request = Request(base + '/api/manager/reimport',
                     data=json.dumps({"module": builder.GOSSIP_MODULE, "confirm": True}).encode(),
                     headers={'Origin': base, 'Content-Type': 'application/json'})
-                with patch('tools.translation_manager.subprocess.run', side_effect=import_worker) as worker_call:
+                with patch.object(manager, '_promote_worker_result'), patch(
+                        'tools.translation_manager.subprocess.run', side_effect=import_worker) as worker_call:
                     with self.assertRaises(HTTPError) as error:
                         urlopen(request)
                     self.assertEqual(error.exception.code, 403)

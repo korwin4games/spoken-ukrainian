@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 from threading import Thread
 from types import SimpleNamespace
@@ -432,6 +433,13 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(preview["build"], "preview")
         self.assertIn("--reset-test-data", worker_run.call_args.args[0])
         self.assertFalse(self.archive.exists())
+        self.assertEqual(worker_run.call_args.kwargs["timeout"], 600)
+        with patch.object(builder, "build", side_effect=self.fake_build), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view), patch(
+                "tools.translation_manager.subprocess.run", side_effect=run_cli):
+            built = post("reimport", {"module": MODULE, "confirm": True})
+        self.assertEqual(built["build"], "success")
+        self.assertEqual(built["sha256"], sha256(self.archive.read_bytes()).hexdigest())
 
         outcomes = [
             (SimpleNamespace(returncode=1, stdout=b"", stderr=b"PRIVATE STDERR"),
@@ -454,7 +462,69 @@ class ManagerTests(unittest.TestCase):
                     post("reimport", {"module": MODULE, "confirm": True})
                 self.assertEqual(error.exception.code, 400)
                 self.assertEqual(json.load(error.exception)["reason"], reason)
-        self.assertNotIn("timeout", worker_run.call_args.kwargs)
+        failure = subprocess.TimeoutExpired(["worker"], 600, b"PRIVATE TEXT", b"PRIVATE REVIEWER")
+        for module in self.archives:
+            for action, options in (
+                    ("reimport", {"dry_run": True}), ("reimport", {"confirm": True}),
+                    ("confirm_candidate", {}), ("register_candidate", {}),
+                    ("save_translation", {}), ("review_mapping", {})):
+                with self.subTest(module=module, action=action, options=options), patch(
+                        "tools.translation_manager.subprocess.run", side_effect=failure) as timed_out:
+                    with self.assertRaises(HTTPError) as error:
+                        post(action, {"module": module, **options})
+                    self.assertEqual(error.exception.code, 400)
+                    self.assertEqual(json.load(error.exception), {
+                        "error": "invalid_or_duplicate_review_decision",
+                        "reason": "manager_reimport_timed_out_check_build",
+                    })
+                    self.assertEqual(timed_out.call_args.kwargs["timeout"], 600)
+                    self.assertIn(module, timed_out.call_args.args[0])
+
+    def test_killed_staging_worker_preserves_live_state_and_releases_lock(self):
+        manager = ManagerUI(*self.paths, self.db)
+        with connection(self.db):
+            pass
+        checksum = self.archive.with_suffix(".zip.sha256")
+        self.archive.write_bytes(b"previous archive")
+        checksum.write_bytes(b"previous checksum")
+        live_paths = (self.db, self.archive, checksum)
+        before = [path.read_bytes() for path in live_paths]
+        started = self.root / "worker-staged-files"
+        run = subprocess.run
+
+        def interrupted_worker(args, **kwargs):
+            workspace = Path(args[args.index("--stage-in") + 1])
+            with self.assertRaisesRegex(ValueError, "manager_reimport_already_running"):
+                with manager_module.manager_lock(self.root):
+                    self.fail("build lock must be held while staging")
+            code = """
+import sqlite3
+import sys
+from pathlib import Path
+from time import sleep
+
+staged, incoming, started = map(Path, sys.argv[1:])
+with sqlite3.connect(staged) as db:
+    db.execute("CREATE TABLE staged_change (id INTEGER)")
+incoming.write_bytes(b"new staged archive")
+started.touch()
+sleep(60)
+"""
+            return run([sys.executable, "-c", code, str(workspace / "translations.sqlite3"),
+                        str(manager_module.staged_zip(workspace)), str(started)], **kwargs)
+
+        with patch.object(manager_module, "MANAGER_WORKER_TIMEOUT_SECONDS", 3), patch(
+                "tools.translation_manager.subprocess.run", side_effect=interrupted_worker):
+            with self.assertRaisesRegex(ValueError, "^manager_reimport_timed_out_check_build$"):
+                manager.action("reimport", {"module": MODULE, "confirm": True})
+        self.assertTrue(started.exists())
+        self.assertEqual([path.read_bytes() for path in live_paths], before)
+        self.assertEqual(list(self.root.glob(".translation-manager-*")), [])
+        with patch.object(builder, "build", side_effect=self.fake_build), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view):
+            result = reimport(*self.paths, self.db, confirm=True)
+        self.assertEqual(result["build"], "success")
+        self.assertNotEqual(self.archive.read_bytes(), before[1])
 
     def test_cached_inventory_revalidates_both_source_repositories(self):
         def git(path, *args):

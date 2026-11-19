@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Browse and rebuild the private Quest and Gossip module."""
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from hashlib import sha256
 import json
 import os
@@ -24,6 +24,8 @@ from adapters.local_review_store import file_lock, strict_json
 from tools.build_ukrainian import ARCHIVES, MODULE_DOMAINS, QUEST_MODULE
 
 MODULE = QUEST_MODULE
+MANAGER_WORKER_TIMEOUT_SECONDS = 600
+SOURCE_INPUTS = ("sources.lock.json", "config/translation_sources.json", "tests/stage3_sources.json")
 REVIEW_ONLY = ("save_translation", "register_candidate", "review_mapping")
 WORKER_ERRORS = frozenset({
     "manager_confirmation_required", "manager_invalid_options", "manager_unknown_module",
@@ -116,6 +118,26 @@ def manager_lock(directory):
         raise ValueError("manager_reimport_already_running") from None
 
 
+def source_stamps():
+    return [file_stamp(ROOT / path) for path in SOURCE_INPUTS]
+
+
+def staged_zip(workspace):
+    return workspace.with_suffix(".zip")
+
+
+@contextmanager
+def manager_workspace(directory):
+    with manager_lock(directory), TemporaryDirectory(prefix=".translation-manager-", dir=directory) as staging:
+        workspace = Path(staging)
+        incoming = staged_zip(workspace)
+        try:
+            yield workspace
+        finally:
+            for path in (incoming, incoming.with_suffix(".zip.sha256"), incoming.with_suffix(".zip.tmp")):
+                path.unlink(missing_ok=True)
+
+
 def promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace, reset, module=MODULE,
             *, expected_sha=None):
     """Commit scoped SQLite rows and publish the ZIP; roll back on normal failures."""
@@ -198,7 +220,7 @@ def prepare_import(state, spoken, db_path, skipped, module):
 
 
 def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=False, confirm=False,
-             review=None):
+             review=None, stage_in=None):
     """The CLI and localhost UI run the same staged operation."""
     from tools.build_ukrainian import DIST, build, local_test_state
     from tools.manager_inventory import load_inventory
@@ -219,73 +241,73 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
         raise ValueError("manager_unsafe_database_path")
     archive = ARCHIVES[module]
     review_only = review is not None and review[0] in REVIEW_ONLY
-    source_inputs = (ROOT / "sources.lock.json", ROOT / "config/translation_sources.json",
-                     ROOT / "tests/stage3_sources.json")
-    with manager_lock(DIST), TemporaryDirectory(prefix=".translation-manager-", dir=DIST) as staging:
-        workspace = Path(staging)
+    if stage_in is not None and (stage_in.parent != DIST.resolve()
+                                 or not stage_in.name.startswith(".translation-manager-")
+                                 or stage_in.is_symlink() or not stage_in.is_dir()):
+        raise ValueError("manager_unsafe_workspace")
+    with (manager_workspace(DIST) if stage_in is None else nullcontext(stage_in)) as workspace:
         staged = workspace / "translations.sqlite3"
-        incoming = DIST / (workspace.name + ".zip")
-        checksum = incoming.with_suffix(".zip.sha256")
-        try:
-            if db_path.exists():
-                backup_database(db_path, staged)
-            archive_baseline = (file_stamp(archive), file_stamp(archive.with_suffix(".zip.sha256")))
-            pins = [file_stamp(path) for path in source_inputs]
-            with connection(staged) as db:
-                baseline = db_stamp(db)
-                if reset:
-                    db.execute("BEGIN IMMEDIATE")
-                    reset_test_state(db, module)
-                    db.commit()
-            skipped = []
-            with enable_sqlite(staged):
-                agent = {}
-                state_for_inventory = None
-                selected_hash = None
+        incoming = staged_zip(workspace)
+        if db_path.exists():
+            backup_database(db_path, staged)
+        archive_baseline = (file_stamp(archive), file_stamp(archive.with_suffix(".zip.sha256")))
+        pins = source_stamps()
+        with connection(staged) as db:
+            baseline = db_stamp(db)
+            if reset:
+                db.execute("BEGIN IMMEDIATE")
+                reset_test_state(db, module)
+                db.commit()
+        skipped = []
+        with enable_sqlite(staged):
+            agent = {}
+            state_for_inventory = None
+            selected_hash = None
 
-                def before_import(state):
-                    nonlocal selected_hash
-                    if review is None:
-                        return
-                    from tools.manager_review import apply_review
-                    action, payload = review
-                    previous = load_inventory(classicua, spoken, staged, archive, state=state, module=module)
-                    row = previous.detail(module=module, identity=payload.get("identity"))
-                    selected_hash = apply_review(action, payload, module, row, state, spoken, staged)
+            def before_import(state):
+                nonlocal selected_hash
+                if review is None:
+                    return
+                from tools.manager_review import apply_review
+                action, payload = review
+                previous = load_inventory(classicua, spoken, staged, archive, state=state, module=module)
+                row = previous.detail(module=module, identity=payload.get("identity"))
+                selected_hash = apply_review(action, payload, module, row, state, spoken, staged)
 
-                def prepare(state):
-                    nonlocal state_for_inventory
-                    state_for_inventory = state
-                    agent.update(prepare_import(state, spoken, staged, skipped, module))
-                if review_only:
-                    before_import(local_test_state(classicua, spoken))
-                else:
-                    result = build(classicua, spoken, module=module, before_import=before_import if review else None,
-                               prepare=prepare, destination=incoming, skipped=skipped)
-                    view = load_inventory(classicua, spoken, staged, incoming, skipped=skipped,
-                                          state=state_for_inventory, module=module)
-                    if selected_hash:
-                        built = view.detail(module=module, identity=review[1]["identity"])["built"]
-                        if not built or built["text_sha256"] != selected_hash:
-                            raise ValueError("manager_candidate_not_built")
-                    summary = view.summary()
-            if pins != [file_stamp(path) for path in source_inputs]:
-                raise ValueError("manager_source_configuration_changed")
+            def prepare(state):
+                nonlocal state_for_inventory
+                state_for_inventory = state
+                agent.update(prepare_import(state, spoken, staged, skipped, module))
             if review_only:
+                before_import(local_test_state(classicua, spoken))
+            else:
+                result = build(classicua, spoken, module=module, before_import=before_import if review else None,
+                           prepare=prepare, destination=incoming, skipped=skipped)
+                view = load_inventory(classicua, spoken, staged, incoming, skipped=skipped,
+                                      state=state_for_inventory, module=module)
+                if selected_hash:
+                    built = view.detail(module=module, identity=review[1]["identity"])["built"]
+                    if not built or built["text_sha256"] != selected_hash:
+                        raise ValueError("manager_candidate_not_built")
+                summary = view.summary()
+        if pins != source_stamps():
+            raise ValueError("manager_source_configuration_changed")
+        if stage_in is not None and not dry_run:
+            (workspace / "promotion.json").write_text(
+                json.dumps([baseline, archive_baseline, pins]), encoding="ascii")
+        if review_only:
+            if stage_in is None:
                 promote(db_path, staged, baseline, archive, None, archive_baseline, workspace, False, module)
-                return {"module": module, "build": "review_saved"}
-            if not dry_run:
-                promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace,
-                        reset or (review is not None and review[0] == "confirm_candidate"), module,
-                        expected_sha=result["sha256"])
-            return {"module": module, "dry_run": dry_run, "reset_test_data": reset,
-                    "build": "preview" if dry_run else "success", "artifact": None if dry_run else str(archive),
-                    "sha256": result["sha256"], "summary": summary, "agent": agent,
-                    "skipped": [{"id": key, "reason": reason} for key, reason in skipped],
-                    "inventory": result["import_inventory"]}
-        finally:
-            incoming.unlink(missing_ok=True)
-            checksum.unlink(missing_ok=True)
+            return {"module": module, "build": "review_saved"}
+        if not dry_run and stage_in is None:
+            promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace,
+                    reset or (review is not None and review[0] == "confirm_candidate"), module,
+                    expected_sha=result["sha256"])
+        return {"module": module, "dry_run": dry_run, "reset_test_data": reset,
+                "build": "preview" if dry_run else "success", "artifact": None if dry_run else str(archive),
+                "sha256": result["sha256"], "summary": summary, "agent": agent,
+                "skipped": [{"id": key, "reason": reason} for key, reason in skipped],
+                "inventory": result["import_inventory"]}
 
 
 class ManagerUI:
@@ -317,8 +339,6 @@ class ManagerUI:
                 (ROOT / "tests/stage3_sources.json").read_bytes())
 
     def action(self, action, payload):
-        from tools.manager_inventory import load_inventory
-
         module = payload.get("module")
         if type(module) is not str or module not in MODULE_DOMAINS:
             raise ValueError("manager_unknown_module")
@@ -329,15 +349,25 @@ class ManagerUI:
             allowed = {"module", "reset", "dry_run", "confirm"}
             if set(options) - allowed or any(type(options[k]) is not bool for k in set(options) - {"module"}):
                 raise ValueError("manager_invalid_options")
+            return self._run_worker(action, module, options, review)
+        return self._browse(action, module, payload)
+
+    def _run_worker(self, action, module, options, review):
+        from tools.build_ukrainian import DIST
+
+        # The server owns the lock and staging files, even if subprocess.run kills the child.
+        with manager_workspace(DIST) as workspace:
             flags = {"reset": "--reset-test-data", "dry_run": "--dry-run", "confirm": "--confirm"}
             try:
                 worker = subprocess.run(
                     [sys.executable, str(ROOT / "tools/translation_manager.py"), "reimport", "--json",
                      "--module", module, "--classicua", str(self.classicua), "--spoken",
-                     str(self.spoken), "--db", str(self.db_path),
+                     str(self.spoken), "--db", str(self.db_path), "--stage-in", str(workspace.resolve()),
                      *(flag for key, flag in flags.items() if options.get(key)), *(("--review-stdin",) if review else ())],
-                    cwd=ROOT, capture_output=True, check=False,
+                    cwd=ROOT, capture_output=True, check=False, timeout=MANAGER_WORKER_TIMEOUT_SECONDS,
                     input=json.dumps(review).encode("utf-8") if review else None)
+            except subprocess.TimeoutExpired:
+                raise ValueError("manager_reimport_timed_out_check_build") from None
             except OSError:
                 raise ValueError("manager_reimport_worker_unavailable") from None
             if worker.returncode < 0:
@@ -354,14 +384,43 @@ class ManagerUI:
                 reason = result.get("error")
                 raise ValueError(reason if isinstance(reason, str) and reason in WORKER_ERRORS
                                  else "manager_reimport_failed")
-            if action in REVIEW_ONLY and result == {"module": module, "build": "review_saved"}:
-                return result
-            expected = "preview" if payload.get("dry_run") else "success"
-            if (result.get("build") != expected or result.get("module") != module
+            review_only = action in REVIEW_ONLY
+            dry_run = options.get("dry_run", False)
+            expected = "preview" if dry_run else "success"
+            if review_only:
+                if result != {"module": module, "build": "review_saved"}:
+                    raise ValueError("manager_reimport_worker_invalid_response")
+            elif (result.get("build") != expected or result.get("module") != module
                     or not all(isinstance(result.get(key), dict) for key in ("summary", "agent"))
+                    or not (dry_run or isinstance(result.get("sha256"), str))
                     or not isinstance(result.get("skipped"), list)):
                 raise ValueError("manager_reimport_worker_invalid_response")
+            if not dry_run:
+                self._promote_worker_result(workspace, module, action, options.get("reset", False), result)
             return result
+
+    def _promote_worker_result(self, workspace, module, action, reset, result):
+        try:
+            baseline, archive_baseline, pins = json.loads(
+                (workspace / "promotion.json").read_text(encoding="ascii"))
+            archive_baseline = tuple(archive_baseline)
+        except (OSError, ValueError, TypeError):
+            raise ValueError("manager_reimport_worker_invalid_response") from None
+        if pins != source_stamps():
+            raise ValueError("manager_source_configuration_changed")
+        review_only = action in REVIEW_ONLY
+        try:
+            promote(self.db_path, workspace / "translations.sqlite3", baseline, ARCHIVES[module],
+                    None if review_only else staged_zip(workspace), archive_baseline, workspace,
+                    reset or action == "confirm_candidate", module,
+                    expected_sha=None if review_only else result["sha256"])
+        except (ValueError, OSError, RuntimeError, sqlite3.Error) as error:
+            reason = str(error)
+            raise ValueError(reason if reason in WORKER_ERRORS else "manager_reimport_failed") from None
+
+    def _browse(self, action, module, payload):
+        from tools.manager_inventory import load_inventory
+
         if action not in ("list", "detail", "stats"):
             raise ValueError("manager_invalid_action")
         allowed = ({"module", "query", "kind", "filter_by", "status", "offset", "limit"}
@@ -416,6 +475,7 @@ def main(argv=None):
     parser.add_argument("--confirm", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--review-stdin", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--stage-in", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
         review = None
@@ -426,7 +486,8 @@ def main(argv=None):
                     or type(review[1]) is not dict):
                 raise ValueError("manager_invalid_review_request")
         result = reimport(args.classicua, args.spoken, args.db, module=args.module,
-                          reset=args.reset_test_data, dry_run=args.dry_run, confirm=args.confirm, review=review)
+                          reset=args.reset_test_data, dry_run=args.dry_run, confirm=args.confirm, review=review,
+                          stage_in=args.stage_in)
     except (ValueError, OSError, RuntimeError, TypeError, KeyError, sqlite3.Error,
             subprocess.SubprocessError) as error:
         reason = _reason(error)

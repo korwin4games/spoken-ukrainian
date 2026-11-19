@@ -24,7 +24,7 @@ class Element {
 const quest = "Spoken_Quest_UA";
 const gossip = "Spoken_Gossip_UA";
 const script = readFileSync("tools/review_ui/static/manager.js", "utf8");
-const response = body => ({ok: true, json: async () => body});
+const response = body => ({ok: !body.error, json: async () => body});
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function browser(handler) {
@@ -61,6 +61,27 @@ function listing(module) {
   return {items: [], total: 100, build: null, summary: module === quest ?
     {quest: {total: 100}} : {gossip: {total: 70}}};
 }
+
+test("worker timeout shows Ukrainian recovery instructions and no success summary", async () => {
+  const b = browser((action, body) => action === "reimport" ? {
+    error: "invalid_or_duplicate_review_decision",
+    reason: "manager_reimport_timed_out_check_build",
+  } : listing(body.module));
+  await flush();
+  for (const module of [quest, gossip]) {
+    b.el("module").value = module;
+    b.el("module").events.change();
+    await flush();
+    for (const dryRun of [true, false]) {
+      await b.run(`reimport(${dryRun})`);
+      assert.equal(b.requests.at(-1).module, module);
+      assert.equal(b.el("operation-status").textContent,
+        "Час очікування минув. Оновіть список, щоб перевірити стан збірки.");
+      assert.equal(b.el("run-summary").hidden, true);
+      assert.equal(b.el("reimport").disabled, false);
+    }
+  }
+});
 
 test("detail renders multiple originals, contextual evidence, candidates and missing text", async () => {
   const b = browser((action, body) => listing(body.module));

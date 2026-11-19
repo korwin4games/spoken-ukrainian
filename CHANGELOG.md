@@ -6,6 +6,7 @@ Dated version sections describe project baselines; they do not imply that a Git 
 or GitHub Release has been published.
 
 ## [Unreleased]
+- Limit Translation Manager workers to ten minutes and publish staged changes only after a successful worker response.
 - Separate translation conflicts from mapping status in the local manager. Add candidate eligibility, pending Quest registration and drafts, and a guided Stage 3 review form.
 - **BREAKING** Split Quest and Gossip into independently installable local addons and ZIPs with separate SQLite build heads. The root manager handles module-scoped builds and inline review. Move the legacy combined addon out of AddOns before upgrading.
 - Enforce Quest mapping decisions across local imports, deduplicate shared ClassicUA faction evidence, and expose verified original variants, distinct mapping and import states, and Gossip diagnostics in Translation Manager.
