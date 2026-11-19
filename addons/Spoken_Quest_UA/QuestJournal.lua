@@ -44,7 +44,7 @@ end
 
 local function Capture(entries, widget, original, translated, id, button)
     if type(original) ~= "string" or original == "" or type(translated) ~= "string" then return end
-    translated = SU:ExpandQuestText(translated)
+    translated = SU:ExpandLocalQuestText(translated)
     if type(translated) ~= "string" or translated == "" then return end
     local entry = {original = original, translated = translated, id = id, button = button,
                    font = SU:CaptureQuestFont(widget)}
