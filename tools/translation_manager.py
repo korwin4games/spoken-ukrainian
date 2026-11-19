@@ -289,7 +289,9 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
                 db.commit()
         skipped = []
         with enable_sqlite(staged):
-            agent = {}
+            # Ready-only Quest builds do not run agent imports, but the frontend
+            # still expects the established module result shape.
+            agent = {"eligible": 0, "skipped": 0, "reasons": []}
             state_for_inventory = None
             selected_hash = None
 
