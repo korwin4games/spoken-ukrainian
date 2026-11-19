@@ -60,11 +60,11 @@ const fixture = {
 
 function listing(module) {
   return {items: [], total: 100, build: null, summary: module === quest ?
-    {quest: {total: 100}} : {gossip: {total: 70}}};
+    {quest: {total: 100, ready: 1}} : {gossip: {total: 70}}};
 }
 
 test("worker timeout shows Ukrainian recovery instructions and no success summary", async () => {
-  const b = browser((action, body) => action === "reimport" ? {
+  const b = browser((action, body) => ["reimport", "import_ready"].includes(action) ? {
     error: "invalid_or_duplicate_review_decision",
     reason: "manager_reimport_timed_out_check_build",
   } : listing(body.module));
