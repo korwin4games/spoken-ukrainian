@@ -534,6 +534,10 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
         status = ("rejected" if moment in rejected_moments else "ready" if approved else
                   "conflict" if moment in runtime_approved else "multiple_originals" if multiple else
                   status_for(english, choices, conflict=conflict, ready=ready))
+        if quick_ready:
+            # The saved Quest choice is a pending import even if an older
+            # translation for this moment is still present in the ZIP.
+            status, reason, conflict = "ready", None, False
         rows.append(decorate({"id": moment, "type": "quest", "label": title, "originals": english},
                     targets + [moment], built, choices, recorded, status, mapping=mapping, reason=reason,
                     review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
