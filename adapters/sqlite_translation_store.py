@@ -211,6 +211,17 @@ def connection(path):
                 module TEXT PRIMARY KEY CHECK(module IN ('Spoken_Quest_UA', 'Spoken_Gossip_UA')),
                 snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
             db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (7)")
+            db.execute("""CREATE TABLE IF NOT EXISTS quest_runtime_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                moment TEXT NOT NULL,
+                candidate TEXT NOT NULL,
+                evidence TEXT NOT NULL,
+                text TEXT NOT NULL,
+                decision TEXT NOT NULL CHECK(decision IN ('pending', 'approved', 'withdrawn')),
+                reviewer TEXT NOT NULL,
+                checks_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (8)")
             db.commit()
         except BaseException:
             db.rollback()

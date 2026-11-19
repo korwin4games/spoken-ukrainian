@@ -124,10 +124,11 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertNotIn("invented wording", mapping_disk)
         self.assertNotIn("Вигаданий переклад.", mapping_disk)
 
-    def test_manager_missing_quest_draft_requires_mapping_and_needs_separate_confirmation(self):
+    def test_manager_missing_quest_draft_uses_verified_context_and_needs_separate_confirmation(self):
         from adapters.source_revision_store import CHECKS as ALL_CHECKS, sha
         from tools.manager_inventory import load_inventory
         from tools.manager_review import apply_review
+        from adapters.sqlite_translation_store import enable_sqlite
 
         module = build_ukrainian.QUEST_MODULE
         identity = self.request["target_id"]
@@ -141,12 +142,12 @@ class ReviewApprovalUITests(unittest.TestCase):
             draft = {"identity": identity, "candidate": "", "confirm": True,
                      "reviewer": "Fixture author", "text": "Вигадана чернетка."}
             before = detail(self.state)
-            self.assertFalse(before["draft_available"])
+            self.assertTrue(before["draft_available"])
             self.assertTrue(before["mapping_options"])
             self.assertEqual(before["candidates"][0]["eligibility"], "mapping_required")
             self.assertNotIn("review_id", before["candidates"][0])
-            with self.assertRaisesRegex(ValueError, "approved_stage3_mapping"):
-                apply_review("save_translation", draft, module, before, self.state, None, db)
+            draft["binding"] = before["review_binding"]
+            apply_review("save_translation", draft, module, before, self.state, None, db)
             option = before["mapping_options"][0]
             self.assertEqual(option["target_id"], identity)
             self.assertIn("source_blob_sha256", option["evidence"])
@@ -159,7 +160,6 @@ class ReviewApprovalUITests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "manager_candidate_unavailable"):
                 apply_review("register_candidate", {k: v for k, v in draft.items() if k != "text"}
                              | {"candidate": "stale"}, module, mapped, self.state, None, db)
-            apply_review("save_translation", draft, module, mapped, self.state, None, db)
             current = self.new_state()
             saved = detail(current)
             self.assertEqual(saved["mapping_state"], "mapping_verified")
@@ -174,8 +174,9 @@ class ReviewApprovalUITests(unittest.TestCase):
                     "candidate": chosen["review_id"], "checks": dict.fromkeys(ALL_CHECKS, True)},
                 module, saved, current, None, db)
             self.assertEqual(result, sha(draft["text"]))
-            self.assertEqual(current.translation_action("import", {})["imported"], 1)
-            preview = build_ukrainian.current_quest_texts(current)[0]
+            with enable_sqlite(db):
+                preview = build_ukrainian.current_quest_texts(current)[0]
+            self.assertEqual(detail(current)["translation_state"], "translation_approved")
             self.assertEqual(preview[42]["accept"]["text"], draft["text"])
             from zipfile import ZipFile
             entries = build_ukrainian.template_entries(

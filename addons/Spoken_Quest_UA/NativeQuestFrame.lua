@@ -14,15 +14,15 @@ local activeID, activeMoment, pendingMoment
 local frame
 local nativeFields = {
     {name = "QuestInfoTitleHeader", events = {accept = true, complete = true},
-     source = "title", info = true, heading = true},
+     source = "title", info = true},
     {name = "QuestInfoDescriptionText", events = {accept = true},
-     source = "accept", field = "text"},
+     source = "accept", field = "text", info = true},
     {name = "QuestInfoObjectivesText", events = {accept = true},
      source = "objective", info = true},
     {name = "QuestInfoRewardText", events = {complete = true},
      source = "complete", field = "text", info = true},
     {name = "QuestProgressTitleText", events = {progress = true},
-     source = "title", heading = true},
+     source = "title"},
     {name = "QuestProgressText", events = {progress = true},
      source = "progress", field = "text"},
 }
@@ -78,36 +78,18 @@ local function ShiftHeld()
     return type(IsShiftKeyDown) == "function" and IsShiftKeyDown() or false
 end
 
--- The decorative Quest title font often lacks Ukrainian і/ї/є/ґ glyphs.
--- Reuse the already working quest BODY font path, but preserve heading size
--- and restore the exact native font whenever English is shown or UI closes.
--- No external fonts, global font objects or official AddOn files are changed.
-local function TextFont()
-    for _, name in ipairs({"QuestInfoDescriptionText", "QuestProgressText", "GameFontNormal"}) do
-        local widget = _G[name]
-        if widget and type(widget.GetFont) == "function" then
-            local path = widget:GetFont()
-            if type(path) == "string" and path ~= "" then return path end
-        end
-    end
-end
-
-local function SwitchHeadingFont(widget, snapshot, ukrainian)
-    if not snapshot.headingFont or type(widget.SetFont) ~= "function" then return end
-    local original = snapshot.headingFont
-    local path = ukrainian and snapshot.readableFont or original[1]
-    if type(path) ~= "string" or path == "" then return end
-    local ok, accepted = pcall(widget.SetFont, widget, path, original[2], original[3])
-    if not ok or accepted == false then return end
+local function JournalOwnsField(info)
+    return info and QuestInfoFrame and QuestInfoFrame.questLog
 end
 
 local function Apply(widget, snapshot)
     if not snapshot or not WindowVisible() or activeID ~= snapshot.id
-            or activeMoment ~= snapshot.moment or LiveID() ~= snapshot.id then
+            or activeMoment ~= snapshot.moment or LiveID() ~= snapshot.id
+            or JournalOwnsField(snapshot.info) then
         return
     end
     local original = ShiftHeld()
-    SwitchHeadingFont(widget, snapshot, not original)
+    if not SU:UseQuestFont(widget, snapshot.font, not original) then original = true end
     local text = original and snapshot.original or snapshot.translated
     if widget:GetText() ~= text then
         SetWithoutRecursion(widget, text)
@@ -116,8 +98,10 @@ end
 
 local function HandleText(widget, value, field)
     if writing[widget] then return end
+    local previous = originals[widget]
+    if previous then SU:UseQuestFont(widget, previous.font, false) end
     originals[widget] = nil
-    if type(value) ~= "string" or value == "" or ClassicUAIsActive()
+    if JournalOwnsField(field.info) or type(value) ~= "string" or value == "" or ClassicUAIsActive()
             or not WindowVisible() or not activeID or not activeMoment
             or activeID ~= LiveID() then return end
     local translation = SelectedTranslation(activeID, activeMoment, field)
@@ -127,15 +111,9 @@ local function HandleText(widget, value, field)
 
     -- Native rendered text, even if it already substitutes player tokens,
     -- is always the Shift version, never the offline English corpus.
-    local snapshot = {id = activeID, moment = activeMoment,
+    local snapshot = {id = activeID, moment = activeMoment, info = field.info,
                       original = value, translated = translation}
-    if field.heading and type(widget.GetFont) == "function" then
-        local path, size, flags = widget:GetFont()
-        if type(path) == "string" and type(size) == "number" then
-            snapshot.headingFont = {path, size, flags}
-            snapshot.readableFont = TextFont()
-        end
-    end
+    snapshot.font = SU:CaptureQuestFont(widget)
     originals[widget] = snapshot
     Apply(widget, snapshot)
 end
@@ -157,11 +135,11 @@ local function Clear()
     -- No native widget ownership outside the current NPC quest moment.
     -- Leave original text intact during transition to the next quest.
     for widget, snapshot in pairs(originals) do
-        if widget and snapshot and WindowVisible() and
+        if widget and snapshot and
                 widget:GetText() == snapshot.translated then
             SetWithoutRecursion(widget, snapshot.original)
         end
-        SwitchHeadingFont(widget, snapshot, false)
+        SU:UseQuestFont(widget, snapshot.font, false)
         originals[widget] = nil
     end
 end
@@ -173,7 +151,8 @@ local function ScanCurrent()
     -- Catch a widget whose native SetText preceded the event or OnShow.
     for _, field in ipairs(nativeFields) do
         local widget = _G[field.name]
-        if widget and registered[widget] and field.events[activeMoment] then
+        if widget and registered[widget] and field.events[activeMoment]
+                and not JournalOwnsField(field.info) then
             local existing = originals[widget]
             if existing and existing.id == activeID
                     and existing.moment == activeMoment then

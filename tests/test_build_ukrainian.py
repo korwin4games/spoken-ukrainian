@@ -38,7 +38,11 @@ class BuildUkrainianTests(unittest.TestCase):
             "Spoken_Ukrainian/Core.lua",
             "Spoken_Quest_UA/Spoken_Quest_UA.toc",
             "Spoken_Quest_UA/Module.lua",
+            "Spoken_Quest_UA/QuestFont.lua",
             "Spoken_Quest_UA/NativeQuestFrame.lua",
+            "Spoken_Quest_UA/QuestJournal.lua",
+            "Spoken_Quest_UA/NotoSans-Regular.ttf",
+            "Spoken_Quest_UA/OFL-NotoSans.txt",
             "Spoken_Quest_UA/GossipQuestTitles.lua",
             "Spoken_Quest_UA/Translations.lua",
         })
@@ -46,8 +50,9 @@ class BuildUkrainianTests(unittest.TestCase):
                       .replace(b"Spoken_Ukrainian\n", b"Spoken_Ukrainian, "))
         self.assertIn(b"X-SpokenQuests-DataModule-Version: 1",
                       entries["Spoken_Quest_UA/Spoken_Quest_UA.toc"])
-        self.assertNotIn(b".mp3", b"".join(entries.values()))
-        self.assertNotIn(b"Silence", b"".join(entries.values()))
+        scripts = b"".join(content for name, content in entries.items() if name.endswith((".lua", ".toc")))
+        self.assertNotIn(b".mp3", scripts)
+        self.assertNotIn(b"Silence", scripts)
         self.assertIn("machine 1:1", generated.decode())
         self.assertNotIn("Invented text", generated.decode())
 
@@ -330,6 +335,7 @@ VoiceOver = {DataModules = {
         for name in (
                 "Spoken_Ukrainian/Core.lua",
                 "Spoken_Quest_UA/Translations.lua",
+                "Spoken_Quest_UA/QuestFont.lua",
                 "Spoken_Quest_UA/Module.lua"):
             script += "\n" + files[name].decode("utf-8") + "\n"
         script += """

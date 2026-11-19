@@ -191,7 +191,7 @@ class GossipMachineTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'conflict'):
                 stale.run(rows)
         with connection(self.db) as db:
-            self.assertEqual(db.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0], 7)
+            self.assertEqual(db.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0], 8)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM ledger_documents').fetchone()[0], 1)
 
     def test_changed_revision_pending_update_and_revert_stays_pending(self):

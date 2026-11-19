@@ -6,6 +6,8 @@ Dated version sections describe project baselines; they do not imply that a Git 
 or GitHub Release has been published.
 
 ## [Unreleased]
+- Let Quest reviewers compare and register candidates, draft directly against verified context, and confirm a translation across all verified originals. Verify the selected text in the Quest ZIP before applying the decision.
+- Translate supported Forever Quest Journal widgets and use an OFL-licensed Ukrainian-capable font in Quest surfaces.
 - Limit Translation Manager workers to ten minutes and publish staged changes only after a successful worker response.
 - Separate translation conflicts from mapping status in the local manager. Add candidate eligibility, pending Quest registration and drafts, and a guided Stage 3 review form.
 - **BREAKING** Split Quest and Gossip into independently installable local addons and ZIPs with separate SQLite build heads. The root manager handles module-scoped builds and inline review. Move the legacy combined addon out of AddOns before upgrading.

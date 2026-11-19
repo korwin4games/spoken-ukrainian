@@ -104,6 +104,7 @@ UIParent = QuestFrame
         for name in (
                 "Spoken_Ukrainian/Core.lua",
                 "Spoken_Quest_UA/Translations.lua",
+                "Spoken_Quest_UA/QuestFont.lua",
                 "Spoken_Quest_UA/Module.lua",
                 "Spoken_Quest_UA/NativeQuestFrame.lua"):
             lua += "\n" + sources[name].decode("utf-8") + "\n"
@@ -126,7 +127,7 @@ title:SetText("English name")
 description:SetText("Hello $N!")
 objectives:SetText("Retrieve an item.")
 assert(title:GetText() == "Вигадана українська назва")
-assert(title.fontPath == "FRIZQT") -- caption font supports і/ї/є/ґ
+assert(title.fontPath:find("NotoSans-Regular.ttf", 1, true)) -- caption font supports і/ї/є/ґ
 assert(title.fontSize == 18)
 assert(description:GetText() == "Вітаю, Гравець!")
 assert(objectives:GetText() == "Збери перший річ.")
@@ -145,7 +146,7 @@ description:SetText("Hello again from client!")
 assert(description:GetText() == "Hello again from client!")
 mod(false)
 assert(description:GetText() == "Вітаю, Гравець!")
-assert(title.fontPath == "FRIZQT")
+assert(title.fontPath:find("NotoSans-Regular.ttf", 1, true))
 assert(title:GetText() == "Вигадана українська назва")
 -- Many toggles: no hooks stack up; no original contamination.
 for i = 1, 3 do

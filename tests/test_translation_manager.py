@@ -208,9 +208,10 @@ class ManagerTests(unittest.TestCase):
             catalog = load_inventory(*self.paths, self.db, self.archive, state=state)
         detail = catalog.detail(identity=identity)
         self.assertEqual(detail["status"], "multiple_originals")
-        self.assertEqual(detail["mapping_state"], "mapping_conflict")
+        self.assertEqual(detail["mapping_state"], "mapping_pending")
         self.assertEqual(detail["translation_state"], "translation_available")
-        self.assertEqual(catalog.page(status="mapping_conflict")["total"], 1)
+        self.assertEqual(catalog.page(status="mapping_pending")["total"], 1)
+        self.assertTrue(detail["draft_available"])
         self.assertFalse(detail["built"])
         self.assertEqual([(v["text"], v["contexts"][0]["npc_id"]) for v in detail["original_variants"]],
                          list(zip(texts, (20, 21))))

@@ -123,12 +123,21 @@ test("switching module clears detail, resets pagination, and ignores stale respo
 });
 
 test("candidate confirmation requires a selection and all explicit attestations", async () => {
-  const b = browser((action, body) => action === "list" ? listing(body.module) : {
-    ...listing(body.module), agent: {eligible: 1, skipped: 0, reasons: []}, skipped: [], sha256: "fixture",
+  const row = {...fixture, originals: ["Hello.", "Greetings."], review_binding: "fixture-binding",
+    candidates: [...fixture.candidates, {...fixture.candidates[0],
+      review_id: "other-candidate", text: "Інший варіант.", sha256: "fixture-text"}]};
+  let saved = false;
+  const b = browser((action, body) => {
+    if (action === "list") return listing(body.module);
+    if (action === "detail") return saved ? {...row, approved_variant_count: 2,
+      translation_state: "translation_approved", built: {text_sha256: "fixture-text", route: "reviewed"},
+    } : row;
+    saved = true;
+    return {...listing(body.module), build: "success",
+      agent: {eligible: 1, skipped: 0, reasons: []}, skipped: [], sha256: "fixture"};
   });
   await flush();
-  b.vm.row = fixture;
-  b.run("renderDetail(row)");
+  await b.run('detail("q:42:accept")');
   const fields = b.el("selected").all();
   const select = fields.find(node => node.tag === "select");
   const fieldset = fields.find(node => node.tag === "fieldset");
@@ -136,7 +145,7 @@ test("candidate confirmation requires a selection and all explicit attestations"
   const approve = fields.find(node => node.textContent === "Підтвердити переклад");
   assert.equal(approve.disabled, true);
   inputs[0].value = "Reviewer";
-  select.value = "candidate";
+  select.value = "other-candidate";
   select.events.change();
   assert.equal(approve.disabled, true);
   inputs.slice(1).forEach(input => { input.checked = true; });
@@ -146,10 +155,14 @@ test("candidate confirmation requires a selection and all explicit attestations"
   await flush();
   const request = b.requests.find(entry => entry.action === "confirm_candidate");
   assert.equal(request.module, quest);
-  assert.equal(request.candidate, "candidate");
+  assert.equal(request.candidate, "other-candidate");
+  assert.equal(request.binding, "fixture-binding");
   assert.equal(request.confirm, true);
   assert.ok(Object.values(request.checks).every(Boolean));
   assert.match(b.el("operation-status").textContent, /перевірено в ZIP/);
+  assert.equal(b.requests.at(-1).action, "detail");
+  assert.ok(b.el("selected").all().some(node => node.textContent === "Спільний переклад схвалено для оригіналів: 2"));
+  assert.ok(b.el("selected").all().some(node => node.textContent === "У ZIP"));
 });
 
 test("missing Quest draft and audited registration have separate controls from approval", async () => {
@@ -172,13 +185,13 @@ test("missing Quest draft and audited registration have separate controls from a
   assert.ok(fields().some(node => /Формат або підстановки/.test(node.textContent)));
   assert.ok(fields().some(node => /Докази застаріли/.test(node.textContent)));
   assert.ok(fields().some(node => /журналі джерел/.test(node.textContent)));
-  assert.equal(byText("Зберегти чернетку"), undefined);
+  assert.equal(byText("Зберегти чернетку").disabled, true);
   b.vm.row = {...b.vm.row, draft_available: true, candidates: [
     {...candidate, eligibility: "register", registration_key: "observation"},
   ]};
   b.run("renderDetail(row)");
   assert.ok(byText("Зберегти чернетку"));
-  assert.equal(byText("Підтвердити переклад"), undefined);
+  assert.equal(byText("Підтвердити переклад").disabled, true);
   fields().find(node => node.tag === "input").value = "Reviewer";
   const select = fields().find(node => node.tag === "select");
   select.value = "observation";
@@ -202,9 +215,9 @@ test("mapping form passes exact metadata only after two distinct attestations", 
   b.vm.row = {...fixture, candidates: [], mapping_options: [item]};
   b.run("renderDetail(row)");
   const fields = b.el("selected").all();
-  const select = fields.find(node => node.tag === "select");
-  const inputs = fields.filter(node => node.tag === "input");
-  const form = fields.find(node => node.tag === "fieldset");
+  const form = fields.filter(node => node.tag === "fieldset").at(-1);
+  const select = form.all().find(node => node.tag === "select");
+  const inputs = form.all().filter(node => node.tag === "input");
   const button = fields.find(node => node.textContent === "Підтвердити зіставлення");
   assert.equal(button.disabled, true);
   select.value = "0";

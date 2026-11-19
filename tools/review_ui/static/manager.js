@@ -24,6 +24,8 @@ const queueLabels = {
 };
 const problems = {
   quest_mapping_rejected_or_deferred: "Рев’юер відхилив або відклав зіставлення. Перегляньте рішення.",
+  conflicting_quest_runtime_variants: "Для цієї події є різні чинні схвалення. Перегляньте попередні рішення.",
+  quest_runtime_review_stale: "Докази спільного рішення змінилися. Звірте актуальні оригінали й підтвердьте переклад знову.",
   quest_multiple_verified_originals: "Перегляньте кожен оригінал окремо. Для цієї події автоматичний імпорт заблоковано.",
   quest_original_missing: "У закріпленому корпусі немає підтвердженого оригіналу.",
   quest_mapping_unverified: "Для цього кандидата бракує доказів фракції, відповідності контексту або незалежної перевірки AI.",
@@ -71,6 +73,8 @@ Object.assign(errors, {
   manager_invalid_translation_format: "Перевірте підстановки та форматування за англійським оригіналом.",
   manager_candidate_unavailable: "Кандидат застарів, відхилений або відсутній. Оновіть запис.",
   manager_candidate_not_built: "Текст не ввійшов до ZIP. Перевірте конфлікти та чинні схвалення.",
+  conflicting_quest_runtime_variants: "Спершу відкличте суперечливе чинне схвалення або вибір джерела.",
+  invalid_quest_runtime_review: "У локальній базі є недійсний запис перевірки Quest. Перевірте резервну копію бази.",
   source_quest_selection_requires_approved_stage3_mapping: "Спершу підтвердьте зіставлення Quest доказом Stage 3.",
   source_candidate_pinned_context_mismatch: "Доказ кандидата змінився. Звірте його з поточним оригіналом.",
 });
@@ -198,7 +202,8 @@ function reviewControls(row) {
     status.textContent = action === "confirm_candidate" ?
       "Перевіряємо докази та збираємо ZIP…" : "Перевіряємо докази та зберігаємо запис…";
     try {
-      const result = await call(action, {...payload, identity: row.id, confirm: true});
+      const binding = row.type === "quest" && action !== "review_mapping" ? {binding: row.review_binding} : {};
+      const result = await call(action, {...payload, ...binding, identity: row.id, confirm: true});
       if (result.build !== "review_saved") renderResult(result);
       el("operation-status").textContent = action === "confirm_candidate" ?
         "Вибраний переклад перевірено в ZIP." : "Рішення збережено. Перевірте статус запису.";
@@ -215,7 +220,7 @@ function reviewControls(row) {
     (c.review_id && (c.eligibility === "selectable" || c.draft_editable)) ||
     (c.registration_key && c.eligibility === "register"));
   const canAdd = row.draft_available || row.type === "gossip" && row.review_queue === "gossip_translation";
-  if (row.originals.length === 1 && (candidates.length || canAdd) &&
+  if ((row.type === "quest" || row.originals.length === 1 && (candidates.length || canAdd)) &&
       !["invalid_context", "mapping_conflict", "mapping_rejected", "stale"].includes(row.mapping_state)) {
     const field = make("fieldset");
     const reviewer = make("input");
@@ -235,12 +240,13 @@ function reviewControls(row) {
     }
     const context = make("pre");
     const checks = {};
-    if (candidates.length) {
+    if (candidates.length || row.type === "quest") {
       field.append(select, context);
       for (const [key, label] of Object.entries({
         text: "Текст відповідає оригіналу", grammar: "Мову та форматування перевірено",
         ai: "Походження та використання ШІ перевірено", rights: "Права перевірено",
-        all_contexts: "Усі контексти перевірено",
+        all_contexts: row.type === "quest" ?
+          "Цей переклад підходить для всіх наведених оригіналів і контекстів" : "Усі контексти перевірено",
       })) {
         const input = make("input");
         input.type = "checkbox";
@@ -256,18 +262,20 @@ function reviewControls(row) {
     const approve = make("button", "Підтвердити переклад");
     const save = make("button", "Зберегти чернетку");
     const register = make("button", "Додати кандидат до журналу");
-    approve.type = save.type = register.type = "button";
+    const withdraw = make("button", "Відкликати схвалення Quest");
+    approve.type = save.type = register.type = withdraw.type = "button";
     const choice = () => candidates.find(c => (c.review_id || c.registration_key) === select.value);
     const update = () => {
       approve.disabled = choice()?.eligibility !== "selectable" || !reviewer.value.trim() ||
         Object.values(checks).some(input => !input.checked);
       register.disabled = choice()?.eligibility !== "register" || !reviewer.value.trim();
+      withdraw.disabled = !choice()?.runtime_approval || !reviewer.value.trim();
       save.disabled = !reviewer.value.trim() || !draft.value.trim() ||
         !(canAdd || choice()?.review_kind === "quest");
     };
     select.addEventListener("change", () => {
-      context.textContent = choice() ? row.originals[0] + "\n\n" + choice().text : "";
-      if (choice()?.review_kind === "quest") draft.value = choice().text;
+      context.textContent = choice() ? row.originals.join("\n\n") + "\n\n" + choice().text : "";
+      if (["quest", "runtime"].includes(choice()?.review_kind)) draft.value = choice().text;
       for (const input of Object.values(checks)) input.checked = false;
       update();
     });
@@ -279,14 +287,28 @@ function reviewControls(row) {
       }
     });
     save.addEventListener("click", () => run("save_translation",
-      {candidate: choice()?.review_kind === "quest" ? select.value : "", text: draft.value, reviewer: reviewer.value}));
+      {candidate: ["quest", "runtime"].includes(choice()?.review_kind) ? select.value : "",
+        text: draft.value, reviewer: reviewer.value}));
     register.addEventListener("click", () => run("register_candidate",
       {candidate: select.value, reviewer: reviewer.value}));
-    if (candidates.some(c => c.eligibility === "selectable")) field.append(approve);
-    if (candidates.some(c => c.eligibility === "register")) field.append(register);
-    if (canAdd || candidates.some(c => c.review_kind === "quest")) field.append(draft, save);
+    withdraw.addEventListener("click", () => {
+      if (!withdraw.disabled && window.confirm("Записати відкликання схвалення? Поточний ZIP зміниться під час нової збірки.")) {
+        run("withdraw_quest_approval", {candidate: select.value, reviewer: reviewer.value});
+      }
+    });
+    if (row.type === "quest" || candidates.some(c => c.eligibility === "selectable")) field.append(approve);
+    if (row.type === "quest" || candidates.some(c => c.eligibility === "register")) field.append(register);
+    if (row.type === "quest" && candidates.some(c => c.runtime_approval)) field.append(withdraw);
+    if (row.type === "quest" || canAdd || candidates.some(c => c.review_kind === "quest")) field.append(draft, save);
+    if (row.type === "quest" && !candidates.length) {
+      field.append(make("p", canAdd ? "Створіть власну чернетку або перевірте зіставлення Stage 3 для ClassicUA."
+        : "Для редагування потрібен перевірений оригінал для кожного контексту."));
+    }
     panel.append(field);
     update();
+  }
+  if (row.type === "quest" && ["invalid_context", "mapping_conflict", "mapping_rejected", "stale"].includes(row.mapping_state)) {
+    panel.append(make("p", "Перевірте стан зіставлення та докази джерела перед збереженням рішення."));
   }
   if (row.mapping_options?.length) panel.append(mappingControls(row.mapping_options, run));
   return panel;
@@ -374,6 +396,8 @@ function renderDetail(row) {
   const built = row.built ? "У ZIP · " + (routes[row.built.route] || row.built.route) + " · " + row.built.source :
     row.recorded ? "Записано в базі, до ZIP не ввійшло" : "Не імпортовано";
   blocks.push(badge(built, row.built ? "built" : ""), make("p", row.help));
+  if (row.approved_variant_count) blocks.push(make("p", "Спільний переклад схвалено для оригіналів: " + row.approved_variant_count));
+  if (row.type === "quest" && row.built) blocks.push(make("p", row.built.text_sha256, "muted"));
   blocks.push(make("p", [mappingLabels[row.mapping_state], translationLabels[row.translation_state]].filter(Boolean).join(" · ")));
   blocks.push(make("p", row.review_queue ? "Черга: " + queueLabels[row.review_queue] : "У черзі перевірки запису немає.", "muted"));
   const en = make("section");
@@ -381,6 +405,7 @@ function renderDetail(row) {
   if (row.original_variants?.length) {
     for (const variant of row.original_variants) {
       en.append(make("p", variant.text, "original"));
+      en.append(make("p", [variant.revision, variant.fingerprint].filter(Boolean).join(" · "), "muted"));
       if (variant.source_ids?.length) en.append(make("p", variant.source_ids.join(" · "), "muted"));
       for (const context of variant.contexts) {
         en.append(make("p", [variant.target_id, context.npc_id != null ? "NPC " + context.npc_id : "",
@@ -397,12 +422,15 @@ function renderDetail(row) {
   if (!row.candidates.length) uk.append(make("p", "Перекладу немає.", "muted"));
   for (const item of row.candidates) {
     const details = make("details", undefined, "candidate");
-    details.open = row.candidates.length === 1 || row.status === "conflict" ||
+    details.open = row.type === "quest" || row.candidates.length === 1 || row.status === "conflict" ||
       row.built?.text_sha256 === item.sha256 || Boolean(item.validation && item.validation !== "agent_verified");
     details.append(make("summary", item.provider + " · " + item.review),
       make("pre", item.text),
       make("p", [item.reference, item.revision].filter(Boolean).join(" · "), "muted"),
       make("p", eligibilityHelp[item.eligibility] || eligibilityHelp.source_review));
+    if (row.type === "quest" && row.built?.text_sha256 === item.sha256) {
+      details.append(badge("У ZIP", "built"));
+    }
     if (item.validation === "stale") details.append(make("p", "Оцінка агента застаріла.", "muted"));
     if (item.shared_bindings) details.append(make("p", "Спільний запис ClassicUA для Альянсу й Орди.", "muted"));
     if (item.checks) {
@@ -414,7 +442,9 @@ function renderDetail(row) {
   }
   const evidence = make("details");
   evidence.append(make("summary", "Контекст джерела"), make("pre", JSON.stringify(row.contexts, null, 2)));
-  blocks.push(en, uk, evidence);
+  blocks.push(en);
+  if (row.type === "quest") blocks.push(reviewControls(row));
+  blocks.push(uk, evidence);
   if (row.problem && problems[row.problem]) blocks.push(make("p", problems[row.problem]));
   if (row.unverified_alternatives?.length) {
     blocks.push(make("p", "Є збіг за обробленим текстом Spoken. Потрібна перевірка оригіналу в грі."));
@@ -422,7 +452,8 @@ function renderDetail(row) {
       blocks.push(make("p", item.hash + " · " + (item.scope === "common" ? "спільний запис" : "запис цього NPC"), "muted"));
     }
   }
-  el("selected").replaceChildren(...blocks, reviewControls(row));
+  if (row.type !== "quest") blocks.push(reviewControls(row));
+  el("selected").replaceChildren(...blocks);
 }
 
 async function detail(id, button) {

@@ -27,6 +27,7 @@ EXPECTED = {
     },
     "Spoken_Gossip_UA": {"Spoken_Gossip_UA.toc", "GossipTranslations.lua", "GossipFrame.lua"},
 }
+QUEST_RUNTIME_FILES = {"QuestFont.lua", "QuestJournal.lua", "NotoSans-Regular.ttf", "OFL-NotoSans.txt"}
 MAX_TOTAL_BYTES = 96 * 1024 * 1024
 MAX_FILE_BYTES = 80 * 1024 * 1024
 
@@ -61,16 +62,18 @@ def validate_archive(archive: Path):
             raise InstallError("unexpected_zip_members_or_duplicates")
         module = next(iter(modules))
         expected = {folder + "/" + name for folder in folders for name in EXPECTED[folder]}
+        names = {entry.filename for entry in entries}
+        if module == "Spoken_Quest_UA" and names - expected:
+            expected |= {module + "/" + name for name in QUEST_RUNTIME_FILES}
         if (len(entries) != len(expected)
-                or {entry.filename for entry in entries} != expected):
+                or names != expected):
             raise InstallError("unexpected_zip_members_or_duplicates")
         total = 0
         result = {}
         for entry in entries:
             name = entry.filename
             parts = name.split("/")
-            if (len(parts) != 2 or parts[0] not in EXPECTED
-                    or parts[1] not in EXPECTED[parts[0]]
+            if (len(parts) != 2 or name not in expected
                     or entry.is_dir() or entry.flag_bits & 1
                     or entry.compress_type != ZIP_STORED
                     or (entry.external_attr >> 16) & 0o170000 == 0o120000):

@@ -9,6 +9,7 @@ from tools.build_ukrainian import MODULE_DOMAINS, local_gossip_texts
 from tools.gossip_coverage import read_pinned_corpus
 from tools.gossip_translation_review import GossipReviews, discover_groups, normalized, version_status
 from tools.source_revision_review import gossip_contexts, quest_contexts
+from tools import quest_runtime_review
 
 
 def validate_text(english, text):
@@ -17,6 +18,13 @@ def validate_text(english, text):
             or CLIENT_TOKENS.search(text)
             or re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", text)
             or any(form.status != "supported" for form in inventory(text))):
+        raise ValueError("manager_invalid_translation_format")
+
+
+def validate_quest_text(originals, text):
+    for original in originals:
+        validate_text(original, text)
+    if re.search(r"\|[cCrRhHtTaA]", text):
         raise ValueError("manager_invalid_translation_format")
 
 
@@ -37,18 +45,49 @@ def apply_review(action, payload, module, row, state, spoken, db_path):
         expected.add("checks")
     elif action == "save_translation":
         expected.add("text")
-    elif action != "register_candidate":
+    elif action not in ("register_candidate", "withdraw_quest_approval"):
         raise ValueError("manager_invalid_review_request")
+    if domain == "quest" and "review_binding" in row:
+        expected.add("binding")
     if (set(payload) != expected or payload["confirm"] is not True
             or type(payload["reviewer"]) is not str or not 0 < len(payload["reviewer"].strip()) <= 120
             or type(payload["candidate"]) is not str):
         raise ValueError("manager_invalid_review_request")
-    if len(row["originals"]) != 1 or row["mapping_state"] in (
+    quest_binding = domain == "quest" and "review_binding" in row
+    if (quest_binding and (not row["review_binding"] or payload["binding"] != row["review_binding"])
+            or not quest_binding and len(row["originals"]) != 1) or row["mapping_state"] in (
             "invalid_context", "mapping_conflict", "mapping_rejected", "stale"):
         raise ValueError("manager_review_context_blocked")
     reviewer, candidate_id = payload["reviewer"], payload["candidate"]
     original = row["originals"][0]
     choice = next((c for c in row["candidates"] if c.get("review_id") == candidate_id), None)
+    runtime_confirmation = False
+    if action == "withdraw_quest_approval" and not quest_binding:
+        raise ValueError("manager_invalid_review_request")
+    if quest_binding:
+        if state.revalidate_inputs is not None:
+            state.revalidate_inputs()
+        targets = {variant["target_id"] for variant in row["original_variants"]}
+        binding, originals = quest_runtime_review.binding(state, row["id"], targets)
+        if action == "withdraw_quest_approval":
+            candidate = quest_runtime_review.candidate_key(choice) if choice else None
+            decision = next((r for r in quest_runtime_review.current_decisions(quest_runtime_review.history(db_path))
+                             if r["candidate"] == candidate and r["evidence"] == binding), None)
+            if not decision:
+                raise ValueError("manager_candidate_unavailable")
+            quest_runtime_review.save(db_path, row["id"], candidate, binding, decision["text"],
+                                      "withdrawn", reviewer, {})
+            return None
+        if action == "save_translation" and (not candidate_id or choice and choice["review_kind"] == "runtime"):
+            if candidate_id and choice.get("eligibility") != "selectable":
+                raise ValueError("manager_candidate_unavailable")
+            validate_quest_text(originals, payload["text"])
+            quest_runtime_review.save(db_path, row["id"], "manual", binding, payload["text"],
+                                      "pending", reviewer, {})
+            return None
+        runtime_confirmation = action == "confirm_candidate"
+        if action == "save_translation" and (not choice or choice.get("eligibility") != "selectable"):
+            raise ValueError("manager_candidate_unavailable")
     if action == "register_candidate" or (action == "save_translation" and domain == "quest" and not candidate_id):
         if domain != "quest" or row["mapping_state"] != "mapping_verified":
             raise ValueError("source_quest_selection_requires_approved_stage3_mapping")
@@ -58,12 +97,12 @@ def apply_review(action, payload, module, row, state, spoken, db_path):
                 and (not candidate_id or c["registration_key"] == candidate_id)}
         observations = state.translation_observations()
         matches = [o for o in observations if o.row()["id"] in keys and quest_moment(o.target_id) == row["id"]
-                   and o.original == original and o.row()["rights_status"] == "reviewed"
+                   and o.original in row["originals"] and o.row()["rights_status"] == "reviewed"
                    and state.policy.stores(o.row()["provenance"][0]["provider"])]
         if len(matches) != 1 or (action == "register_candidate" and not candidate_id):
             raise ValueError("manager_candidate_unavailable")
         base = matches[0].row()
-        validate_text(original, base["text"] if action == "register_candidate" else payload["text"])
+        validate_quest_text(row["originals"], base["text"] if action == "register_candidate" else payload["text"])
         state.translations.observe(matches, state.policy, one_to_one_pairs=set())
         if action == "save_translation":
             state.translation_action("edit", {"identity": base["id"], "text": payload["text"], "reviewer": reviewer})
@@ -78,7 +117,10 @@ def apply_review(action, payload, module, row, state, spoken, db_path):
         text = choice["text"]
     else:
         text = payload["text"]
-    validate_text(original, text)
+    if domain == "quest":
+        validate_quest_text(row["originals"], text)
+    else:
+        validate_text(original, text)
 
     if choice and choice["review_kind"] == "source":
         if action != "confirm_candidate":
@@ -96,15 +138,19 @@ def apply_review(action, payload, module, row, state, spoken, db_path):
                     or target not in {o.target_id for o in state.translation_observations()}):
                 raise ValueError("source_quest_selection_requires_approved_stage3_mapping")
             trusted = quest_contexts(state)
+            if any(quest_moment(s["target_id"]) == row["id"] and s["text_sha256"] != sha(text)
+                   for s in store.active(trusted, domain="quest", skipped=[])):
+                raise ValueError("conflicting_quest_runtime_variants")
         else:
             if target != f"gossip:{row.get('npc_id')}:{row.get('english_hash')}":
                 raise ValueError("manager_review_context_blocked")
             trusted = gossip_contexts(read_pinned_corpus(spoken, state.inventory.revision))
-        if choice["review"] not in ("approved", "source_selected"):
-            store.decide(candidate_id, "approved", reviewer, checks, trusted)
-        if choice["review"] != "source_selected":
-            store.activate(candidate_id, reviewer, trusted)
-    elif domain == "quest":
+        if not runtime_confirmation:
+            if choice["review"] not in ("approved", "source_selected"):
+                store.decide(candidate_id, "approved", reviewer, checks, trusted)
+            if choice["review"] != "source_selected":
+                store.activate(candidate_id, reviewer, trusted)
+    elif domain == "quest" and not runtime_confirmation:
         if not choice or choice["review_kind"] != "quest":
             raise ValueError("source_quest_selection_requires_approved_stage3_mapping")
         if action == "save_translation":
@@ -112,7 +158,7 @@ def apply_review(action, payload, module, row, state, spoken, db_path):
         elif choice["review"] != "approved":
             state.translation_action("decide", {"identity": candidate_id, "decision": "approved",
                 "reviewer": reviewer, "checks": {k: v for k, v in checks.items() if k != "all_contexts"}})
-    else:
+    elif domain == "gossip":
         lines = read_pinned_corpus(spoken, state.inventory.revision)
         groups, _ = discover_groups(lines, local_gossip_texts(state), state.inventory.revision,
                                     state.source.revision)
@@ -134,4 +180,8 @@ def apply_review(action, payload, module, row, state, spoken, db_path):
                 raise ValueError("manager_candidate_unavailable")
             if version_status(version) != "approved":
                 reviews.decide(candidate_id, "approved", reviewer, checks)
+    if runtime_confirmation:
+        quest_runtime_review.save(db_path, row["id"], quest_runtime_review.candidate_key(choice),
+                                  binding, text, "approved",
+                                  reviewer, checks)
     return sha(text) if action == "confirm_candidate" else None

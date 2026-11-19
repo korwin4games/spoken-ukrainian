@@ -13,6 +13,7 @@ from tools.gossip_translation_review import discover_groups, normalized, version
 from tools.translation_manager import MODULE, file_stamp
 from tools.build_ukrainian import MODULE_DOMAINS
 from tools.source_revision_review import gossip_contexts, quest_contexts
+from tools import quest_runtime_review
 
 
 STATUS_HELP = {
@@ -23,7 +24,7 @@ STATUS_HELP = {
     "rejected": "Збережено рішення відхилити або відкласти переклад. Перегляньте рішення вручну.",
     "invalid": "Бракує перевіреного оригіналу або не підтримується контекст чи формат. Перевірте джерела.",
     "stale": "Попередні докази змінилися. Перевірте відповідність і версію джерела.",
-    "multiple_originals": "Spoken містить різні оригінали для цієї події. Гра передає лише ID квесту та етап, тому цей запис не можна безпечно додати до ZIP.",
+    "multiple_originals": "Гра передає лише ID квесту та етап. Підтвердьте один переклад, який підходить для кожного наведеного оригіналу й контексту.",
 }
 MAPPING_STATES = {"mapping_verified", "mapping_provisional", "mapping_pending",
                   "mapping_conflict", "mapping_rejected", "invalid_context", "stale"}
@@ -67,7 +68,8 @@ class ModuleInventory:
             result[kind] = {"total": len(rows), "included": built, "not_included": len(rows) - built,
                             "recorded": sum(r["recorded"] for r in rows),
                             "conflicts": conflicts,
-                            "multiple_originals": counts["multiple_originals"],
+                            "multiple_originals": sum(len(r["originals"]) > 1 for r in rows
+                                                      if r["type"] == "quest"),
                             "conflicting_candidates": conflicts, "missing": counts["missing"],
                             "ready": sum(r["status"] == "ready" and not r["built"] for r in rows),
                             "pending_review": pending["review"] + pending["stale"],
@@ -105,7 +107,7 @@ class ModuleInventory:
                 continue
             if filter_by == "conflicts" and not row.get("candidate_conflict", row["status"] == "conflict"):
                 continue
-            if filter_by == "multiple_originals" and row["status"] != "multiple_originals":
+            if filter_by == "multiple_originals" and (row["type"] != "quest" or len(row["originals"]) < 2):
                 continue
             if needles:
                 text = " ".join([row["id"], row["label"], *row["originals"],
@@ -134,12 +136,13 @@ class ModuleInventory:
                     help_text = "Спершу підтвердьте зіставлення ClassicUA та Spoken двома незалежними рецензентами."
                 else:
                     help_text = "Бракує підтвердженого зіставлення Stage 3. Звірте закріплені джерела й контекст."
-        from tools.manager_review import validate_text
+        from tools.manager_review import validate_quest_text, validate_text
         choices = []
         for candidate in row["candidates"]:
             choice = dict(candidate)
             eligibility = choice.get("eligibility", "source_review")
-            if len(row["originals"]) != 1 or row.get("mapping_state") in (
+            if (not row["originals"] or row["type"] != "quest" and len(row["originals"]) != 1
+                    or row["type"] == "quest" and not row.get("review_binding")) or row.get("mapping_state") in (
                     "invalid_context", "mapping_conflict", "mapping_rejected"):
                 eligibility = "context_blocked"
             elif choice.get("review") in ("rejected", "deferred", "stale", "pending_update"):
@@ -147,7 +150,10 @@ class ModuleInventory:
             elif eligibility in ("selectable", "register"):
                 choice["draft_editable"] = eligibility == "selectable" and choice.get("review_kind") == "quest"
                 try:
-                    validate_text(row["originals"][0], choice["text"])
+                    if row["type"] == "quest":
+                        validate_quest_text(row["originals"], choice["text"])
+                    else:
+                        validate_text(row["originals"][0], choice["text"])
                 except ValueError:
                     eligibility = "format_blocked"
             choices.append(choice | {"eligibility": eligibility})
@@ -156,7 +162,7 @@ class ModuleInventory:
 
     def mapping_options(self, row):
         if (self.state is None or row.get("review_queue") != "quest_mapping"
-                or len(row["originals"]) != 1 or row.get("mapping_state") == "mapping_rejected"):
+                or not row["originals"] or row.get("mapping_state") == "mapping_rejected"):
             return []
         options = []
         for variant in row.get("original_variants", []):
@@ -340,8 +346,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
         if reason and "conflict" in reason and status not in ("multiple_originals", "invalid"):
             status = "conflict"
         fallback_mapping = extra.pop("mapping", "mapping_pending")
-        mapping = ("mapping_conflict" if status == "multiple_originals" else
-                   "invalid_context" if not entry["originals"] or status == "invalid" else fallback_mapping)
+        mapping = ("invalid_context" if not entry["originals"] or status == "invalid" else fallback_mapping)
         return {**entry, "status": status, "built": built, "candidates": choices,
                 "recorded": recorded, "problem": reason, "mapping_state": mapping,
                 "translation_state": translation_state(choices),
@@ -404,11 +409,18 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
     review_ready = {r["target_id"] for r in state.translations.eligible(
         observations, state.policy, skipped=[])}
     quest_groups = defaultdict(list)
-    for target, item in state.inventory.targets.items():
-        match = QUEST.fullmatch(target) if item.family == "quest" else None
-        if match:
-            quest_groups[match.group(1)].append(target)
+    if MODULE_DOMAINS[module] == "quest":
+        for target, item in state.inventory.targets.items():
+            match = QUEST.fullmatch(target) if item.family == "quest" else None
+            if match:
+                quest_groups[match.group(1)].append(target)
     rows = []
+    runtime_history = defaultdict(list)
+    runtime_approved = {}
+    if MODULE_DOMAINS[module] == "quest":
+        for review in quest_runtime_review.history(db_path):
+            runtime_history[review["moment"]].append(review)
+        runtime_approved = quest_runtime_review.approved(state, db_path, None)
     for moment, targets in sorted(quest_groups.items(), key=lambda x: (int(x[0].split(":")[1]), x[0])):
         _, quest_id, event = moment.split(":")
         title = next((glossary.get(target, {}).get("questTitle") for target in targets
@@ -420,7 +432,8 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                 contexts_for_wording = [c | {"index": i} for i, c in enumerate(state.inventory.contexts[target])
                                         if c["wording_sha256"] == wording]
                 original_variants.append({"target_id": target, "text": text, "contexts": contexts_for_wording,
-                                          "source_ids": sorted(hints[target]),
+                                          "source_ids": sorted(hints[target]), "revision": state.inventory.revision,
+                                          "fingerprint": wording,
                                           "review_factions": sorted(quest_queue[target])})
         english = sorted({variant["text"] for variant in original_variants})
         multiple = len(english) > 1
@@ -469,25 +482,50 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                         "eligibility": "rights_blocked" if unit.ai else
                         "mapping_required" if target not in reviewed_targets else "source_review"})
         built = units.get(("quests", f"{quest_id}:{event}"))
+        binding, _ = quest_runtime_review.binding(state, moment, targets)
+        approved = runtime_approved.get(moment)
+        decisions = quest_runtime_review.current_decisions(runtime_history[moment])
+        approvals = {r["candidate"] for r in decisions if r["evidence"] == binding}
+        for choice in choices:
+            if choice.get("review_id") and quest_runtime_review.candidate_key(choice) in approvals:
+                choice["runtime_approval"] = True
+            if approved and choice.get("review_id") and approved["candidate"] == quest_runtime_review.candidate_key(choice):
+                choice["review"] = "approved"
+        recorded |= bool(approved)
+        for review in runtime_history[moment]:
+            if review["decision"] != "pending":
+                continue
+            current = binding is not None and review["evidence"] == binding
+            decision = ("stale" if not current else "approved" if approved and
+                        approved["candidate"] == "runtime:" + review["id"] else "pending")
+            choices.append(review_candidate(review["text"], "manual", moment, state.inventory.revision, decision)
+                           | {"review_id": "runtime:" + review["id"], "review_kind": "runtime",
+                              "eligibility": "selectable" if current else "stale",
+                              "runtime_approval": "runtime:" + review["id"] in approvals})
         conflict = len({r["sha256"] for r in choices if r["review"] not in (
             "rejected", "deferred", "pending_update", "stale") and r.get("eligibility") != "stale"}) > 1
-        ready = ready and not multiple and moment not in rejected_moments
+        ready = bool(approved) or ready and not multiple and moment not in rejected_moments
         queue = "quest_mapping" if any(quest_queue[t] for t in targets) else (
             "quest_translation" if set(targets) & reviewed_targets else None)
+        stale_review = bool(decisions) and moment not in runtime_approved
         reason = ("quest_mapping_rejected_or_deferred" if moment in rejected_moments else
-                  "quest_multiple_verified_originals" if multiple else
+                  "conflicting_quest_runtime_variants" if moment in runtime_approved and not approved else
+                  "quest_runtime_review_stale" if stale_review else
+                  "quest_multiple_verified_originals" if multiple and not approved else
                   "quest_original_missing" if not english else
                   "quest_mapping_unverified" if choices and not ready and not queue else None)
         mapping = ("mapping_rejected" if moment in rejected_moments else
                    "mapping_verified" if set(targets) & reviewed_targets else
                    "mapping_provisional" if set(targets) & q_auto.keys() else "mapping_pending")
-        status = ("rejected" if moment in rejected_moments else "multiple_originals" if multiple else
+        status = ("rejected" if moment in rejected_moments else "ready" if approved else
+                  "conflict" if moment in runtime_approved else "multiple_originals" if multiple else
                   status_for(english, choices, conflict=conflict, ready=ready))
         rows.append(decorate({"id": moment, "type": "quest", "label": title, "originals": english},
                     targets + [moment], built, choices, recorded, status, mapping=mapping, reason=reason,
                     review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
-                    draft_available=len(english) == 1 and moment not in rejected_moments
-                    and sum(c.get("eligibility") == "register" for c in choices) == 1,
+                    draft_available=bool(binding) and moment not in rejected_moments,
+                    review_binding=digest(binding) if binding else None,
+                    approved_variant_count=len(english) if approved and multiple else 0,
                     quest_id=quest_id, event=event, contexts=[c for t in targets for c in state.inventory.contexts[t]]))
 
     known = set()

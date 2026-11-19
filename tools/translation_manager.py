@@ -26,7 +26,7 @@ from tools.build_ukrainian import ARCHIVES, MODULE_DOMAINS, QUEST_MODULE
 MODULE = QUEST_MODULE
 MANAGER_WORKER_TIMEOUT_SECONDS = 600
 SOURCE_INPUTS = ("sources.lock.json", "config/translation_sources.json", "tests/stage3_sources.json")
-REVIEW_ONLY = ("save_translation", "register_candidate", "review_mapping")
+REVIEW_ONLY = ("save_translation", "register_candidate", "review_mapping", "withdraw_quest_approval")
 WORKER_ERRORS = frozenset({
     "manager_confirmation_required", "manager_invalid_options", "manager_unknown_module",
     "manager_reimport_already_running", "manager_state_changed_retry_reimport",
@@ -40,6 +40,8 @@ WORKER_ERRORS = frozenset({
     "source_candidate_pinned_context_mismatch", "explicit_human_join_request_required",
     "current_version_text_and_editor_required", "current_reviewed_identity_required",
     "duplicate_gossip_version", "duplicate_translation_edit",
+    "conflicting_quest_runtime_variants",
+    "invalid_quest_runtime_review",
 })
 DOMAINS = "('quest','gossip')"
 MODULE_LEDGERS = (
@@ -48,6 +50,7 @@ MODULE_LEDGERS = (
 )
 TABLE_SCOPES = {
     "ledger_documents": "ledger_name IN (" + ",".join(repr(s) for s in MODULE_LEDGERS) + ")",
+    "quest_runtime_reviews": "1",
     "translation_memory": f"domain IN {DOMAINS}",
     "source_candidate_decisions": f"candidate_id IN (SELECT id FROM source_candidates WHERE domain IN {DOMAINS})",
     "source_active_selections": f"domain IN {DOMAINS}",
@@ -64,7 +67,8 @@ def module_scopes(module):
     ledgers = [name for name in MODULE_LEDGERS if name.startswith("gossip-") == (domain == "gossip")]
     return {table: ("ledger_name IN (" + ",".join(repr(name) for name in ledgers) + ")"
                     if table == "ledger_documents" else scope.replace(DOMAINS, f"('{domain}')"))
-            for table, scope in TABLE_SCOPES.items()}
+            for table, scope in TABLE_SCOPES.items()
+            if table != "quest_runtime_reviews" or domain == "quest"}
 
 
 def reset_test_state(db, module=MODULE):
@@ -104,6 +108,24 @@ def file_stamp(path):
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise ValueError("manager_unsafe_archive_path")
     return sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
+def verify_quest_zip(archive, identity, text_hash):
+    from zipfile import ZipFile
+    from adapters.spoken import literal_data
+
+    with ZipFile(archive) as bundle:
+        lua = bundle.read(f"{QUEST_MODULE}/Translations.lua")
+    _, quest, event = identity.split(":")
+    assignment = b"\nSpokenUkrainian.QuestTranslations = "
+    _, separator, table = lua.partition(assignment)
+    if not separator:
+        raise ValueError("manager_candidate_not_built")
+    rows = literal_data(separator + table, "SpokenUkrainian.QuestTranslations")
+    entry = rows.get(int(quest), {}).get(event, {})
+    if (not entry.get("reviewed") or not isinstance(entry.get("text"), str)
+            or sha256(entry["text"].encode("utf-8")).hexdigest() != text_hash):
+        raise ValueError("manager_candidate_not_built")
 
 
 @contextmanager
@@ -289,6 +311,8 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
                     built = view.detail(module=module, identity=review[1]["identity"])["built"]
                     if not built or built["text_sha256"] != selected_hash:
                         raise ValueError("manager_candidate_not_built")
+                    if module == QUEST_MODULE:
+                        verify_quest_zip(incoming, review[1]["identity"], selected_hash)
                 summary = view.summary()
         if pins != source_stamps():
             raise ValueError("manager_source_configuration_changed")

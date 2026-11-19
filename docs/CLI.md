@@ -154,6 +154,14 @@ import states separately, with review queue coverage, agent warnings by
 assessed version and unverified Gossip alternatives by NPC/hash occurrence.
 The summary counts candidate conflicts (`conflicts`) and rows with multiple
 verified English originals (`multiple_originals`) separately.
+Register a ClassicUA candidate, write a canonical Quest draft, or confirm a
+selected version in the Manager. Confirmation records five human checks and
+verifies the selected text against the actual Quest ZIP. For multiple originals,
+one approval covers the exact pinned set of wordings and contexts. A changed
+revision or variant requires a new review. Quest-only `reimport` reapplies
+current decisions without changing the Gossip ZIP or build head. Use the
+[Manager example](TRANSLATION_MANAGER.md#приклад-перевірки-quest) for selecting
+between translations and testing the Quest Journal and font in WoW: Forever.
 `--json` includes detailed results
 and failure codes. Exit 0 indicates preview or successful promotion, 1 a
 failed operation, and 2 invalid CLI syntax. See the [manager guide](TRANSLATION_MANAGER.md).
