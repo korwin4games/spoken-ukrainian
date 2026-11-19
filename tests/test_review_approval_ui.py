@@ -124,6 +124,84 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertNotIn("invented wording", mapping_disk)
         self.assertNotIn("Вигаданий переклад.", mapping_disk)
 
+    def test_manager_missing_quest_draft_requires_mapping_and_needs_separate_confirmation(self):
+        from adapters.source_revision_store import CHECKS as ALL_CHECKS, sha
+        from tools.manager_inventory import load_inventory
+        from tools.manager_review import apply_review
+
+        module = build_ukrainian.QUEST_MODULE
+        identity = self.request["target_id"]
+        db = self.base.parent / "manager.sqlite3"
+        archive = self.base.parent / "quest.zip"
+        with patch("tools.manager_inventory.read_pinned_corpus", return_value=[]), patch(
+                "tools.gossip_coverage.read_pinned_corpus", return_value=[]):
+            def detail(state):
+                return load_inventory(None, None, db, archive, state=state).detail(identity=identity)
+
+            draft = {"identity": identity, "candidate": "", "confirm": True,
+                     "reviewer": "Fixture author", "text": "Вигадана чернетка."}
+            before = detail(self.state)
+            self.assertFalse(before["draft_available"])
+            self.assertTrue(before["mapping_options"])
+            self.assertEqual(before["candidates"][0]["eligibility"], "mapping_required")
+            self.assertNotIn("review_id", before["candidates"][0])
+            with self.assertRaisesRegex(ValueError, "approved_stage3_mapping"):
+                apply_review("save_translation", draft, module, before, self.state, None, db)
+            option = before["mapping_options"][0]
+            self.assertEqual(option["target_id"], identity)
+            self.assertIn("source_blob_sha256", option["evidence"])
+
+            self.state.approve_mapping(self.request)
+            mapped = detail(self.state)
+            self.assertTrue(mapped["draft_available"])
+            candidate = next(c for c in mapped["candidates"] if c["eligibility"] == "register")
+            self.assertNotIn("review_id", candidate)
+            with self.assertRaisesRegex(ValueError, "manager_candidate_unavailable"):
+                apply_review("register_candidate", {k: v for k, v in draft.items() if k != "text"}
+                             | {"candidate": "stale"}, module, mapped, self.state, None, db)
+            apply_review("save_translation", draft, module, mapped, self.state, None, db)
+            current = self.new_state()
+            saved = detail(current)
+            self.assertEqual(saved["mapping_state"], "mapping_verified")
+            self.assertTrue(saved["candidate_conflict"])
+            self.assertEqual(saved["status"], "conflict")
+            self.assertIsNone(saved["built"])
+            self.assertEqual(current.translations.file.data["imports"], [])
+            chosen = next(c for c in saved["candidates"] if c["text"] == draft["text"])
+            self.assertEqual(chosen["eligibility"], "selectable")
+            result = apply_review("confirm_candidate",
+                {k: v for k, v in draft.items() if k != "text"} | {
+                    "candidate": chosen["review_id"], "checks": dict.fromkeys(ALL_CHECKS, True)},
+                module, saved, current, None, db)
+            self.assertEqual(result, sha(draft["text"]))
+            self.assertEqual(current.translation_action("import", {})["imported"], 1)
+            preview = build_ukrainian.current_quest_texts(current)[0]
+            self.assertEqual(preview[42]["accept"]["text"], draft["text"])
+            from zipfile import ZipFile
+            entries = build_ukrainian.template_entries(
+                build_ukrainian.render_quest_lua(preview, current.inventory.revision))
+            with patch.object(build_ukrainian, "DIST", archive.parent):
+                build_ukrainian.write_zip(entries, archive)
+            with ZipFile(archive) as zipped:
+                self.assertIn(draft["text"].encode(), zipped.read(f"{module}/Translations.lua"))
+
+    def test_manager_registers_current_classicua_observation_as_pending(self):
+        from tools.manager_review import apply_review
+        self.state.approve_mapping(self.request)
+        observation, = self.state.translation_observations()
+        key = observation.row()["id"]
+        identity = self.request["target_id"]
+        row = {"id": identity, "originals": [observation.original], "mapping_state": "mapping_verified",
+               "candidates": [{"registration_key": key}]}
+        request = {"candidate": key, "identity": identity, "reviewer": "Fixture reviewer", "confirm": True}
+        self.assertIsNone(apply_review("register_candidate", request, build_ukrainian.QUEST_MODULE,
+                                       row, self.state, None, None))
+        reopened = self.new_state()
+        version, = reopened.translation_page()["versions"]
+        self.assertEqual(version["id"], key)
+        self.assertEqual(version["status"], "pending")
+        self.assertFalse(version["imported"])
+
     def test_auto_approval_requires_reviewed_identity_and_one_to_one(self):
         policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
             {"name": "classicua", "save_translations": True,

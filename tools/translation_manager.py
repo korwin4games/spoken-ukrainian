@@ -24,6 +24,7 @@ from adapters.local_review_store import file_lock, strict_json
 from tools.build_ukrainian import ARCHIVES, MODULE_DOMAINS, QUEST_MODULE
 
 MODULE = QUEST_MODULE
+REVIEW_ONLY = ("save_translation", "register_candidate", "review_mapping")
 WORKER_ERRORS = frozenset({
     "manager_confirmation_required", "manager_invalid_options", "manager_unknown_module",
     "manager_reimport_already_running", "manager_state_changed_retry_reimport",
@@ -139,6 +140,9 @@ def promote(db_path, staged, baseline, archive, incoming, archive_baseline, work
                 # Subqueries in child scopes must see the staged parents.
                 stage_scope = scope.replace("FROM agent_assessments", "FROM staged.agent_assessments")
                 db.execute(f"INSERT INTO main.{table} SELECT * FROM staged.{table} WHERE {stage_scope}")
+            if incoming is None:
+                db.commit()
+                return
             for table in ("build_import_snapshots", "build_import_units"):
                 db.execute(f"INSERT OR IGNORE INTO main.{table} SELECT * FROM staged.{table}")
             db.execute("DELETE FROM main.module_build_heads WHERE module=?", (module,))
@@ -196,7 +200,7 @@ def prepare_import(state, spoken, db_path, skipped, module):
 def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=False, confirm=False,
              review=None):
     """The CLI and localhost UI run the same staged operation."""
-    from tools.build_ukrainian import DIST, build
+    from tools.build_ukrainian import DIST, build, local_test_state
     from tools.manager_inventory import load_inventory
 
     if type(module) is not str or module not in MODULE_DOMAINS:
@@ -214,6 +218,7 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
             db_path.exists() and (not db_path.is_file() or db_path.stat().st_nlink != 1)):
         raise ValueError("manager_unsafe_database_path")
     archive = ARCHIVES[module]
+    review_only = review is not None and review[0] in REVIEW_ONLY
     source_inputs = (ROOT / "sources.lock.json", ROOT / "config/translation_sources.json",
                      ROOT / "tests/stage3_sources.json")
     with manager_lock(DIST), TemporaryDirectory(prefix=".translation-manager-", dir=DIST) as staging:
@@ -252,17 +257,23 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
                     nonlocal state_for_inventory
                     state_for_inventory = state
                     agent.update(prepare_import(state, spoken, staged, skipped, module))
-                result = build(classicua, spoken, module=module, before_import=before_import if review else None,
+                if review_only:
+                    before_import(local_test_state(classicua, spoken))
+                else:
+                    result = build(classicua, spoken, module=module, before_import=before_import if review else None,
                                prepare=prepare, destination=incoming, skipped=skipped)
-                view = load_inventory(classicua, spoken, staged, incoming, skipped=skipped,
-                                      state=state_for_inventory, module=module)
-                if selected_hash:
-                    built = view.detail(module=module, identity=review[1]["identity"])["built"]
-                    if not built or built["text_sha256"] != selected_hash:
-                        raise ValueError("manager_candidate_not_built")
-                summary = view.summary()
+                    view = load_inventory(classicua, spoken, staged, incoming, skipped=skipped,
+                                          state=state_for_inventory, module=module)
+                    if selected_hash:
+                        built = view.detail(module=module, identity=review[1]["identity"])["built"]
+                        if not built or built["text_sha256"] != selected_hash:
+                            raise ValueError("manager_candidate_not_built")
+                    summary = view.summary()
             if pins != [file_stamp(path) for path in source_inputs]:
                 raise ValueError("manager_source_configuration_changed")
+            if review_only:
+                promote(db_path, staged, baseline, archive, None, archive_baseline, workspace, False, module)
+                return {"module": module, "build": "review_saved"}
             if not dry_run:
                 promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace,
                         reset or (review is not None and review[0] == "confirm_candidate"), module,
@@ -311,7 +322,7 @@ class ManagerUI:
         module = payload.get("module")
         if type(module) is not str or module not in MODULE_DOMAINS:
             raise ValueError("manager_unknown_module")
-        mutations = ("confirm_candidate", "review_mapping", "save_translation")
+        mutations = ("confirm_candidate", *REVIEW_ONLY)
         if action == "reimport" or action in mutations:
             review = None if action == "reimport" else (action, {k: v for k, v in payload.items() if k != "module"})
             options = payload if review is None else {"module": module, "confirm": True}
@@ -343,6 +354,8 @@ class ManagerUI:
                 reason = result.get("error")
                 raise ValueError(reason if isinstance(reason, str) and reason in WORKER_ERRORS
                                  else "manager_reimport_failed")
+            if action in REVIEW_ONLY and result == {"module": module, "build": "review_saved"}:
+                return result
             expected = "preview" if payload.get("dry_run") else "success"
             if (result.get("build") != expected or result.get("module") != module
                     or not all(isinstance(result.get(key), dict) for key in ("summary", "agent"))
@@ -409,7 +422,7 @@ def main(argv=None):
         if args.review_stdin:
             review = strict_json(sys.stdin.buffer.read(262145))
             if (type(review) is not list or len(review) != 2
-                    or review[0] not in ("confirm_candidate", "review_mapping", "save_translation")
+                    or review[0] not in ("confirm_candidate", *REVIEW_ONLY)
                     or type(review[1]) is not dict):
                 raise ValueError("manager_invalid_review_request")
         result = reimport(args.classicua, args.spoken, args.db, module=args.module,

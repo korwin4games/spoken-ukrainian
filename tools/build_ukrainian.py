@@ -591,20 +591,24 @@ def write_zip(entries, destination=ARCHIVE):
     return destination, sha
 
 
-def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None, destination=None, skipped=None):
-    """Auto-import is mandatory; there is no build-without-import switch."""
-    if module not in MODULE_DOMAINS:
-        raise ValueError("manager_unknown_module")
-    is_quest = module == QUEST_MODULE
-    classicua, spoken = Path(classicua), Path(spoken)
+def local_test_state(classicua, spoken):
     validate_source_paths(classicua, spoken)
-    state = build_state(
+    return build_state(
         classicua, spoken,
         ROOT / "build/stage4b-decisions.json",
         None,
         ROOT / "build/stage3-ui-reviews.json",
         ROOT / "build/translation-reviews.json",
         ROOT / "config/translation_sources.json")
+
+
+def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None, destination=None, skipped=None):
+    """Auto-import is mandatory; there is no build-without-import switch."""
+    if module not in MODULE_DOMAINS:
+        raise ValueError("manager_unknown_module")
+    is_quest = module == QUEST_MODULE
+    classicua, spoken = Path(classicua), Path(spoken)
+    state = local_test_state(classicua, spoken)
     if before_import is not None:
         before_import(state)
     # Explicitly call the *same* guarded UI/CLI action. Re-check current

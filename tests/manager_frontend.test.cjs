@@ -54,7 +54,7 @@ const fixture = {
   id: "q:42:accept", type: "quest", label: "Fixture", status: "conflict",
   originals: ["Hello."], contexts: [], help: "Review",
   candidates: [{text: "Вітаю.", provider: "manual", review: "pending",
-    review_id: "candidate", review_kind: "quest"}],
+    review_id: "candidate", review_kind: "quest", eligibility: "selectable"}],
 };
 
 function listing(module) {
@@ -129,4 +129,78 @@ test("candidate confirmation requires a selection and all explicit attestations"
   assert.equal(request.confirm, true);
   assert.ok(Object.values(request.checks).every(Boolean));
   assert.match(b.el("operation-status").textContent, /перевірено в ZIP/);
+});
+
+test("missing Quest draft and audited registration have separate controls from approval", async () => {
+  const b = browser((action, body) => action === "list" ? listing(body.module) :
+    {module: body.module, build: "review_saved"});
+  await flush();
+  const candidate = {text: "Вітаю.", provider: "classicua", review: "candidate"};
+  b.vm.row = {...fixture, status: "missing", candidates: [
+    {...candidate, eligibility: "mapping_required"},
+    {...candidate, eligibility: "rights_blocked"},
+    {...candidate, eligibility: "format_blocked"},
+    {...candidate, eligibility: "stale", review_id: "stale-id"},
+    {...candidate, eligibility: "source_review"},
+  ]};
+  b.run("renderDetail(row)");
+  const fields = () => b.el("selected").all();
+  const byText = label => fields().find(node => node.textContent === label);
+  assert.ok(fields().some(node => /Спершу.*Stage 3/.test(node.textContent)));
+  assert.ok(fields().some(node => /Права або походження/.test(node.textContent)));
+  assert.ok(fields().some(node => /Формат або підстановки/.test(node.textContent)));
+  assert.ok(fields().some(node => /Докази застаріли/.test(node.textContent)));
+  assert.ok(fields().some(node => /журналі джерел/.test(node.textContent)));
+  assert.equal(byText("Зберегти чернетку"), undefined);
+  b.vm.row = {...b.vm.row, draft_available: true, candidates: [
+    {...candidate, eligibility: "register", registration_key: "observation"},
+  ]};
+  b.run("renderDetail(row)");
+  assert.ok(byText("Зберегти чернетку"));
+  assert.equal(byText("Підтвердити переклад"), undefined);
+  fields().find(node => node.tag === "input").value = "Reviewer";
+  const select = fields().find(node => node.tag === "select");
+  select.value = "observation";
+  select.events.change();
+  byText("Додати кандидат до журналу").events.click();
+  await flush();
+  assert.equal(b.requests.find(entry => entry.action === "register_candidate").candidate, "observation");
+});
+
+test("mapping form passes exact metadata only after two distinct attestations", async () => {
+  const b = browser((action, body) => action === "list" ? listing(body.module) :
+    {module: body.module, build: "review_saved"});
+  await flush();
+  const item = {
+    source_id: "quest:horde:42:accept", target_id: fixture.id, source_text: "Привіт.",
+    facts: {npc_id: 42, npc_type: "creature", voice: "fixture", faction: "horde",
+      wording_sha256: "fingerprint", source: "accept", quest_id: 42,
+      player_gender: null, english_original: "Hello."},
+    evidence: {source_reference: "pinned source", target_reference: "pinned target"},
+  };
+  b.vm.row = {...fixture, candidates: [], mapping_options: [item]};
+  b.run("renderDetail(row)");
+  const fields = b.el("selected").all();
+  const select = fields.find(node => node.tag === "select");
+  const inputs = fields.filter(node => node.tag === "input");
+  const form = fields.find(node => node.tag === "fieldset");
+  const button = fields.find(node => node.textContent === "Підтвердити зіставлення");
+  assert.equal(button.disabled, true);
+  select.value = "0";
+  select.events.change();
+  inputs[0].value = inputs[2].value = "Reviewer A";
+  inputs[1].checked = inputs[3].checked = true;
+  form.events.input();
+  assert.equal(button.disabled, true);
+  inputs[2].value = "Reviewer B";
+  form.events.input();
+  assert.equal(button.disabled, false);
+  button.events.click();
+  await flush();
+  const request = b.requests.find(entry => entry.action === "review_mapping");
+  assert.equal(request.join.proof.evidence_reviewer, "Reviewer A");
+  assert.equal(request.join.mapping_reviewer, "Reviewer B");
+  assert.equal(request.join.proof.facts.npc_id, 42);
+  assert.equal(request.join.proof.source_reference, "pinned source");
+  assert.equal(request.join.proof.facts.english_original, undefined);
 });

@@ -139,9 +139,8 @@ function renderList(data) {
       badge(item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано", item.built ? "built" : ""));
     const statuses = tr.appendChild(make("td"));
     statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
-    if (["conflict", "multiple_originals"].includes(item.status) && item.translation_state) {
-      statuses.append(make("div", labels[item.status]));
-    }
+    if (item.candidate_conflict) statuses.append(make("div", labels.conflict));
+    if (item.status === "multiple_originals") statuses.append(make("div", labels.multiple_originals));
     if (item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
     const problem = item.status !== "ready" || item.agent_warning;
     const flag = make("td", problem ? "⚑" : "—");
@@ -174,6 +173,18 @@ async function list() {
   }
 }
 
+const eligibilityHelp = {
+  selectable: "Можна вибрати для підтвердження.",
+  register: "Додайте до журналу як чернетку, щоб вибрати для перевірки.",
+  source_review: "Потрібен запис у журналі джерел. Перевірте походження й додайте кандидат через CLI.",
+  mapping_required: "Спершу перевірте й підтвердьте зіставлення Stage 3.",
+  context_blocked: "Контекст заблоковано. Звірте оригінал та ідентичність запису.",
+  stale: "Докази застаріли. Оновіть джерело і повторіть незалежну перевірку.",
+  review_blocked: "Є рішення відхилити або відкласти. Перегляньте його в журналі перевірки.",
+  rights_blocked: "Права або походження не підтверджено. Перевірте дозвіл та джерело тексту.",
+  format_blocked: "Формат або підстановки не відповідають оригіналу. Виправте текст у дозволеній чернетці.",
+};
+
 function reviewControls(row) {
   const panel = make("section");
   const status = make("p");
@@ -184,10 +195,11 @@ function reviewControls(row) {
     busy = true;
     const controls = ["preview", "reimport", "reset", "module"];
     controls.forEach(id => { el(id).disabled = true; });
-    status.textContent = "Перевіряємо докази та збираємо ZIP…";
+    status.textContent = action === "confirm_candidate" ?
+      "Перевіряємо докази та збираємо ZIP…" : "Перевіряємо докази та зберігаємо запис…";
     try {
       const result = await call(action, {...payload, identity: row.id, confirm: true});
-      renderResult(result);
+      if (result.build !== "review_saved") renderResult(result);
       el("operation-status").textContent = action === "confirm_candidate" ?
         "Вибраний переклад перевірено в ZIP." : "Рішення збережено. Перевірте статус запису.";
       await list();
@@ -199,11 +211,12 @@ function reviewControls(row) {
       controls.forEach(id => { el(id).disabled = false; });
     }
   };
-  const candidates = row.candidates.filter(c => c.review_id &&
-    !["rejected", "deferred", "stale", "pending_update"].includes(c.review));
-  const canAdd = row.type === "gossip" && row.review_queue === "gossip_translation";
+  const candidates = row.candidates.filter(c =>
+    (c.review_id && (c.eligibility === "selectable" || c.draft_editable)) ||
+    (c.registration_key && c.eligibility === "register"));
+  const canAdd = row.draft_available || row.type === "gossip" && row.review_queue === "gossip_translation";
   if (row.originals.length === 1 && (candidates.length || canAdd) &&
-      !["invalid_context", "mapping_rejected", "stale"].includes(row.mapping_state)) {
+      !["invalid_context", "mapping_conflict", "mapping_rejected", "stale"].includes(row.mapping_state)) {
     const field = make("fieldset");
     const reviewer = make("input");
     reviewer.maxLength = 120;
@@ -217,7 +230,7 @@ function reviewControls(row) {
     select.append(placeholder);
     for (const candidate of candidates) {
       const option = make("option", candidate.provider + " · " + candidate.text.slice(0, 90));
-      option.value = candidate.review_id;
+      option.value = candidate.review_id || candidate.registration_key;
       select.append(option);
     }
     const context = make("pre");
@@ -242,11 +255,13 @@ function reviewControls(row) {
     draft.setAttribute("aria-label", "Українська чернетка");
     const approve = make("button", "Підтвердити переклад");
     const save = make("button", "Зберегти чернетку");
-    approve.type = save.type = "button";
-    const choice = () => candidates.find(c => c.review_id === select.value);
+    const register = make("button", "Додати кандидат до журналу");
+    approve.type = save.type = register.type = "button";
+    const choice = () => candidates.find(c => (c.review_id || c.registration_key) === select.value);
     const update = () => {
-      approve.disabled = !choice() || !reviewer.value.trim() ||
+      approve.disabled = choice()?.eligibility !== "selectable" || !reviewer.value.trim() ||
         Object.values(checks).some(input => !input.checked);
+      register.disabled = choice()?.eligibility !== "register" || !reviewer.value.trim();
       save.disabled = !reviewer.value.trim() || !draft.value.trim() ||
         !(canAdd || choice()?.review_kind === "quest");
     };
@@ -264,30 +279,90 @@ function reviewControls(row) {
       }
     });
     save.addEventListener("click", () => run("save_translation",
-      {candidate: canAdd ? "" : select.value, text: draft.value, reviewer: reviewer.value}));
-    if (candidates.length) field.append(approve);
+      {candidate: choice()?.review_kind === "quest" ? select.value : "", text: draft.value, reviewer: reviewer.value}));
+    register.addEventListener("click", () => run("register_candidate",
+      {candidate: select.value, reviewer: reviewer.value}));
+    if (candidates.some(c => c.eligibility === "selectable")) field.append(approve);
+    if (candidates.some(c => c.eligibility === "register")) field.append(register);
     if (canAdd || candidates.some(c => c.review_kind === "quest")) field.append(draft, save);
     panel.append(field);
     update();
   }
-  if (row.type === "quest" && row.review_queue === "quest_mapping") {
-    const controls = make("details");
-    const proof = make("textarea");
-    proof.setAttribute("aria-label", "JSON-запит із доказом Stage 3");
-    const submit = make("button", "Перевірити доказ зіставлення");
-    submit.type = "button";
-    controls.append(make("summary", "Перевірка зіставлення"),
-      make("p", "Вставте повний JSON-запит Stage 3 із незалежним доказом і двома рецензентами."),
-      proof, submit);
-    submit.addEventListener("click", () => {
-      let join;
-      try { join = JSON.parse(proof.value); }
-      catch { status.textContent = "Введіть чинний JSON-запит."; return; }
-      if (window.confirm("Зберегти рішення щодо зіставлення?")) run("review_mapping", {join});
-    });
-    panel.append(controls);
-  }
+  if (row.mapping_options?.length) panel.append(mappingControls(row.mapping_options, run));
   return panel;
+}
+
+function mappingControls(options, run) {
+  const controls = make("details");
+  const form = make("fieldset");
+  const select = make("select");
+  select.setAttribute("aria-label", "Пара ClassicUA і Spoken");
+  const empty = make("option", "Виберіть точну пару і контекст");
+  empty.value = "";
+  select.append(empty);
+  options.forEach((option, index) => {
+    const f = option.facts;
+    const entry = make("option", [option.source_id, option.target_id, f.faction, f.npc_id,
+      f.voice, f.player_gender].filter(value => value != null).join(" · "));
+    entry.value = String(index);
+    select.append(entry);
+  });
+  const evidence = make("pre");
+  const reviewers = [];
+  const checks = [];
+  form.append(select, evidence);
+  for (const [name, attestation] of [
+    ["Рецензент доказів", "Я звірив точні файли, ID, етап, фракцію, NPC, голос, стать і текст."],
+    ["Другий рецензент", "Я незалежно звірив джерела, оригінал і той самий контекст."],
+  ]) {
+    const input = make("input");
+    input.maxLength = 120;
+    const check = make("input");
+    check.type = "checkbox";
+    const label = make("label", name + " ");
+    label.append(input);
+    const attested = make("label", undefined, "check");
+    attested.append(check, make("span", attestation));
+    form.append(label, attested);
+    reviewers.push(input);
+    checks.push(check);
+  }
+  const submit = make("button", "Підтвердити зіставлення");
+  submit.type = "button";
+  const selectedOption = () => select.value === "" ? null : options[Number(select.value)];
+  const reviewerNames = () => reviewers.map(input => input.value.trim());
+  const update = () => {
+    const [first, second] = reviewerNames();
+    submit.disabled = !selectedOption() || !first || !second || first === second ||
+      checks.some(check => !check.checked);
+  };
+  select.addEventListener("change", () => {
+    const item = selectedOption();
+    evidence.textContent = item ? [item.facts.english_original, item.source_text,
+      item.evidence.source_reference, item.evidence.target_reference].join("\n\n") : "";
+    checks.forEach(check => { check.checked = false; });
+    update();
+  });
+  form.addEventListener("input", update);
+  submit.addEventListener("click", () => {
+    const item = selectedOption();
+    if (submit.disabled || !item || !window.confirm("Зберегти рішення двох незалежних рецензентів?")) return;
+    const [evidenceReviewer, mappingReviewer] = reviewerNames();
+    const fields = ["npc_id", "npc_type", "voice", "faction", "wording_sha256",
+      "source", "quest_id", "player_gender"];
+    run("review_mapping", {join: {
+      schema_version: 1, source_id: item.source_id, target_id: item.target_id,
+      mapping_reviewer: mappingReviewer, proof: {...item.evidence,
+        facts: Object.fromEntries(fields.map(key => [key, item.facts[key]])),
+        evidence_reviewer: evidenceReviewer, greeting: false},
+    }});
+  });
+  form.append(submit);
+  controls.append(make("summary", "Перевірка зіставлення Stage 3"),
+    make("p", "Виберіть пару й звірте наведені посилання із закріпленими файлами. Для рішення потрібні двоє різних рецензентів."),
+    form);
+  update();
+  return controls;
 }
 
 function renderDetail(row) {
@@ -326,7 +401,8 @@ function renderDetail(row) {
       row.built?.text_sha256 === item.sha256 || Boolean(item.validation && item.validation !== "agent_verified");
     details.append(make("summary", item.provider + " · " + item.review),
       make("pre", item.text),
-      make("p", [item.reference, item.revision].filter(Boolean).join(" · "), "muted"));
+      make("p", [item.reference, item.revision].filter(Boolean).join(" · "), "muted"),
+      make("p", eligibilityHelp[item.eligibility] || eligibilityHelp.source_review));
     if (item.validation === "stale") details.append(make("p", "Оцінка агента застаріла.", "muted"));
     if (item.shared_bindings) details.append(make("p", "Спільний запис ClassicUA для Альянсу й Орди.", "muted"));
     if (item.checks) {

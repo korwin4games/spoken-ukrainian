@@ -90,7 +90,8 @@ def create_handler(token, port, manager=None):
         "/manager.js": (STATIC / "manager.js", "text/javascript; charset=utf-8"),
         "/manager.css": (STATIC / "manager.css", "text/css; charset=utf-8"),
     }
-    actions = {"list", "detail", "reimport", "confirm_candidate", "save_translation", "review_mapping"}
+    actions = {"list", "detail", "reimport", "confirm_candidate", "save_translation", "review_mapping",
+               "register_candidate"}
     class LocalHandler(BaseHTTPRequestHandler):
         def _event(self, event, outcome, reason=None):
             # Event and outcome are code constants, never request data.

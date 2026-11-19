@@ -302,6 +302,31 @@ class ManagerTests(unittest.TestCase):
                          gossip["snapshot_id"])
         self.assertEqual(latest_successful_build(self.db)["snapshot_id"], legacy["snapshot_id"])
 
+    def test_registering_candidate_promotes_only_quest_ledger_without_building(self):
+        self.gossip_archive.write_bytes(b"existing gossip archive")
+        with connection(self.db) as db:
+            db.execute("""INSERT INTO ledger_documents(ledger_name,payload,revision)
+                VALUES ('gossip-translation-reviews.json','fixture gossip',1)""")
+
+        def register(action, payload, module, row, state, spoken, db_path):
+            self.assertEqual((action, module), ("register_candidate", MODULE))
+            with connection(db_path) as db:
+                db.execute("""INSERT INTO ledger_documents(ledger_name,payload,revision)
+                    VALUES ('translation-reviews.json','fixture quest',1)""")
+        with patch.object(builder, "build") as build, patch.object(builder, "local_test_state"), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view), patch(
+                "tools.manager_review.apply_review", side_effect=register):
+            result = reimport(*self.paths, self.db, confirm=True,
+                              review=("register_candidate", {"identity": "q:42:accept"}))
+        build.assert_not_called()
+        self.assertEqual(result, {"module": MODULE, "build": "review_saved"})
+        self.assertFalse(self.archive.exists())
+        self.assertEqual(self.gossip_archive.read_bytes(), b"existing gossip archive")
+        with connection(self.db) as db:
+            self.assertEqual(dict(db.execute("SELECT ledger_name,payload FROM ledger_documents")),
+                             {"gossip-translation-reviews.json": "fixture gossip",
+                              "translation-reviews.json": "fixture quest"})
+
     def test_new_review_routes_reject_unsafe_http_before_dispatch(self):
         manager = ManagerUI(*self.paths, self.db)
         http = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("token", 0))
@@ -321,7 +346,7 @@ class ManagerTests(unittest.TestCase):
             (standard, b"x" * 262145, 413),
         ]
         with patch.object(manager, "action") as dispatch:
-            for action in ("confirm_candidate", "review_mapping", "save_translation"):
+            for action in ("confirm_candidate", "review_mapping", "save_translation", "register_candidate"):
                 for headers, body, status in cases:
                     with self.subTest(action=action, status=status), self.assertRaises(HTTPError) as err:
                         urlopen(Request(origin + "/api/manager/" + action, headers=headers,

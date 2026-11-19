@@ -7,11 +7,12 @@ from adapters.source_revision_store import SourceReviewStore, sha
 from adapters.sqlite_translation_store import connection
 from adapters.translation_agent import AGENT, QUEST, assessment_rows, metadata, recorded_imports, stale_ids
 from adapters.translation_approvals import status as quest_status
-from tools.gossip_coverage import classicua_hash, read_pinned_corpus
+from tools.gossip_coverage import classicua_hash, gossip_evidence, read_pinned_corpus
 from tools.gossip_machine_import import GossipMachineImport
 from tools.gossip_translation_review import discover_groups, normalized, version_status
 from tools.translation_manager import MODULE, file_stamp
 from tools.build_ukrainian import MODULE_DOMAINS
+from tools.source_revision_review import gossip_contexts, quest_contexts
 
 
 STATUS_HELP = {
@@ -48,11 +49,12 @@ def latest_units(db, archive, spoken_revision, classicua_revision, module=MODULE
 
 
 class ModuleInventory:
-    def __init__(self, rows, build, units, module=MODULE):
+    def __init__(self, rows, build, units, module=MODULE, state=None):
         self.module = module
         self.rows = {r["id"]: r for r in rows if r["type"] == MODULE_DOMAINS[module]}
         self.build = build
         self.units = units
+        self.state = state
 
     def summary(self):
         result = {}
@@ -61,11 +63,12 @@ class ModuleInventory:
             counts = Counter(r["status"] for r in rows)
             pending = Counter(r["status"] for r in rows if r["built"] is None)
             built = sum(r["built"] is not None for r in rows)
+            conflicts = sum(r.get("candidate_conflict", r["status"] == "conflict") for r in rows)
             result[kind] = {"total": len(rows), "included": built, "not_included": len(rows) - built,
                             "recorded": sum(r["recorded"] for r in rows),
-                            "conflicts": counts["conflict"],
+                            "conflicts": conflicts,
                             "multiple_originals": counts["multiple_originals"],
-                            "conflicting_candidates": counts["conflict"], "missing": counts["missing"],
+                            "conflicting_candidates": conflicts, "missing": counts["missing"],
                             "ready": sum(r["status"] == "ready" and not r["built"] for r in rows),
                             "pending_review": pending["review"] + pending["stale"],
                             "mapping_states": dict(Counter(r.get("mapping_state", r["status"]) for r in rows)),
@@ -100,7 +103,7 @@ class ModuleInventory:
                 continue
             if filter_by == "imported" and not row["built"] or filter_by == "not_imported" and row["built"]:
                 continue
-            if filter_by == "conflicts" and row["status"] != "conflict":
+            if filter_by == "conflicts" and not row.get("candidate_conflict", row["status"] == "conflict"):
                 continue
             if filter_by == "multiple_originals" and row["status"] != "multiple_originals":
                 continue
@@ -111,7 +114,7 @@ class ModuleInventory:
                     continue
             matches.append({k: row[k] for k in ("id", "type", "label", "status", "built", "recorded",
                 "mapping_state", "translation_state", "import_state", "review_queue",
-                "agent_warning", "unverified_alternatives") if k in row})
+                "agent_warning", "unverified_alternatives", "candidate_conflict") if k in row})
         return {"module": module, "summary": self.summary(), "build": self.build,
                 "total": len(matches), "items": matches[offset:offset + limit]}
 
@@ -121,7 +124,64 @@ class ModuleInventory:
         row = self.rows[identity]
         help_text = ("Переклад доступний у перевіреній локальній збірці."
                      if row["status"] == "ready" and row["built"] else STATUS_HELP[row["status"]])
-        return {**row, "help": help_text}
+        if row["status"] == "missing":
+            if row.get("draft_available"):
+                help_text = "Перекладу ще немає. Введіть український текст і збережіть чернетку."
+            elif row["type"] == "quest":
+                if row.get("mapping_state") == "mapping_verified":
+                    help_text = "Для цього зіставлення бракує дозволеного джерела з чинними доказами."
+                elif row.get("review_queue") == "quest_mapping":
+                    help_text = "Спершу підтвердьте зіставлення ClassicUA та Spoken двома незалежними рецензентами."
+                else:
+                    help_text = "Бракує підтвердженого зіставлення Stage 3. Звірте закріплені джерела й контекст."
+        from tools.manager_review import validate_text
+        choices = []
+        for candidate in row["candidates"]:
+            choice = dict(candidate)
+            eligibility = choice.get("eligibility", "source_review")
+            if len(row["originals"]) != 1 or row.get("mapping_state") in (
+                    "invalid_context", "mapping_conflict", "mapping_rejected"):
+                eligibility = "context_blocked"
+            elif choice.get("review") in ("rejected", "deferred", "stale", "pending_update"):
+                eligibility = "stale" if choice["review"] in ("stale", "pending_update") else "review_blocked"
+            elif eligibility in ("selectable", "register"):
+                choice["draft_editable"] = eligibility == "selectable" and choice.get("review_kind") == "quest"
+                try:
+                    validate_text(row["originals"][0], choice["text"])
+                except ValueError:
+                    eligibility = "format_blocked"
+            choices.append(choice | {"eligibility": eligibility})
+        return {**row, "help": help_text, "candidates": choices,
+                "mapping_options": self.mapping_options(row)}
+
+    def mapping_options(self, row):
+        if (self.state is None or row.get("review_queue") != "quest_mapping"
+                or len(row["originals"]) != 1 or row.get("mapping_state") == "mapping_rejected"):
+            return []
+        options = []
+        for variant in row.get("original_variants", []):
+            target = variant["target_id"]
+            for faction in variant["review_factions"]:
+                page = self.state.page(faction, limit=40, target_filter=target)
+                for item in page["items"]:
+                    for option in item["target_options"]:
+                        for facts in option["variants"]:
+                            if (facts["english_original"] != variant["text"]
+                                    or facts["faction"] not in (faction, "both", "neutral")):
+                                continue
+                            options.append({
+                                "source_id": item["source_id"], "target_id": target,
+                                "source_text": item["ukrainian_text"], "facts": facts,
+                                "evidence": {
+                                    "source_reference": item["source_reference"],
+                                    "source_context_sha256": item["source_context_sha256"],
+                                    "source_blob_sha256": item["source_blob_sha256"],
+                                    "target_reference": option["target_reference"],
+                                    "target_context_sha256": option["target_context_sha256"],
+                                    "target_blob_sha256": option["target_blob_sha256"],
+                                },
+                            })
+        return options
 
 
 def review_candidate(text, source, reference, revision, review):
@@ -201,6 +261,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
     gossip_rows, placements, _, blocked, manual = GossipMachineImport(state, spoken).inspect(revalidate=False)
     raw_gossip = local_gossip_texts(state)
     groups, _ = discover_groups(lines, raw_gossip, state.inventory.revision, state.source.revision)
+    groups_by_id = {group["group_id"]: group for group in groups}
     gossip_queue = {(c["npc_id"], c["english_hash"]) for group in groups for c in group["contexts"]}
     alternative_hashes = defaultdict(set)
     for line in lines:
@@ -272,15 +333,15 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
             elif scores:
                 choice["validation"] = "stale"
         # Preserve different review decisions for the same source text.
-        choices = list({(r["sha256"], r["provider"], r["reference"], r["review"], r.get("review_id")): r
+        choices = list({(r["sha256"], r["provider"], r["reference"], r["review"],
+                         r.get("review_id"), r.get("registration_key")): r
                         for r in choices}.values())
         reason = next((skipped_ids[key] for key in targets if key in skipped_ids), extra.pop("reason", None))
-        if reason and "conflict" in reason:
+        if reason and "conflict" in reason and status not in ("multiple_originals", "invalid"):
             status = "conflict"
         fallback_mapping = extra.pop("mapping", "mapping_pending")
-        mapping = ("mapping_conflict" if status in ("conflict", "multiple_originals") else
-                   "invalid_context" if status == "invalid" else "stale" if status == "stale" else
-                   fallback_mapping)
+        mapping = ("mapping_conflict" if status == "multiple_originals" else
+                   "invalid_context" if not entry["originals"] or status == "invalid" else fallback_mapping)
         return {**entry, "status": status, "built": built, "candidates": choices,
                 "recorded": recorded, "problem": reason, "mapping_state": mapping,
                 "translation_state": translation_state(choices),
@@ -288,13 +349,26 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                     "recorded_in_database" if recorded else "not_imported",
                 "agent_warning": bool(warnings), "agent_warning_ids": sorted(warnings), **extra}
 
-    def external(target, choices):
+    trusted = quest_contexts(state) if MODULE_DOMAINS[module] == "quest" else gossip_contexts(lines)
+    _, _, unsafe_gossip, _, _ = gossip_evidence(lines)
+
+    def external(domain, target, choices):
         for source in candidate_sources[target]:
+            if source["domain"] != domain:
+                continue
+            proof = trusted.get((domain, target))
+            eligibility = "selectable"
+            if (not proof or any(source[k] != proof[k] for k in ("english_sha256", "context_sha256"))
+                    or source["text_sha256"] != sha(source["ukrainian_text"])
+                    or source["provider"] == "classicua" and source["revision"] != state.source.revision):
+                eligibility = "stale"
+            elif domain == "quest" and target not in observed_targets:
+                eligibility = "mapping_required" if target not in reviewed_targets else "source_review"
             is_active = source["id"] in source_selected
             choices.append(review_candidate(source["ukrainian_text"], source["provider"],
                 source["source_ref"], source["revision"],
                 "source_selected" if is_active else source_status.get(source["id"], "candidate"))
-                | {"review_id": source["id"], "review_kind": "source"})
+                | {"review_id": source["id"], "review_kind": "source", "eligibility": eligibility})
 
     hints = defaultdict(list)
     quest_queue = defaultdict(set)
@@ -316,6 +390,9 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
         allow_ai_transations=state.policy.allows_ai_transations("classicua")) if enabled else []
     q_auto = {r["target_id"]: r for r in q_machine}
     observations = state.translation_observations()
+    observed_targets = defaultdict(list)
+    for observation in observations:
+        observed_targets[observation.target_id].append(observation)
     reviewed_targets = {r.decision.target_id for r in getattr(state, "reviews", ())
                         if r.decision.mapping_status == "approved"}
     if assessments:
@@ -353,15 +430,29 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
             ready |= target in review_ready or target in q_auto and not any(
                 method == "reviewed" or r.get("decision") == "pending_update"
                 for r, _, method in indexed_quest[target])
-            external(target, choices)
+            external("quest", target, choices)
             recorded |= target in agent_targets
+            available = [r for r in (o.row() for o in observed_targets[target])
+                         if r["rights_status"] == "reviewed"
+                         and state.policy.stores(r["provenance"][0]["provider"])]
+            stored_ids = {r["id"] for r, _, method in indexed_quest[target] if method == "reviewed"}
+            for r in available:
+                p = r["provenance"][0]
+                if r["id"] not in stored_ids:
+                    choices.append(review_candidate(r["text"], p["provider"], p["source_ref"],
+                                                    p["revision"], "candidate")
+                                   | {"registration_key": r["id"], "eligibility": "register"})
             for r, saved, method in indexed_quest[target]:
                 p = r.get("provenance", [{}])[0]
                 choices.append(review_candidate(r["text"], p.get("provider", "classicua" if method == "machine_1to1" else "manual"),
                     p.get("source_ref", r.get("source_file", r["source_id"])),
                     p.get("revision", r.get("source_revision")), quest_status(r) if method == "reviewed" else r["decision"]))
                 if method == "reviewed":
-                    choices[-1].update(review_id=r["id"], review_kind="quest")
+                    eligibility = ("stale" if not state.translations.current(r, observed_targets[target], state.policy)
+                                   else "rights_blocked" if r["rights_status"] != "reviewed" else "selectable")
+                    choices[-1].update(review_id=r["id"], review_kind="quest", eligibility=eligibility)
+                else:
+                    choices[-1]["eligibility"] = "mapping_required" if target not in reviewed_targets else "source_review"
                 recorded |= saved
                 if "shared_bindings" in r:
                     choices[-1]["shared_bindings"] = r["shared_bindings"]
@@ -371,11 +462,15 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                 record = state._views[faction].get(int(number))
                 field = record.fields.get((EVENT_POSITION[source_event],)) if record else None
                 if field and isinstance(field.node.value, str) and sha(field.node.value) == unit.effective_sha256:
+                    if any(r["source_id"] == source_id and r["text"] == field.node.value for r in available):
+                        continue
                     choices.append(review_candidate(field.node.value, "classicua", unit.origin_file,
-                                                    unit.source_revision, "candidate"))
+                                                    unit.source_revision, "candidate") | {
+                        "eligibility": "rights_blocked" if unit.ai else
+                        "mapping_required" if target not in reviewed_targets else "source_review"})
         built = units.get(("quests", f"{quest_id}:{event}"))
-        conflict = (len({r["sha256"] for r in choices if r["review"] not in ("rejected", "deferred")}) > 1
-                    and (len(targets) > 1 or not ready))
+        conflict = len({r["sha256"] for r in choices if r["review"] not in (
+            "rejected", "deferred", "pending_update", "stale") and r.get("eligibility") != "stale"}) > 1
         ready = ready and not multiple and moment not in rejected_moments
         queue = "quest_mapping" if any(quest_queue[t] for t in targets) else (
             "quest_translation" if set(targets) & reviewed_targets else None)
@@ -390,7 +485,9 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                   status_for(english, choices, conflict=conflict, ready=ready))
         rows.append(decorate({"id": moment, "type": "quest", "label": title, "originals": english},
                     targets + [moment], built, choices, recorded, status, mapping=mapping, reason=reason,
-                    review_queue=queue, original_variants=original_variants,
+                    review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
+                    draft_available=len(english) == 1 and moment not in rejected_moments
+                    and sum(c.get("eligibility") == "register" for c in choices) == 1,
                     quest_id=quest_id, event=event, contexts=[c for t in targets for c in state.inventory.contexts[t]]))
 
     known = set()
@@ -407,10 +504,11 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
         exclusion = units.get(("gossip_excluded", key))
         built = None if exclusion else (units.get(("gossip", key))
                                         or units.get(("gossip_common", f"common:{hashed}")))
-        if item["status"] == "conflict" or not english:
+        unsafe_context = (npc, hashed) in unsafe_gossip
+        if unsafe_context or not english:
             built = None
         choices = []
-        external(npc_target, choices)
+        external("gossip", npc_target, choices)
         recorded = target in agent_targets or npc_target in agent_targets
         for key in [*sorted(group_ids), target]:
             for r, saved, method in indexed_gossip[key]:
@@ -419,7 +517,13 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                     r.get("source_file", r.get("group_id")), r.get("source_revision", r.get("classicua_revision")),
                     version_status(r) if method == "reviewed" else r["decision"]))
                 if method == "reviewed":
-                    choices[-1].update(review_id=r["id"], review_kind="gossip")
+                    group = groups_by_id.get(r["group_id"])
+                    current = (group and (npc, hashed) in gossip_queue
+                               and all(r[k] == group[k] for k in ("english_sha256", "context_sha256"))
+                               and r["spoken_revision"] == state.inventory.revision
+                               and r["classicua_revision"] == state.source.revision)
+                    choices[-1].update(review_id=r["id"], review_kind="gossip",
+                                       eligibility="selectable" if current else "stale")
         translation = raw_gossip["byNpc"].get(npc, {}).get(hashed) or raw_gossip["common"].get(hashed)
         if translation:
             current = eligible_gossip.get(target, {})
@@ -428,19 +532,21 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
         ready = (item["status"] == "eligible" and target not in blocked
                  and not any(r["review"] == "pending_update" for r in choices))
         conflict = (bool(exclusion and exclusion["source"] == "reviewed+source_selected")
-                    or item["status"] == "conflict") or (not built and len(
-            {r["sha256"] for r in choices if r["review"] not in ("rejected", "deferred")}) > 1)
+                    or len({r["sha256"] for r in choices if r["review"] not in (
+                        "rejected", "deferred", "pending_update", "stale") and r.get("eligibility") != "stale"}) > 1)
         name = next((v[1] for v in matching.values() if v[1]), f"NPC {npc}")
         queue = ("gossip_translation" if (npc, hashed) in gossip_queue else
                  "agent" if any(assessment_index[k, c["provider"], c["revision"], c["sha256"]]
                                 for k in (target, npc_target) for c in choices) else None)
-        mapping = ("mapping_verified" if any(c["review"] in ("approved", "source_selected") for c in choices)
+        mapping = ("mapping_conflict" if unsafe_context else
+                   "mapping_verified" if ("gossip", npc_target) in trusted
+                   and any(c["review"] in ("approved", "source_selected") for c in choices)
                    else "mapping_provisional" if item["status"] == "eligible" else "mapping_pending")
         rows.append(decorate({"id": f"{npc_target}:{fingerprint}", "type": "gossip", "label": name,
                              "originals": english}, [npc_target, target, *group_ids], built, choices,
                     recorded, status_for(english, choices, conflict=conflict, ready=ready),
                     npc_id=npc, english_hash=hashed, contexts=sorted(matching), mapping=mapping,
-                    review_queue=queue,
+                    review_queue=queue, candidate_conflict=conflict,
                     unverified_alternatives=[{"hash": h, "scope": scope}
                         for h, scope in sorted(alternative_hashes[npc, hashed])]
                         if item["status"] == "untranslated" and english else []))
@@ -453,7 +559,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                     [identity], None, [], False, "invalid", npc_id=line.get("npcId"),
                     contexts=state.inventory.contexts[identity],
                     reason="gossip_context_unsupported" if identity in originals else "gossip_original_missing"))
-    return ModuleInventory(rows, build, units, module)
+    return ModuleInventory(rows, build, units, module, state)
 
 
 def state_path(name):

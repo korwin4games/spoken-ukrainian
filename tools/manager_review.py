@@ -33,21 +33,47 @@ def apply_review(action, payload, module, row, state, spoken, db_path):
         return None
 
     expected = {"identity", "candidate", "reviewer", "confirm"}
-    expected |= {"checks"} if action == "confirm_candidate" else {"text"}
+    if action == "confirm_candidate":
+        expected.add("checks")
+    elif action == "save_translation":
+        expected.add("text")
+    elif action != "register_candidate":
+        raise ValueError("manager_invalid_review_request")
     if (set(payload) != expected or payload["confirm"] is not True
             or type(payload["reviewer"]) is not str or not 0 < len(payload["reviewer"].strip()) <= 120
             or type(payload["candidate"]) is not str):
         raise ValueError("manager_invalid_review_request")
-    if len(row["originals"]) != 1 or row["mapping_state"] in ("invalid_context", "mapping_rejected", "stale"):
+    if len(row["originals"]) != 1 or row["mapping_state"] in (
+            "invalid_context", "mapping_conflict", "mapping_rejected", "stale"):
         raise ValueError("manager_review_context_blocked")
     reviewer, candidate_id = payload["reviewer"], payload["candidate"]
     original = row["originals"][0]
     choice = next((c for c in row["candidates"] if c.get("review_id") == candidate_id), None)
+    if action == "register_candidate" or (action == "save_translation" and domain == "quest" and not candidate_id):
+        if domain != "quest" or row["mapping_state"] != "mapping_verified":
+            raise ValueError("source_quest_selection_requires_approved_stage3_mapping")
+        if state.revalidate_inputs is not None:
+            state.revalidate_inputs()
+        keys = {c["registration_key"] for c in row["candidates"] if "registration_key" in c
+                and (not candidate_id or c["registration_key"] == candidate_id)}
+        observations = state.translation_observations()
+        matches = [o for o in observations if o.row()["id"] in keys and quest_moment(o.target_id) == row["id"]
+                   and o.original == original and o.row()["rights_status"] == "reviewed"
+                   and state.policy.stores(o.row()["provenance"][0]["provider"])]
+        if len(matches) != 1 or (action == "register_candidate" and not candidate_id):
+            raise ValueError("manager_candidate_unavailable")
+        base = matches[0].row()
+        validate_text(original, base["text"] if action == "register_candidate" else payload["text"])
+        state.translations.observe(matches, state.policy, one_to_one_pairs=set())
+        if action == "save_translation":
+            state.translation_action("edit", {"identity": base["id"], "text": payload["text"], "reviewer": reviewer})
+        return None
     if action == "confirm_candidate":
         checks = payload["checks"]
         if type(checks) is not dict or set(checks) != set(CHECKS) or any(v is not True for v in checks.values()):
             raise ValueError("manager_review_checks_required")
-        if choice is None or choice["review"] in ("rejected", "deferred", "stale", "pending_update"):
+        if (choice is None or choice.get("eligibility", "selectable") != "selectable"
+                or choice["review"] in ("rejected", "deferred", "stale", "pending_update")):
             raise ValueError("manager_candidate_unavailable")
         text = choice["text"]
     else:
