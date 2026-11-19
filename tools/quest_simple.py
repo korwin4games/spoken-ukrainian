@@ -94,8 +94,7 @@ def resolved(state, db_path):
             continue
         if selection:
             old, text, fingerprint, source = selection
-            if (old == digest(evidence) and sha(text) == fingerprint and usable_text(text)
-                    and (source == "manual" or text in alternatives)):
+            if old == digest(evidence) and sha(text) == fingerprint and usable_text(text):
                 result[moment] = {"text": text, "source": source, "selected": True}
                 continue
             result[moment] = {"conflict": True}
