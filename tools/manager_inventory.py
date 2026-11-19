@@ -107,8 +107,8 @@ class ModuleInventory:
     def page(self, *, module=MODULE, query="", kind="all", filter_by="all", status="all", offset=0, limit=30):
         if (module != self.module or kind not in ("all", MODULE_DOMAINS[self.module])
                 or filter_by not in ("all", "imported", "not_imported", "conflicts", "multiple_originals",
-                                     *("quest_imported", "quest_ready", "quest_problem")
-                                     if self.module == MODULE else ())
+                                     *(("quest_imported", "quest_ready", "quest_problem")
+                                       if self.module == MODULE else ()))
                 or status not in {"all", *STATUS_HELP, *MAPPING_STATES, *TRANSLATION_STATES}
                 or type(query) is not str or len(query) > 200
                 or type(offset) is not int or offset < 0
