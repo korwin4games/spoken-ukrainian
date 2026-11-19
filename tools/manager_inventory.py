@@ -417,6 +417,8 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
     rows = []
     runtime_history = defaultdict(list)
     runtime_approved = {}
+    from tools.quest_simple import selections as simple_selections
+    local_choices = simple_selections(db_path) if MODULE_DOMAINS[module] == "quest" else {}
     if MODULE_DOMAINS[module] == "quest":
         for review in quest_runtime_review.history(db_path):
             runtime_history[review["moment"]].append(review)
@@ -483,6 +485,11 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                         "mapping_required" if target not in reviewed_targets else "source_review"})
         built = units.get(("quests", f"{quest_id}:{event}"))
         binding, _ = quest_runtime_review.binding(state, moment, targets)
+        quick = local_choices.get(moment)
+        if quick and binding and quick[0] == digest(binding):
+            if not any(c["sha256"] == quick[2] for c in choices):
+                choices.append(review_candidate(quick[1], quick[3], "local", state.inventory.revision, "local"))
+            recorded = True
         approved = runtime_approved.get(moment)
         decisions = quest_runtime_review.current_decisions(runtime_history[moment])
         approvals = {r["candidate"] for r in decisions if r["evidence"] == binding}

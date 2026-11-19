@@ -226,6 +226,28 @@ def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None
             for key, candidates in fields.items():
                 if len(candidates) == 1:
                     result[quest][key] = next(iter(candidates))
+    # Local choices are private test-pack preferences, not fabricated approvals.
+    from tools.quest_simple import resolved as simple_resolved
+    for moment, choice in simple_resolved(state, db_path).items():
+        _, number, event = moment.split(":")
+        quest = int(number)
+        if choice.get("conflict"):
+            if quest in result:
+                result[quest].pop(event, None)
+                if not result[quest]:
+                    del result[quest]
+            if skipped is not None:
+                skipped.append((moment, "quest_choice_required"))
+            continue
+        if not choice["selected"] and event in result.get(quest, {}):
+            continue
+        result.setdefault(quest, {})[event] = {
+            "text": choice["text"], "reviewed": False, "quick": True,
+            "quick_source": choice["source"], "quick_selected": choice["selected"],
+        }
+        for field in ("title", "objective"):
+            if field in choice and field not in result[quest]:
+                result[quest][field] = choice[field]
     return result, len(texts), skipped_count
 
 
@@ -515,9 +537,10 @@ def quest_lines(preview, gossip_titles):
         for event in ("accept", "progress", "complete"):
             if event in events:
                 row = events[event]
-                lines.append("        %s = { text = %s, reviewed = %s }," % (
+                lines.append("        %s = { text = %s, reviewed = %s%s }," % (
                     event, lua_quote(row["text"]),
-                    "true" if row["reviewed"] else "false"))
+                    "true" if row["reviewed"] else "false",
+                    ", quick = true" if row.get("quick") else ""))
         lines.append("    },")
     lines.append("}")
     return lines

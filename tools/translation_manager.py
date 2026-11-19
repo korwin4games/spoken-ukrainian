@@ -51,6 +51,7 @@ MODULE_LEDGERS = (
 TABLE_SCOPES = {
     "ledger_documents": "ledger_name IN (" + ",".join(repr(s) for s in MODULE_LEDGERS) + ")",
     "quest_runtime_reviews": "1",
+    "quest_simple_choices": "1",
     "translation_memory": f"domain IN {DOMAINS}",
     "source_candidate_decisions": f"candidate_id IN (SELECT id FROM source_candidates WHERE domain IN {DOMAINS})",
     "source_active_selections": f"domain IN {DOMAINS}",
@@ -68,7 +69,7 @@ def module_scopes(module):
     return {table: ("ledger_name IN (" + ",".join(repr(name) for name in ledgers) + ")"
                     if table == "ledger_documents" else scope.replace(DOMAINS, f"('{domain}')"))
             for table, scope in TABLE_SCOPES.items()
-            if table != "quest_runtime_reviews" or domain == "quest"}
+            if table not in ("quest_runtime_reviews", "quest_simple_choices") or domain == "quest"}
 
 
 def reset_test_state(db, module=MODULE):
@@ -123,7 +124,7 @@ def verify_quest_zip(archive, identity, text_hash):
         raise ValueError("manager_candidate_not_built")
     rows = literal_data(separator + table, "SpokenUkrainian.QuestTranslations")
     entry = rows.get(int(quest), {}).get(event, {})
-    if (not entry.get("reviewed") or not isinstance(entry.get("text"), str)
+    if (not (entry.get("reviewed") or entry.get("quick")) or not isinstance(entry.get("text"), str)
             or sha256(entry["text"].encode("utf-8")).hexdigest() != text_hash):
         raise ValueError("manager_candidate_not_built")
 
@@ -325,7 +326,7 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
             return {"module": module, "build": "review_saved"}
         if not dry_run and stage_in is None:
             promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace,
-                    reset or (review is not None and review[0] == "confirm_candidate"), module,
+                    reset or (review is not None and review[0] in ("confirm_candidate", "choose_quest", "save_quest")), module,
                     expected_sha=result["sha256"])
         return {"module": module, "dry_run": dry_run, "reset_test_data": reset,
                 "build": "preview" if dry_run else "success", "artifact": None if dry_run else str(archive),
@@ -366,7 +367,7 @@ class ManagerUI:
         module = payload.get("module")
         if type(module) is not str or module not in MODULE_DOMAINS:
             raise ValueError("manager_unknown_module")
-        mutations = ("confirm_candidate", *REVIEW_ONLY)
+        mutations = ("confirm_candidate", "choose_quest", "save_quest", *REVIEW_ONLY)
         if action == "reimport" or action in mutations:
             review = None if action == "reimport" else (action, {k: v for k, v in payload.items() if k != "module"})
             options = payload if review is None else {"module": module, "confirm": True}
@@ -436,7 +437,7 @@ class ManagerUI:
         try:
             promote(self.db_path, workspace / "translations.sqlite3", baseline, ARCHIVES[module],
                     None if review_only else staged_zip(workspace), archive_baseline, workspace,
-                    reset or action == "confirm_candidate", module,
+                    reset or action in ("confirm_candidate", "choose_quest", "save_quest"), module,
                     expected_sha=None if review_only else result["sha256"])
         except (ValueError, OSError, RuntimeError, sqlite3.Error) as error:
             reason = str(error)
@@ -506,7 +507,7 @@ def main(argv=None):
         if args.review_stdin:
             review = strict_json(sys.stdin.buffer.read(262145))
             if (type(review) is not list or len(review) != 2
-                    or review[0] not in ("confirm_candidate", *REVIEW_ONLY)
+                    or review[0] not in ("confirm_candidate", "choose_quest", "save_quest", *REVIEW_ONLY)
                     or type(review[1]) is not dict):
                 raise ValueError("manager_invalid_review_request")
         result = reimport(args.classicua, args.spoken, args.db, module=args.module,

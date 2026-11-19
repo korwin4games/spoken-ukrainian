@@ -30,6 +30,11 @@ def validate_quest_text(originals, text):
 
 def apply_review(action, payload, module, row, state, spoken, db_path):
     domain = MODULE_DOMAINS[module]
+    if action in ("choose_quest", "save_quest"):
+        if domain != "quest":
+            raise ValueError("manager_invalid_review_request")
+        from tools.quest_simple import apply_choice
+        return apply_choice(action, payload, row, state, db_path)
     if action == "review_mapping":
         proof = payload.get("join")
         if (set(payload) != {"identity", "join", "confirm"} or payload["confirm"] is not True

@@ -222,6 +222,14 @@ def connection(path):
                 checks_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
             db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (8)")
+            db.execute("""CREATE TABLE IF NOT EXISTS quest_simple_choices (
+                moment TEXT PRIMARY KEY,
+                evidence TEXT NOT NULL,
+                text TEXT NOT NULL,
+                text_sha256 TEXT NOT NULL,
+                source TEXT NOT NULL CHECK(source IN ('classicua', 'manual')),
+                changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (9)")
             db.commit()
         except BaseException:
             db.rollback()
