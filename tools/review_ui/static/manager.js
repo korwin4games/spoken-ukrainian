@@ -633,8 +633,10 @@ el("filters").addEventListener("submit", event => { event.preventDefault(); rese
 for (const id of ["filter", "translation-status"]) el(id).addEventListener("change", resetList);
 function refreshModuleControls() {
   el("reimport").textContent = "Оновити " + domainName();
-  el("metrics").hidden = domain() === "quest";
-  el("build-state").hidden = domain() === "quest";
+  const simple = domain() === "quest";
+  for (const id of ["metrics", "build-state", "reset-control", "filter-control",
+                    "translation-status-control", "preview"]) el(id).hidden = simple;
+  el("operation-heading").textContent = simple ? "Автоматичний імпорт" : "Оновити переклади модуля";
   el("inventory-heading").textContent = "Переклади " + domainName();
   for (const option of document.querySelectorAll('option[value="multiple_originals"]')) {
     option.hidden = domain() !== "quest";
