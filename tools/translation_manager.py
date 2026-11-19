@@ -306,7 +306,8 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
             def prepare(state):
                 nonlocal state_for_inventory
                 state_for_inventory = state
-                agent.update(prepare_import(state, spoken, staged, skipped, module))
+                if not import_ready:
+                    agent.update(prepare_import(state, spoken, staged, skipped, module))
             if review_only:
                 before_import(local_test_state(classicua, spoken))
             else:
