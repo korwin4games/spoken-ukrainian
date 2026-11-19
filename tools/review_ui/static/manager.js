@@ -142,11 +142,16 @@ function renderList(data) {
     tr.appendChild(make("td")).append(
       badge(item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано", item.built ? "built" : ""));
     const statuses = tr.appendChild(make("td"));
-    statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
-    if (item.candidate_conflict) statuses.append(make("div", labels.conflict));
-    if (item.status === "multiple_originals") statuses.append(make("div", labels.multiple_originals));
-    if (item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
-    const problem = item.status !== "ready" || item.agent_warning;
+    if (item.type === "quest") {
+      statuses.append(badge(item.built ? "У ZIP" : item.candidate_conflict ?
+        "Оберіть переклад" : item.status === "missing" ? "Додайте переклад" :
+        "Готовий до імпорту", item.built ? "built" : ""));
+    } else {
+      statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
+    if (item.type !== "quest" && item.candidate_conflict) statuses.append(make("div", labels.conflict));
+    if (item.type !== "quest" && item.status === "multiple_originals") statuses.append(make("div", labels.multiple_originals));
+    if (item.type !== "quest" && item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
+    const problem = item.type !== "quest" && (item.status !== "ready" || item.agent_warning);
     const flag = make("td", problem ? "⚑" : "—");
     flag.title = item.agent_warning ? "Є зауваження агента" : labels[item.status];
     if (problem) flag.setAttribute("aria-label", flag.title);
@@ -188,6 +193,92 @@ const eligibilityHelp = {
   rights_blocked: "Права або походження не підтверджено. Перевірте дозвіл та джерело тексту.",
   format_blocked: "Формат або підстановки не відповідають оригіналу. Виправте текст у дозволеній чернетці.",
 };
+
+function simpleQuestControls(row) {
+  const panel = make("section");
+  const message = make("p");
+  message.setAttribute("role", "status");
+  panel.append(message);
+  const options = new Map();
+  for (const candidate of row.candidates) {
+    if (!options.has(candidate.sha256)) options.set(candidate.sha256, candidate);
+  }
+  const editable = Boolean(row.review_binding && row.originals.length);
+  const run = async (action, data) => {
+    if (busy) return;
+    busy = true;
+    message.textContent = "Збираємо Quest ZIP…";
+    for (const id of ["preview", "reimport", "module"]) el(id).disabled = true;
+    try {
+      const result = await call(action, {...data, identity: row.id,
+        binding: row.review_binding, confirm: true});
+      renderResult(result);
+      el("operation-status").textContent = "Переклад застосовано та перевірено у ZIP.";
+      await list();
+      if (selected === row.id) await detail(row.id);
+    } catch (error) {
+      message.textContent = errorMessage(error);
+    } finally {
+      busy = false;
+      for (const id of ["preview", "reimport", "module"]) el(id).disabled = false;
+    }
+  };
+  panel.append(make("h3", options.size > 1 ? "Оберіть переклад" :
+    options.size === 1 ? "Доступний переклад" : "Немає перекладу"));
+  if (options.size) {
+    const select = make("select");
+    select.setAttribute("aria-label", "Оберіть український переклад");
+    for (const candidate of options.values()) {
+      const item = make("option", candidate.provider + " · " + candidate.text.slice(0, 100));
+      item.value = candidate.sha256;
+      if (row.built?.text_sha256 === candidate.sha256) item.selected = true;
+      select.append(item);
+    }
+    const preview = make("pre");
+    const first = options.keys().next().value;
+    const update = () => { preview.textContent = options.get(select.value || first)?.text || ""; };
+    select.addEventListener("change", update);
+    update();
+    const apply = make("button", "Використати переклад");
+    apply.type = "button";
+    apply.disabled = !editable;
+    apply.addEventListener("click", () => {
+      const key = select.value || first;
+      if (key && window.confirm("Застосувати цей переклад до квесту та оновити Quest ZIP?")) {
+        run("choose_quest", {candidate: key});
+      }
+    });
+    panel.append(select, preview, apply);
+  }
+  const field = make("textarea");
+  field.maxLength = 60000;
+  field.setAttribute("aria-label", "Власний український переклад");
+  field.placeholder = "Введіть свій український переклад…";
+  const save = make("button", "Зберегти й застосувати");
+  save.type = "button";
+  save.disabled = !editable;
+  save.addEventListener("click", () => {
+    if (field.value.trim()) run("save_quest", {text: field.value});
+  });
+  const codex = make("button", "Скопіювати запит для Codex");
+  codex.type = "button";
+  codex.addEventListener("click", async () => {
+    const prompt = "Translate these WoW: Forever Quest texts to natural Ukrainian. " +
+      "Preserve all variables, placeholders, gender markers and formatting exactly. " +
+      "Use Ukrainian Warcraft terminology, not Russian localization. " +
+      "One Ukrainian translation must work for ALL English variants. " +
+      "Return ONLY the Ukrainian translation:\n\n" + row.originals.join("\n\n---\n\n");
+    try {
+      await navigator.clipboard.writeText(prompt);
+      message.textContent = "Запит скопійовано. Вставте в Codex, а переклад — у поле.";
+    } catch (_) {
+      message.textContent = "Не вдалося скопіювати. Перевірте доступ до буфера обміну.";
+    }
+  });
+  panel.append(make("h3", "Додати переклад"), field, save, codex);
+  if (!editable) panel.append(make("p", "Немає перевіреного англійського оригіналу для цього квесту."));
+  return panel;
+}
 
 function reviewControls(row) {
   const panel = make("section");
@@ -388,6 +479,16 @@ function mappingControls(options, run) {
 }
 
 function renderDetail(row) {
+  if (row.type === "quest") {
+    const english = make("section");
+    english.append(make("h3", "Англійський оригінал"));
+    for (const text of row.originals) english.append(make("p", text, "original"));
+    const status = row.built ? "У ZIP" : row.candidates.length > 1 ?
+      "Оберіть переклад" : row.candidates.length ? "Переклад знайдено" : "Немає перекладу";
+    el("selected").replaceChildren(make("h3", row.label), make("p", row.id, "muted"),
+      badge(status, row.built ? "built" : ""), english, simpleQuestControls(row));
+    return;
+  }
   const title = make("h3", row.label);
   const blocks = [title, make("p", row.id, "muted")];
   const identity = row.type === "quest" ?

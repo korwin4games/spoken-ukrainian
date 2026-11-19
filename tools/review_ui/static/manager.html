@@ -36,11 +36,11 @@
     </section>
     <section class="operation" aria-labelledby="operation-heading">
       <div>
-        <h2 id="operation-heading">Оновити переклади модуля</h2>
-        <label class="check"><input type="checkbox" id="reset"> Почати з чистих тестових даних</label>
+        <h2 id="operation-heading">Автоматичний імпорт</h2>
+        <label class="check" hidden><input type="checkbox" id="reset"> Почати з чистих тестових даних</label>
       </div>
       <div class="actions">
-        <button type="button" id="preview">Попередній перегляд</button>
+        <button type="button" id="preview" hidden>Попередній перегляд</button>
         <button type="button" id="reimport" class="primary">Переімпортувати Quest</button>
       </div>
       <p id="operation-status" class="status-line" role="status"></p>
@@ -56,7 +56,7 @@
           <label class="query">Пошук
             <input type="search" maxlength="200" id="query" placeholder="ID, назва, NPC або текст">
           </label>
-          <label>Показати
+          <label hidden>Показати
             <select id="filter">
               <option value="all">Усі</option><option value="imported">Імпортовані в ZIP</option>
               <option value="not_imported">Не в ZIP</option>
@@ -64,7 +64,7 @@
               <option value="multiple_originals">Кілька перевірених оригіналів</option>
             </select>
           </label>
-          <label>Стан
+          <label hidden>Стан
             <select id="translation-status">
               <option value="all">Усі статуси</option>
               <optgroup label="Зіставлення">
