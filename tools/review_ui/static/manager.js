@@ -49,7 +49,7 @@ const errors = {
   manager_reimport_worker_terminated: "Збірку перервано. Оновіть список, перевірте стан ZIP і повторіть.",
   manager_reimport_worker_empty_response: "Збірка не повернула результат. Перевірте стан ZIP і повторіть через CLI.",
   manager_reimport_worker_invalid_response: "Не вдалося прочитати результат збірки. Повторіть через CLI.",
-  manager_reimport_failed: "Переімпорт завершився помилкою. Перевірте закріплені джерела або повторіть через CLI.",
+  manager_reimport_failed: "Не вдалося завершити переімпорт. Запустіть збірку через CLI, щоб побачити причину.",
   manager_classicua_checkout_invalid: "Потрібна чиста копія ClassicUA на закріпленій ревізії.",
   manager_spoken_checkout_invalid: "Потрібна чиста копія Spoken на закріпленій ревізії.",
 };
@@ -64,7 +64,22 @@ function make(tag, text, cls) {
   return node;
 }
 function badge(text, state) { return make("span", text, "badge " + state); }
-function errorMessage(error) { return errors[error.message] || "Перевірте локальні джерела й повторіть: " + error.message; }
+Object.assign(errors, {
+  manager_invalid_review_request: "Перевірте вибраний запис і підтвердження.",
+  manager_review_checks_required: "Підтвердьте всі п’ять перевірок.",
+  manager_review_context_blocked: "Цей контекст не можна безпечно зіставити з ігровим записом.",
+  manager_invalid_translation_format: "Перевірте підстановки та форматування за англійським оригіналом.",
+  manager_candidate_unavailable: "Кандидат застарів, відхилений або відсутній. Оновіть запис.",
+  manager_candidate_not_built: "Текст не ввійшов до ZIP. Перевірте конфлікти та чинні схвалення.",
+  source_quest_selection_requires_approved_stage3_mapping: "Спершу підтвердьте зіставлення Quest доказом Stage 3.",
+  source_candidate_pinned_context_mismatch: "Доказ кандидата змінився. Звірте його з поточним оригіналом.",
+});
+function errorMessage(error) {
+  return errors[error.message] || "Помилка застосунку. Оновіть сторінку й повторіть дію.";
+}
+
+function domain() { return el("module").value === "Spoken_Quest_UA" ? "quest" : "gossip"; }
+function domainName() { return domain() === "quest" ? "Quest" : "Gossip"; }
 
 async function whileLoading(work) {
   loading += 1;
@@ -91,8 +106,7 @@ async function call(action, payload) {
 }
 
 function metrics(summary, build) {
-  const selectedKind = el("kind").value;
-  const tally = key => selectedKind === "all" ? summary.quest[key] + summary.gossip[key] : summary[selectedKind][key];
+  const tally = key => summary[domain()][key];
   const cells = [
     ["Усього записів", "total"], ["Імпортовано в ZIP", "included"], ["Не в ZIP", "not_included"],
     ["Конфлікти кандидатів", "conflicts"], ["Кілька перевірених оригіналів", "multiple_originals"],
@@ -104,7 +118,7 @@ function metrics(summary, build) {
     card.append(make("span", label), make("strong", number.format(tally(key))));
     return card;
   }));
-  const prefix = build ? "Останній дійсний ZIP · " + build.built_at + " UTC" : "Дійсної локальної збірки ще немає.";
+  const prefix = build ? "Останній дійсний ZIP · " + build.built_at + " UTC · SHA-256 " + build.sha256 : "Дійсної локальної збірки ще немає.";
   el("build-state").textContent = prefix + " · Покрито записаними імпортами: " + number.format(tally("recorded"));
 }
 
@@ -151,13 +165,129 @@ async function list() {
   el("list-message").textContent = "Оновлюємо список…";
   try {
     const result = await call("list", {
-      query: el("query").value, kind: el("kind").value, filter_by: el("filter").value,
+      query: el("query").value, filter_by: el("filter").value,
       status: el("translation-status").value, offset, limit: pageSize,
     });
     if (seq === listSeq) renderList(result);
   } catch (error) {
     if (seq === listSeq) el("list-message").textContent = errorMessage(error);
   }
+}
+
+function reviewControls(row) {
+  const panel = make("section");
+  const status = make("p");
+  status.setAttribute("role", "status");
+  panel.append(status);
+  const run = async (action, payload) => {
+    if (busy) return;
+    busy = true;
+    const controls = ["preview", "reimport", "reset", "module"];
+    controls.forEach(id => { el(id).disabled = true; });
+    status.textContent = "Перевіряємо докази та збираємо ZIP…";
+    try {
+      const result = await call(action, {...payload, identity: row.id, confirm: true});
+      renderResult(result);
+      el("operation-status").textContent = action === "confirm_candidate" ?
+        "Вибраний переклад перевірено в ZIP." : "Рішення збережено. Перевірте статус запису.";
+      await list();
+      if (selected === row.id) await detail(row.id);
+    } catch (error) {
+      status.textContent = errorMessage(error);
+    } finally {
+      busy = false;
+      controls.forEach(id => { el(id).disabled = false; });
+    }
+  };
+  const candidates = row.candidates.filter(c => c.review_id &&
+    !["rejected", "deferred", "stale", "pending_update"].includes(c.review));
+  const canAdd = row.type === "gossip" && row.review_queue === "gossip_translation";
+  if (row.originals.length === 1 && (candidates.length || canAdd) &&
+      !["invalid_context", "mapping_rejected", "stale"].includes(row.mapping_state)) {
+    const field = make("fieldset");
+    const reviewer = make("input");
+    reviewer.maxLength = 120;
+    const name = make("label", "Ім’я рецензента ");
+    name.append(reviewer);
+    field.append(make("legend", "Рішення рецензента"), name);
+    const select = make("select");
+    select.setAttribute("aria-label", "Кандидат перекладу");
+    const placeholder = make("option", "Виберіть один варіант");
+    placeholder.value = "";
+    select.append(placeholder);
+    for (const candidate of candidates) {
+      const option = make("option", candidate.provider + " · " + candidate.text.slice(0, 90));
+      option.value = candidate.review_id;
+      select.append(option);
+    }
+    const context = make("pre");
+    const checks = {};
+    if (candidates.length) {
+      field.append(select, context);
+      for (const [key, label] of Object.entries({
+        text: "Текст відповідає оригіналу", grammar: "Мову та форматування перевірено",
+        ai: "Походження та використання ШІ перевірено", rights: "Права перевірено",
+        all_contexts: "Усі контексти перевірено",
+      })) {
+        const input = make("input");
+        input.type = "checkbox";
+        const check = make("label", undefined, "check");
+        check.append(input, make("span", label));
+        checks[key] = input;
+        field.append(check);
+      }
+    }
+    const draft = make("textarea");
+    draft.maxLength = 60000;
+    draft.setAttribute("aria-label", "Українська чернетка");
+    const approve = make("button", "Підтвердити переклад");
+    const save = make("button", "Зберегти чернетку");
+    approve.type = save.type = "button";
+    const choice = () => candidates.find(c => c.review_id === select.value);
+    const update = () => {
+      approve.disabled = !choice() || !reviewer.value.trim() ||
+        Object.values(checks).some(input => !input.checked);
+      save.disabled = !reviewer.value.trim() || !draft.value.trim() ||
+        !(canAdd || choice()?.review_kind === "quest");
+    };
+    select.addEventListener("change", () => {
+      context.textContent = choice() ? row.originals[0] + "\n\n" + choice().text : "";
+      if (choice()?.review_kind === "quest") draft.value = choice().text;
+      for (const input of Object.values(checks)) input.checked = false;
+      update();
+    });
+    field.addEventListener("input", update);
+    approve.addEventListener("click", () => {
+      if (window.confirm("Зберегти рішення та перебудувати ZIP для " + domainName() + "?")) {
+        run("confirm_candidate", {candidate: select.value, reviewer: reviewer.value,
+          checks: Object.fromEntries(Object.entries(checks).map(([key, input]) => [key, input.checked]))});
+      }
+    });
+    save.addEventListener("click", () => run("save_translation",
+      {candidate: canAdd ? "" : select.value, text: draft.value, reviewer: reviewer.value}));
+    if (candidates.length) field.append(approve);
+    if (canAdd || candidates.some(c => c.review_kind === "quest")) field.append(draft, save);
+    panel.append(field);
+    update();
+  }
+  if (row.type === "quest" && row.review_queue === "quest_mapping") {
+    const controls = make("details");
+    const proof = make("textarea");
+    proof.setAttribute("aria-label", "JSON-запит із доказом Stage 3");
+    const submit = make("button", "Перевірити доказ зіставлення");
+    submit.type = "button";
+    controls.append(make("summary", "Перевірка зіставлення"),
+      make("p", "Вставте повний JSON-запит Stage 3 із незалежним доказом і двома рецензентами."),
+      proof, submit);
+    submit.addEventListener("click", () => {
+      let join;
+      try { join = JSON.parse(proof.value); }
+      catch { status.textContent = "Введіть чинний JSON-запит."; return; }
+      if (window.confirm("Зберегти рішення щодо зіставлення?")) run("review_mapping", {join});
+    });
+    panel.append(controls);
+  }
+  return panel;
 }
 
 function renderDetail(row) {
@@ -176,16 +306,11 @@ function renderDetail(row) {
   if (row.original_variants?.length) {
     for (const variant of row.original_variants) {
       en.append(make("p", variant.text, "original"));
+      if (variant.source_ids?.length) en.append(make("p", variant.source_ids.join(" · "), "muted"));
       for (const context of variant.contexts) {
         en.append(make("p", [variant.target_id, context.npc_id != null ? "NPC " + context.npc_id : "",
           context.npc_type, context.faction, context.voice, context.player_gender].filter(Boolean).join(" · "), "muted"));
-        for (const faction of variant.review_factions) {
-          const link = make("a", "Перевірити цей варіант · " + (faction === "alliance" ? "Альянс" : "Орда"));
-          const query = new URLSearchParams({target: variant.target_id, faction,
-            wording: context.wording_sha256, context: context.index});
-          link.href = "/advanced?" + query + "#mapping-context";
-          en.append(make("p")).appendChild(link);
-        }
+
       }
     }
   } else {
@@ -214,18 +339,14 @@ function renderDetail(row) {
   const evidence = make("details");
   evidence.append(make("summary", "Контекст джерела"), make("pre", JSON.stringify(row.contexts, null, 2)));
   blocks.push(en, uk, evidence);
-  if (row.problem) blocks.push(make("p", problems[row.problem] || row.problem));
+  if (row.problem && problems[row.problem]) blocks.push(make("p", problems[row.problem]));
   if (row.unverified_alternatives?.length) {
     blocks.push(make("p", "Є збіг за обробленим текстом Spoken. Потрібна перевірка оригіналу в грі."));
     for (const item of row.unverified_alternatives) {
       blocks.push(make("p", item.hash + " · " + (item.scope === "common" ? "спільний запис" : "запис цього NPC"), "muted"));
     }
   }
-  const link = make("a", row.status === "ready" ? "Переглянути історію та джерела" : "Відкрити розширену перевірку");
-  link.href = row.type === "quest" ? "/advanced#translation-candidates" : "/advanced#gossip-stats";
-  blocks.push(make("p"));
-  blocks.at(-1).append(link);
-  el("selected").replaceChildren(...blocks);
+  el("selected").replaceChildren(...blocks, reviewControls(row));
 }
 
 async function detail(id, button) {
@@ -251,18 +372,19 @@ async function detail(id, button) {
 
 function renderResult(result) {
   const rows = [];
-  for (const [key, name] of [["quest", "Quest"], ["gossip", "Gossip"]]) {
+  for (const [key, name] of [[domain(), domainName()]]) {
     const v = result.summary[key];
     rows.push(make("p", `${name} · у ZIP ${v.included} з ${v.total} · без перекладу ${v.missing} · конфлікти кандидатів ${v.conflicts} · кілька перевірених оригіналів ${v.multiple_originals} · на перевірку ${v.pending_review}`));
   }
   const g = result.summary.gossip_archive_units;
-  rows.push(make("p", `Архів Gossip · пар NPC/хеш: ${g.npc_hash_pairs} · спільних реплік: ${g.common_hashes}`));
+  if (domain() === "gossip") rows.push(make("p", `Архів Gossip · пар NPC/хеш: ${g.npc_hash_pairs} · спільних реплік: ${g.common_hashes}`));
   rows.push(make("p", "Агент · придатних: " + result.agent.eligible + " · пропущено: " + result.agent.skipped));
   if (result.artifact) rows.push(make("p", result.artifact));
   rows.push(make("p", "SHA-256 " + result.sha256, "muted"));
   const reasons = make("ul");
   for (const entry of [...result.skipped, ...result.agent.reasons]) {
-    reasons.append(make("li", (entry.id || entry.candidate_id) + " · " + entry.reason));
+    reasons.append(make("li", (entry.id || entry.candidate_id) + " · " +
+      (problems[entry.reason] || errors[entry.reason] || "Запис потребує перевірки.")));
   }
   if (reasons.childElementCount) rows.push(reasons);
   el("run-details").replaceChildren(...rows);
@@ -273,7 +395,7 @@ function renderResult(result) {
 async function reimport(dryRun) {
   if (busy) return;
   busy = true;
-  for (const id of ["preview", "reimport", "reset"]) el(id).disabled = true;
+  for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = true;
   el("run-summary").hidden = true;
   el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" : "Переімпорт і збірка тривають…";
   try {
@@ -288,7 +410,7 @@ async function reimport(dryRun) {
   } catch (error) { el("operation-status").textContent = errorMessage(error); }
   finally {
     busy = false;
-    for (const id of ["preview", "reimport", "reset"]) el(id).disabled = false;
+    for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = false;
   }
 }
 
@@ -299,15 +421,35 @@ el("query").addEventListener("input", () => {
   timer = setTimeout(resetList, 275);
 });
 el("filters").addEventListener("submit", event => { event.preventDefault(); resetList(); });
-for (const id of ["module", "filter", "kind", "translation-status"]) el(id).addEventListener("change", resetList);
+for (const id of ["filter", "translation-status"]) el(id).addEventListener("change", resetList);
+function refreshModuleControls() {
+  el("reimport").textContent = "Переімпортувати " + domainName();
+  el("inventory-heading").textContent = "Переклади " + domainName();
+  for (const option of document.querySelectorAll('option[value="multiple_originals"]')) {
+    option.hidden = domain() !== "quest";
+  }
+}
+el("module").addEventListener("change", () => {
+  detailSeq++;
+  selected = null;
+  el("filter").value = el("translation-status").value = "all";
+  el("reset").checked = false;
+  for (const id of ["metrics", "rows", "selected", "operation-status", "build-state", "match-count", "page"])
+    el(id).replaceChildren();
+  el("prev").disabled = el("next").disabled = true;
+  el("run-summary").hidden = true;
+  refreshModuleControls();
+  resetList();
+});
+refreshModuleControls();
 el("prev").addEventListener("click", () => { offset = Math.max(0, offset - pageSize); list(); });
 el("next").addEventListener("click", () => { offset += pageSize; list(); });
 el("preview").addEventListener("click", () => reimport(true));
 el("reimport").addEventListener("click", () => {
   el("confirm").returnValue = "";
   el("confirm-text").textContent = el("reset").checked ?
-    "Після успішної збірки тестові рішення та імпорти Quest і Gossip буде замінено свіжим набором. Знімки джерел збережуться." :
-    "Оновити імпорти Quest і Gossip та зібрати новий приватний ZIP зі збереженням чинних рішень?";
+    "Після успішної збірки тестові рішення та імпорти вибраного модуля буде замінено свіжим набором. Знімки джерел збережуться." :
+    "Оновити імпорти вибраного модуля та зібрати новий приватний ZIP зі збереженням чинних рішень?";
   el("confirm").showModal();
 });
 el("confirm").addEventListener("close", () => {

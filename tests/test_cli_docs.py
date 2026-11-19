@@ -22,7 +22,7 @@ class CLIDocsTests(unittest.TestCase):
                 if "://" not in link and not link.startswith("#"):
                     self.assertTrue((path.parent / link.split("#")[0]).is_file(), link)
             mentioned = set(re.findall(r"uv run --locked python (tools/\w+\.py)", text))
-            available = {str(f.relative_to(ROOT)) for f in (ROOT / "tools").glob("*.py")
+            available = {f.relative_to(ROOT).as_posix() for f in (ROOT / "tools").glob("*.py")
                          if 'if __name__ == "__main__":' in f.read_text(encoding="utf-8")
                          or "if __name__ == '__main__':" in f.read_text(encoding="utf-8")}
             self.assertEqual(mentioned, available)

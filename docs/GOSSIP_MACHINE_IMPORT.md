@@ -3,7 +3,7 @@
 This workflow records **provisional hash-based machine identity**, never a
 human canonical Spoken join, quality review, rights attestation or publication
 approval. It makes no AI-provider calls and adds no audio. The two installed
-folders remain `Spoken_Ukrainian` and `Spoken_Quests_UA`.
+folders are `Spoken_Ukrainian` and `Spoken_Gossip_UA`.
 
 ## Run the workflow
 

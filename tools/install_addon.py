@@ -8,6 +8,7 @@ Requires a local build; never downloads or publishes translations.
 import argparse
 from datetime import datetime, timezone
 from hashlib import sha256
+from io import BytesIO
 import os
 from pathlib import Path
 import re
@@ -17,13 +18,14 @@ import tempfile
 from zipfile import ZipFile, BadZipFile, ZIP_STORED
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ARCHIVE = ROOT / "dist" / "Spoken_Ukrainian_Quest_Local_Test.zip"
+DEFAULT_ARCHIVE = ROOT / "dist" / "Spoken_Quest_UA_Local_Test.zip"
 EXPECTED = {
     "Spoken_Ukrainian": {"Spoken_Ukrainian.toc", "Core.lua"},
-    "Spoken_Quests_UA": {
-        "Spoken_Quests_UA.toc", "Translations.lua", "GossipTranslations.lua",
-        "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua", "GossipFrame.lua"
+    "Spoken_Quest_UA": {
+        "Spoken_Quest_UA.toc", "Translations.lua", "Module.lua", "NativeQuestFrame.lua",
+        "GossipQuestTitles.lua",
     },
+    "Spoken_Gossip_UA": {"Spoken_Gossip_UA.toc", "GossipTranslations.lua", "GossipFrame.lua"},
 }
 MAX_TOTAL_BYTES = 96 * 1024 * 1024
 MAX_FILE_BYTES = 80 * 1024 * 1024
@@ -46,14 +48,19 @@ def validate_archive(archive: Path):
     match = re.fullmatch(r"([0-9a-f]{64})  ([^/\\\\\r\n]+\.zip)", checksum_text)
     if not match or match.group(2) != archive.name:
         raise InstallError("invalid_sha256_sidecar")
-    actual = sha256(archive.read_bytes()).hexdigest()
+    archive_bytes = archive.read_bytes()
+    actual = sha256(archive_bytes).hexdigest()
     if actual != match.group(1):
         raise InstallError("archive_checksum_mismatch")
 
-    expected = {folder + "/" + name for folder, names in EXPECTED.items()
-                for name in names}
-    with ZipFile(archive) as z:
+    with ZipFile(BytesIO(archive_bytes)) as z:
         entries = z.infolist()
+        folders = {entry.filename.split("/")[0] for entry in entries}
+        modules = folders - {"Spoken_Ukrainian"}
+        if len(modules) != 1 or "Spoken_Ukrainian" not in folders or folders - EXPECTED.keys():
+            raise InstallError("unexpected_zip_members_or_duplicates")
+        module = next(iter(modules))
+        expected = {folder + "/" + name for folder in folders for name in EXPECTED[folder]}
         if (len(entries) != len(expected)
                 or {entry.filename for entry in entries} != expected):
             raise InstallError("unexpected_zip_members_or_duplicates")
@@ -74,23 +81,29 @@ def validate_archive(archive: Path):
             if total > MAX_TOTAL_BYTES:
                 raise InstallError("archive_too_large")
             result[name] = z.read(entry)  # verifies CRC
-    toc = result["Spoken_Quests_UA/Spoken_Quests_UA.toc"].decode("utf-8")
-    base = result["Spoken_Ukrainian/Spoken_Ukrainian.toc"].decode("utf-8")
+    toc = result[f"{module}/{module}.toc"].decode("utf-8").replace("\r\n", "\n")
+    base = result["Spoken_Ukrainian/Spoken_Ukrainian.toc"].decode("utf-8").replace("\r\n", "\n")
     if ("## Title: Spoken Ukrainian\n" not in base
             or "## Dependencies: Spoken\n" not in base
-            or "## Title: Spoken Ukrainian: Quests\n" not in toc
-            or "## Dependencies: Spoken, Spoken_Quests, Spoken_Ukrainian\n" not in toc
-            or "## X-SpokenQuests-Language: ukUA\n" not in toc):
+            or (module == "Spoken_Quest_UA" and (
+                "## Dependencies: Spoken, Spoken_Quests, Spoken_Ukrainian\n" not in toc
+                or "## X-SpokenQuests-Language: ukUA\n" not in toc))
+            or (module == "Spoken_Gossip_UA" and "## Dependencies: Spoken_Ukrainian\n" not in toc)):
         raise InstallError("addon_manifest_mismatch")
     return result
 
 
-def validate_addons_dir(addons: Path):
+def validate_addons_dir(addons: Path, modules=("Spoken_Quest_UA",)):
     """Refuse missing/wrong folder and links; never modify upstream addons."""
     addons = addons.expanduser().absolute()
     if addons.is_symlink() or not addons.is_dir() or addons.name.lower() != "addons":
         raise InstallError("addons_must_be_existing_Interface_AddOns_directory")
-    for folder in ("Spoken", "Spoken_Quests"):
+    legacy = addons / "Spoken_Quests_UA"
+    if legacy.exists() or legacy.is_symlink():
+        raise InstallError("Legacy Spoken_Quests_UA detected. Close WoW and move that folder "
+                           "outside Interface/AddOns before installing either new module. "
+                           "Your translation database is separate.")
+    for folder in ("Spoken", "Spoken_Quests") if "Spoken_Quest_UA" in modules else ("Spoken",):
         dep = addons / folder
         if dep.is_symlink() or not dep.is_dir() or not (dep / (folder + ".toc")).is_file():
             raise InstallError("official_dependency_missing_" + folder)
@@ -106,8 +119,8 @@ def validate_addons_dir(addons: Path):
 
 def install(archive: Path, addons: Path, *, dry_run=False):
     entries = validate_archive(Path(archive))
-    addons = validate_addons_dir(Path(addons))
-    expected_names = tuple(EXPECTED)
+    expected_names = tuple(dict.fromkeys(member.split("/")[0] for member in entries))
+    addons = validate_addons_dir(Path(addons), expected_names)
     replaced = [name for name in expected_names if (addons / name).exists()]
     if dry_run:
         return {"dry_run": True, "installed": list(expected_names),
@@ -127,6 +140,7 @@ def install(archive: Path, addons: Path, *, dry_run=False):
                 stream.write(data)
 
         try:
+            validate_addons_dir(addons, expected_names)
             if replaced:
                 backup_root = addons / ".spoken-ukrainian-backups"
                 backup_root.mkdir(exist_ok=True)

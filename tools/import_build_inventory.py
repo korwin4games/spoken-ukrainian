@@ -5,6 +5,7 @@ English Gossip group used by multiple NPCs counts once per NPC/hash in the
 built inventory. Other future modules remain zero until included in the pack.
 """
 from collections import defaultdict
+from hashlib import sha256
 import json
 import re
 
@@ -69,7 +70,8 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
                      else "agent_verified" if any(r == "agent_verified" for _, r in contributions)
                      else "machine_1to1")
             rows.append({"domain": "quests", "unit": f"{quest_id}:{event}",
-                         "entity": str(quest_id), "source": source, "route": route})
+                         "entity": str(quest_id), "source": source, "route": route,
+                         "text_sha256": sha256(text.encode("utf-8")).hexdigest()})
 
     reviews = {}
     if reviewed_gossip:
@@ -123,7 +125,6 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
     for (npc, hashed), source in sorted((excluded_gossip or {}).items()):
         rows.append({"domain": "gossip_excluded", "unit": f"npc:{npc}:{hashed}",
                      "entity": str(npc), "source": source, "route": "excluded"})
-    from hashlib import sha256
     for row in rows:
         if row["domain"] == "gossip":
             _, npc, hashed = row["unit"].split(":")

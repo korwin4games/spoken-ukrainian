@@ -149,6 +149,8 @@ class ImportStatisticsTests(unittest.TestCase):
         self.assertEqual(by_unit["common:55"]["domain"], "gossip_common")
 
     def test_selected_source_is_attributed_to_exact_quest_moment_only(self):
+        from hashlib import sha256
+        text = "Альтернативний переклад"
         empty = {"versions": [], "imports": []}
         state = SimpleNamespace(
             machine_imports=SimpleNamespace(file=SimpleNamespace(data=empty)),
@@ -161,7 +163,8 @@ class ImportStatisticsTests(unittest.TestCase):
               "ukrainian_text": "Альтернативний переклад"}], {}, self.db)
         self.assertEqual(rows, [{
             "domain": "quests", "unit": "42:accept", "entity": "42",
-            "source": "another", "route": "source_selected"}])
+            "source": "another", "route": "source_selected",
+            "text_sha256": sha256(text.encode()).hexdigest()}])
 
     def test_build_provenance_uses_only_displayed_quest_events(self):
         machine = {"versions": [{

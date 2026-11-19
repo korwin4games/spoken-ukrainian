@@ -131,10 +131,10 @@ uv run --locked python tools/translation_agent.py import-verified --classicua "$
 ```bash
 uv run --locked python tools/build_ukrainian.py --classicua "$CLASSICUA_SOURCE" --spoken "$SPOKEN_SOURCE"
 uv run --locked python tools/install_addon.py --addons "/path/to/Forever/Interface/AddOns" --dry-run
-uv run --locked python tools/install_addon.py --addons "/path/to/Forever/Interface/AddOns" --archive dist/Spoken_Ukrainian_Quest_Local_Test.zip
+uv run --locked python tools/install_addon.py --addons "/path/to/Forever/Interface/AddOns" --archive dist/Spoken_Quest_UA_Local_Test.zip
 uv run --locked python tools/build.py
 uv run --locked python -m unittest discover -s tests -v
-node --check tools/review_ui/static/app.js
+node --test tests/manager_frontend.test.cjs
 uv run --locked python tools/version.py show
 uv run --locked python tools/version.py check
 uv run --locked python tools/version.py bump patch --dry-run
@@ -143,7 +143,7 @@ uv run --locked python tools/version.py bump patch --dry-run
 ## Єдиний менеджер перекладів
 
 `translation_manager.py reimport` виконує ту саму операцію, що й локальний
-менеджер. Доступний модуль `Spoken_Quests_UA`. Передайте чисті закріплені
+менеджер. Доступні модулі `Spoken_Quest_UA` та `Spoken_Gossip_UA`. Передайте чисті закріплені
 копії джерел. `--db` дозволяє вибрати приватну SQLite. `--dry-run` збирає
 ізольований пробний ZIP, а `--confirm` застосовує перевірений стан і ZIP.
 `--reset-test-data` очищає лише тестові історії перевірки й імпорту та ручні
@@ -159,6 +159,7 @@ uv run --locked python tools/version.py bump patch --dry-run
 Див. [посібник менеджера](TRANSLATION_MANAGER.md).
 
 ```bash
-uv run --locked python tools/translation_manager.py reimport --module Spoken_Quests_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --dry-run --json
-uv run --locked python tools/translation_manager.py reimport --module Spoken_Quests_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --confirm
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --dry-run --json
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Gossip_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm
 ```

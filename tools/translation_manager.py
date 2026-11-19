@@ -2,7 +2,6 @@
 """Browse and rebuild the private Quest and Gossip module."""
 import argparse
 from contextlib import contextmanager
-import fcntl
 from hashlib import sha256
 import json
 import os
@@ -21,7 +20,10 @@ from adapters.sqlite_translation_store import (
     DB_ENV, LEDGER_NAMES, backup_database, connection, default_db_path, enable_sqlite, protected_path,
 )
 
-MODULE = "Spoken_Quests_UA"
+from adapters.local_review_store import file_lock, strict_json
+from tools.build_ukrainian import ARCHIVES, MODULE_DOMAINS, QUEST_MODULE
+
+MODULE = QUEST_MODULE
 WORKER_ERRORS = frozenset({
     "manager_confirmation_required", "manager_invalid_options", "manager_unknown_module",
     "manager_reimport_already_running", "manager_state_changed_retry_reimport",
@@ -29,6 +31,12 @@ WORKER_ERRORS = frozenset({
     "no_unambiguous_quest_imports_for_local_test_pack", "one_to_one_auto_import_not_enabled_for_source",
     "public_revision_mismatch", "public_checkout_modified", "public_checkout_root_required",
     "pinned_classicua_revision_mismatch", "pinned_spoken_revision_mismatch",
+    "manager_invalid_review_request", "manager_review_checks_required", "manager_review_context_blocked",
+    "manager_invalid_translation_format", "manager_candidate_unavailable", "manager_candidate_not_built",
+    "manager_item_not_found", "source_quest_selection_requires_approved_stage3_mapping",
+    "source_candidate_pinned_context_mismatch", "explicit_human_join_request_required",
+    "current_version_text_and_editor_required", "current_reviewed_identity_required",
+    "duplicate_gossip_version", "duplicate_translation_edit",
 })
 DOMAINS = "('quest','gossip')"
 MODULE_LEDGERS = (
@@ -48,7 +56,15 @@ TABLE_SCOPES.update({name: "candidate_id IN " + AGENT_SCOPE
                      for name in ("agent_imports", "agent_stale_evidence")})
 
 
-def reset_test_state(db):
+def module_scopes(module):
+    domain = MODULE_DOMAINS[module]
+    ledgers = [name for name in MODULE_LEDGERS if name.startswith("gossip-") == (domain == "gossip")]
+    return {table: ("ledger_name IN (" + ",".join(repr(name) for name in ledgers) + ")"
+                    if table == "ledger_documents" else scope.replace(DOMAINS, f"('{domain}')"))
+            for table, scope in TABLE_SCOPES.items()}
+
+
+def reset_test_state(db, module=MODULE):
     """Discard only scoped test decisions and imports in the staged database."""
     from adapters.auto_one_to_one import EMPTY as quest_machine
     from adapters.gossip_machine import EMPTY as gossip_machine
@@ -58,16 +74,18 @@ def reset_test_state(db):
     from tools.gossip_translation_review import EMPTY as gossip_review
 
     assert set(MODULE_LEDGERS) <= LEDGER_NAMES
-    for table in reversed(TABLE_SCOPES):
+    scopes = module_scopes(module)
+    for table in reversed(scopes):
         if table != "ledger_documents":
-            db.execute(f"DELETE FROM {table} WHERE {TABLE_SCOPES[table]}")
+            db.execute(f"DELETE FROM {table} WHERE {scopes[table]}")
     # Seed documents rather than deleting them: legacy JSON remains untouched
     # and cannot silently repopulate this test scope during the fresh build.
     db.executemany("""INSERT INTO ledger_documents(ledger_name, payload, revision)
         VALUES (?, ?, 1) ON CONFLICT(ledger_name) DO UPDATE SET
         payload=excluded.payload, revision=revision+1, updated_at=CURRENT_TIMESTAMP""",
         [(name, json.dumps(value, sort_keys=True)) for name, value in zip(MODULE_LEDGERS,
-            (empty_decisions(), review_file([]), quest_review, quest_machine, gossip_review, gossip_machine))])
+            (empty_decisions(), review_file([]), quest_review, quest_machine, gossip_review, gossip_machine))
+         if name.startswith("gossip-") == (MODULE_DOMAINS[module] == "gossip")])
 
 
 def db_stamp(db):
@@ -90,16 +108,15 @@ def manager_lock(directory):
     if directory.is_symlink():
         raise ValueError("manager_unsafe_workspace")
     directory.mkdir(mode=0o700, exist_ok=True)
-    fd = os.open(directory / ".translation-manager.lock", os.O_CREAT | os.O_NOFOLLOW | os.O_RDWR, 0o600)
-    with os.fdopen(fd, "rb") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError("manager_reimport_already_running") from None
-        yield
+    try:
+        with file_lock(directory / ".translation-manager.lock", blocking=False):
+            yield
+    except BlockingIOError:
+        raise ValueError("manager_reimport_already_running") from None
 
 
-def promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace, reset):
+def promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace, reset, module=MODULE,
+            *, expected_sha=None):
     """Commit scoped SQLite rows and publish the ZIP; roll back on normal failures."""
     checksum = archive.with_suffix(".zip.sha256")
     old_zip, old_checksum = workspace / "previous.zip", workspace / "previous.sha256"
@@ -111,11 +128,12 @@ def promote(db_path, staged, baseline, archive, incoming, archive_baseline, work
             if db_stamp(db) != baseline or (file_stamp(archive), file_stamp(checksum)) != archive_baseline:
                 raise ValueError("manager_state_changed_retry_reimport")
             # Materialize agent child scopes before deleting their parent assessments.
-            for table in reversed(TABLE_SCOPES):
+            scopes = module_scopes(module)
+            for table in reversed(scopes):
                 if not reset and table.startswith("source_"):
                     continue
-                db.execute(f"DELETE FROM main.{table} WHERE {TABLE_SCOPES[table]}")
-            for table, scope in TABLE_SCOPES.items():
+                db.execute(f"DELETE FROM main.{table} WHERE {scopes[table]}")
+            for table, scope in scopes.items():
                 if not reset and table.startswith("source_"):
                     continue
                 # Subqueries in child scopes must see the staged parents.
@@ -123,10 +141,13 @@ def promote(db_path, staged, baseline, archive, incoming, archive_baseline, work
                 db.execute(f"INSERT INTO main.{table} SELECT * FROM staged.{table} WHERE {stage_scope}")
             for table in ("build_import_snapshots", "build_import_units"):
                 db.execute(f"INSERT OR IGNORE INTO main.{table} SELECT * FROM staged.{table}")
-            db.execute("DELETE FROM main.build_import_head")
-            db.execute("INSERT INTO main.build_import_head SELECT * FROM staged.build_import_head")
+            db.execute("DELETE FROM main.module_build_heads WHERE module=?", (module,))
+            db.execute("INSERT INTO main.module_build_heads SELECT * FROM staged.module_build_heads WHERE module=?",
+                       (module,))
             # Copy to same-filesystem temporary paths so replace is atomic per file.
             digest = file_stamp(incoming)
+            if expected_sha is not None and digest != expected_sha:
+                raise ValueError("manager_state_changed_retry_reimport")
             incoming_checksum = incoming.with_suffix(".zip.sha256")
             incoming_checksum.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
             for target, new, old in ((archive, incoming, old_zip), (checksum, incoming_checksum, old_checksum)):
@@ -145,39 +166,45 @@ def promote(db_path, staged, baseline, archive, incoming, archive_baseline, work
             raise
 
 
-def prepare_import(state, spoken, db_path, skipped):
+def prepare_import(state, spoken, db_path, skipped, module):
     from adapters.translation_agent import AGENT, TranslationAgent, assessment_rows
     from tools.build_ukrainian import local_gossip_texts
     from tools.gossip_coverage import read_pinned_corpus
     from tools.gossip_translation_review import GossipReviews, discover_groups
     from tools.translation_agent import evidence
 
-    lines = read_pinned_corpus(spoken, state.inventory.revision)
-    groups, _ = discover_groups(lines, local_gossip_texts(state),
-                                state.inventory.revision, state.source.revision)
-    reviews = GossipReviews(groups, state.inventory.revision, state.source.revision)
-    reviews.import_approved(skipped=skipped)
+    domain = MODULE_DOMAINS[module]
+    if domain == "gossip":
+        lines = read_pinned_corpus(spoken, state.inventory.revision)
+        groups, _ = discover_groups(lines, local_gossip_texts(state),
+                                    state.inventory.revision, state.source.revision)
+        reviews = GossipReviews(groups, state.inventory.revision, state.source.revision)
+        reviews.import_approved(skipped=skipped)
     rows = evidence(state, spoken, db_path, revalidate=False)
+    agent_module = "quests" if domain == "quest" else "gossip"
     agent = TranslationAgent(db_path, lambda: rows)
     with connection(db_path) as db:
         assessed = {r["candidate"]["id"] for r in assessment_rows(db, latest=True) if r["agent"] == AGENT}
     # A machine-only Quest hint cannot become an agent-eligible mapping.
-    ids = [r["id"] for r in rows if r["identity_verified"] and r["rights_evidence"]
+    ids = [r["id"] for r in rows if r["domain"] == domain and r["identity_verified"] and r["rights_evidence"]
            and r["id"] not in assessed]
     for offset in range(0, len(ids), 100):
-        agent.run("batch", candidate_ids=ids[offset:offset + 100], limit=100)
-    return agent.run("import-verified", confirm=True)
+        agent.run("batch", module=agent_module, candidate_ids=ids[offset:offset + 100], limit=100)
+    return agent.run("import-verified", module=agent_module, confirm=True)
 
 
-def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=False, confirm=False):
+def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=False, confirm=False,
+             review=None):
     """The CLI and localhost UI run the same staged operation."""
-    from tools.build_ukrainian import ARCHIVE, DIST, build
+    from tools.build_ukrainian import DIST, build
     from tools.manager_inventory import load_inventory
 
-    if module != MODULE:
+    if type(module) is not str or module not in MODULE_DOMAINS:
         raise ValueError("manager_unknown_module")
     if any(type(v) is not bool for v in (reset, dry_run, confirm)):
         raise ValueError("manager_invalid_options")
+    if review is not None and (reset or dry_run):
+        raise ValueError("manager_invalid_review_request")
     if not dry_run and not confirm:
         raise ValueError("manager_confirmation_required")
     classicua, spoken = Path(classicua).resolve(), Path(spoken).resolve()
@@ -186,7 +213,7 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
             db_path.resolve().is_relative_to(p) for p in (classicua, spoken, ROOT / "addons")) or (
             db_path.exists() and (not db_path.is_file() or db_path.stat().st_nlink != 1)):
         raise ValueError("manager_unsafe_database_path")
-    archive = ARCHIVE
+    archive = ARCHIVES[module]
     source_inputs = (ROOT / "sources.lock.json", ROOT / "config/translation_sources.json",
                      ROOT / "tests/stage3_sources.json")
     with manager_lock(DIST), TemporaryDirectory(prefix=".translation-manager-", dir=DIST) as staging:
@@ -203,24 +230,43 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
                 baseline = db_stamp(db)
                 if reset:
                     db.execute("BEGIN IMMEDIATE")
-                    reset_test_state(db)
+                    reset_test_state(db, module)
                     db.commit()
             skipped = []
             with enable_sqlite(staged):
                 agent = {}
                 state_for_inventory = None
+                selected_hash = None
+
+                def before_import(state):
+                    nonlocal selected_hash
+                    if review is None:
+                        return
+                    from tools.manager_review import apply_review
+                    action, payload = review
+                    previous = load_inventory(classicua, spoken, staged, archive, state=state, module=module)
+                    row = previous.detail(module=module, identity=payload.get("identity"))
+                    selected_hash = apply_review(action, payload, module, row, state, spoken, staged)
+
                 def prepare(state):
                     nonlocal state_for_inventory
                     state_for_inventory = state
-                    agent.update(prepare_import(state, spoken, staged, skipped))
-                result = build(classicua, spoken, prepare=prepare, destination=incoming, skipped=skipped)
+                    agent.update(prepare_import(state, spoken, staged, skipped, module))
+                result = build(classicua, spoken, module=module, before_import=before_import if review else None,
+                               prepare=prepare, destination=incoming, skipped=skipped)
                 view = load_inventory(classicua, spoken, staged, incoming, skipped=skipped,
-                                      state=state_for_inventory)
+                                      state=state_for_inventory, module=module)
+                if selected_hash:
+                    built = view.detail(module=module, identity=review[1]["identity"])["built"]
+                    if not built or built["text_sha256"] != selected_hash:
+                        raise ValueError("manager_candidate_not_built")
                 summary = view.summary()
             if pins != [file_stamp(path) for path in source_inputs]:
                 raise ValueError("manager_source_configuration_changed")
             if not dry_run:
-                promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace, reset)
+                promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace,
+                        reset or (review is not None and review[0] == "confirm_candidate"), module,
+                        expected_sha=result["sha256"])
             return {"module": module, "dry_run": dry_run, "reset_test_data": reset,
                     "build": "preview" if dry_run else "success", "artifact": None if dry_run else str(archive),
                     "sha256": result["sha256"], "summary": summary, "agent": agent,
@@ -260,25 +306,27 @@ class ManagerUI:
                 (ROOT / "tests/stage3_sources.json").read_bytes())
 
     def action(self, action, payload):
-        from tools.build_ukrainian import ARCHIVE
         from tools.manager_inventory import load_inventory
 
-        if payload.get("module") != MODULE:
+        module = payload.get("module")
+        if type(module) is not str or module not in MODULE_DOMAINS:
             raise ValueError("manager_unknown_module")
-        if action == "reimport":
+        mutations = ("confirm_candidate", "review_mapping", "save_translation")
+        if action == "reimport" or action in mutations:
+            review = None if action == "reimport" else (action, {k: v for k, v in payload.items() if k != "module"})
+            options = payload if review is None else {"module": module, "confirm": True}
             allowed = {"module", "reset", "dry_run", "confirm"}
-            if set(payload) - allowed or any(type(payload[k]) is not bool for k in set(payload) - {"module"}):
+            if set(options) - allowed or any(type(options[k]) is not bool for k in set(options) - {"module"}):
                 raise ValueError("manager_invalid_options")
             flags = {"reset": "--reset-test-data", "dry_run": "--dry-run", "confirm": "--confirm"}
             try:
                 worker = subprocess.run(
                     [sys.executable, str(ROOT / "tools/translation_manager.py"), "reimport", "--json",
-                     "--module", MODULE, "--classicua", str(self.classicua), "--spoken",
+                     "--module", module, "--classicua", str(self.classicua), "--spoken",
                      str(self.spoken), "--db", str(self.db_path),
-                     *(flag for key, flag in flags.items() if payload.get(key))],
-                    cwd=ROOT, capture_output=True, check=False, timeout=600)
-            except subprocess.TimeoutExpired:
-                raise ValueError("manager_reimport_timed_out_check_build") from None
+                     *(flag for key, flag in flags.items() if options.get(key)), *(("--review-stdin",) if review else ())],
+                    cwd=ROOT, capture_output=True, check=False,
+                    input=json.dumps(review).encode("utf-8") if review else None)
             except OSError:
                 raise ValueError("manager_reimport_worker_unavailable") from None
             if worker.returncode < 0:
@@ -296,32 +344,48 @@ class ManagerUI:
                 raise ValueError(reason if isinstance(reason, str) and reason in WORKER_ERRORS
                                  else "manager_reimport_failed")
             expected = "preview" if payload.get("dry_run") else "success"
-            if (result.get("build") != expected or result.get("module") != MODULE
+            if (result.get("build") != expected or result.get("module") != module
                     or not all(isinstance(result.get(key), dict) for key in ("summary", "agent"))
                     or not isinstance(result.get("skipped"), list)):
                 raise ValueError("manager_reimport_worker_invalid_response")
             return result
-        if action not in ("list", "detail"):
+        if action not in ("list", "detail", "stats"):
             raise ValueError("manager_invalid_action")
         allowed = ({"module", "query", "kind", "filter_by", "status", "offset", "limit"}
-                   if action == "list" else {"module", "identity"})
+                   if action == "list" else {"module", "identity"} if action == "detail" else {"module"})
         if set(payload) - allowed:
             raise ValueError("manager_invalid_options")
 
         def stamp():
-            paths = (self.db_path, ARCHIVE)
-            return tuple((p.stat().st_ino, p.stat().st_mtime_ns) if p.exists() else None for p in paths)
+            paths = (self.db_path, ARCHIVES[module])
+            def stat(path):
+                try:
+                    result = path.stat()
+                except FileNotFoundError:
+                    return None
+                return result.st_ino, result.st_mtime_ns, result.st_size
+            return tuple(stat(path) for path in paths)
 
         with self._lock:
             pins = self.validate_checkouts()
-            if self._cached is None or pins != self._pins or self._stamp != stamp():
-                view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVE)
+            before = (module, stamp())
+            if self._cached is None or pins != self._pins or self._stamp != before:
+                view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVES[module], module=module)
                 if self.validate_checkouts() != pins:
                     raise ValueError("manager_source_configuration_changed")
+                after = (module, stamp())
+                if before != after:
+                    # First access can initialize SQLite or migrate a legacy ledger.
+                    view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVES[module], module=module)
+                    if after != (module, stamp()) or self.validate_checkouts() != pins:
+                        raise ValueError("manager_state_changed_retry_reimport")
+                    before = after
                 self._cached = view
                 self._pins = pins
-                self._stamp = stamp()
+                self._stamp = before
             view = self._cached
+        if action == "stats":
+            return {"module": module, "summary": view.summary(), "build": view.build}
         return view.page(**payload) if action == "list" else view.detail(**payload)
 
 
@@ -330,7 +394,7 @@ def main(argv=None):
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("reimport",))
-    parser.add_argument("--module", choices=(MODULE,), default=MODULE)
+    parser.add_argument("--module", choices=tuple(MODULE_DOMAINS), default=MODULE)
     parser.add_argument("--classicua", type=Path, required=True)
     parser.add_argument("--spoken", type=Path, required=True)
     parser.add_argument("--db", type=Path, default=os.environ.get(DB_ENV) or default_db_path())
@@ -338,10 +402,18 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--confirm", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--review-stdin", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
+        review = None
+        if args.review_stdin:
+            review = strict_json(sys.stdin.buffer.read(262145))
+            if (type(review) is not list or len(review) != 2
+                    or review[0] not in ("confirm_candidate", "review_mapping", "save_translation")
+                    or type(review[1]) is not dict):
+                raise ValueError("manager_invalid_review_request")
         result = reimport(args.classicua, args.spoken, args.db, module=args.module,
-                          reset=args.reset_test_data, dry_run=args.dry_run, confirm=args.confirm)
+                          reset=args.reset_test_data, dry_run=args.dry_run, confirm=args.confirm, review=review)
     except (ValueError, OSError, RuntimeError, TypeError, KeyError, sqlite3.Error,
             subprocess.SubprocessError) as error:
         reason = _reason(error)
@@ -353,8 +425,8 @@ def main(argv=None):
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print(f"{MODULE} · {result['build']}")
-        for domain in ("quest", "gossip"):
+        print(f"{args.module} · {result['build']}")
+        for domain in (MODULE_DOMAINS[args.module],):
             row = result["summary"][domain]
             print(f"{domain}: {row['included']}/{row['total']} in ZIP, "
                   f"{row['recorded']} backed by DB imports, {row['missing']} missing, "

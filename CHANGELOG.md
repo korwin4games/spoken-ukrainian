@@ -6,6 +6,7 @@ Dated version sections describe project baselines; they do not imply that a Git 
 or GitHub Release has been published.
 
 ## [Unreleased]
+- **BREAKING** Split Quest and Gossip into independently installable local addons and ZIPs with separate SQLite build heads. The root manager handles module-scoped builds and inline review. Move the legacy combined addon out of AddOns before upgrading.
 - Enforce Quest mapping decisions across local imports, deduplicate shared ClassicUA faction evidence, and expose verified original variants, distinct mapping and import states, and Gossip diagnostics in Translation Manager.
 - Add a module-centered local Translation Manager with unified Quest/Gossip browsing, staged reimport and optional scoped test reset.
 - Add the optional local Translation Review Agent, explicit verified import for private test builds, separate source/provider comparisons and bilingual CLI guides.

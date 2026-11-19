@@ -166,32 +166,37 @@ class ReviewUITests(unittest.TestCase):
     def test_local_http_host_origin_and_csrf_controls(self):
         # Bind ephemeral loopback port for test and then install port-specific
         # HTTP handler. No network access beyond this local process.
-        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(self.state, "token", 0))
+        from tools.build_ukrainian import QUEST_MODULE
+        manager = Mock()
+        manager.action.return_value = {"module": QUEST_MODULE, "items": self.state.page(limit=1)["items"]}
+        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("token", 0))
         port = server.server_address[1]
-        server.RequestHandlerClass = create_handler(self.state, "token", port)
+        server.RequestHandlerClass = create_handler("token", port, manager)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join()))
         base = f"http://127.0.0.1:{port}"
         with urlopen(base + "/", timeout=5) as reply:
             html = reply.read().decode("utf-8")
-            self.assertIn("Quest Translation Import · Spoken_Quests", html)
-            self.assertIn("Mapping Review", html)
-            self.assertIn("offline", html)
-            self.assertIn("id=\"target-ref\"", html)
+            self.assertIn(QUEST_MODULE, html)
+            self.assertIn("Spoken_Gossip_UA", html)
+            self.assertNotIn("/advanced", html)
+            self.assertIn("id=\"selected\"", html)
             self.assertEqual(reply.headers.get("X-Frame-Options"), "DENY")
-        with urlopen(base + "/app.js", timeout=5) as reply:
+        with urlopen(base + "/manager.js", timeout=5) as reply:
             js = reply.read().decode("utf-8")
             self.assertIn("textContent", js)
             self.assertNotIn(".innerHTML", js)
             self.assertNotIn("insertAdjacentHTML(", js)
-            self.assertIn("target_options[0]?.target_id", js)
+            self.assertIn("variant.target_id", js)
         with urlopen(base + "/api/bootstrap", timeout=5) as reply:
             info = json.load(reply)
             self.assertEqual(info["csrf_token"], "token")
             self.assertEqual(reply.headers.get("Cache-Control"), "no-store")
             self.assertIsNone(reply.headers.get("Access-Control-Allow-Origin"))
-        with urlopen(base + "/api/queue?faction=horde&limit=1", timeout=5) as reply:
+        headers = {"Content-Type": "application/json", "Origin": base, "X-Review-Token": "token"}
+        with urlopen(Request(base + "/api/manager/list", headers=headers,
+                             data=json.dumps({"module": QUEST_MODULE}).encode()), timeout=5) as reply:
             queue = json.load(reply)
             self.assertEqual(len(queue["items"]), 1)
             self.assertEqual(queue["items"][0]["ukrainian_text"], UK)
@@ -209,17 +214,14 @@ class ReviewUITests(unittest.TestCase):
             {"Content-Type": "application/json", "X-Review-Token": "token",
              "Origin": "http://attacker.example"},
         ):
-            req = Request(base + "/api/decisions", data=payload,
+            req = Request(base + "/api/manager/review_mapping", data=payload,
                           headers=headers, method="POST")
             with self.assertRaises(HTTPError) as error:
                 urlopen(req, timeout=5)
             self.assertEqual(error.exception.code, 403)
-        req = Request(base + "/api/decisions", data=payload,
-                      headers={"Content-Type": "application/json",
-                               "X-Review-Token": "token", "Origin": base}, method="POST")
-        with urlopen(req, timeout=5) as reply:
-            result = json.load(reply)
-            self.assertFalse(result["identity_approved"])
+        manager.action.assert_called_once_with("list", {"module": QUEST_MODULE})
+        result = self.state.decide(**json.loads(payload))
+        self.assertFalse(result["identity_approved"])
         self.assertNotIn(UK, self.decisions_file.read_text(encoding="utf-8"))
 
 

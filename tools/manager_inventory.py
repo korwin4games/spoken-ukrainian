@@ -11,17 +11,18 @@ from tools.gossip_coverage import classicua_hash, read_pinned_corpus
 from tools.gossip_machine_import import GossipMachineImport
 from tools.gossip_translation_review import discover_groups, normalized, version_status
 from tools.translation_manager import MODULE, file_stamp
+from tools.build_ukrainian import MODULE_DOMAINS
 
 
 STATUS_HELP = {
     "ready": "Переклад пройшов перевірки для локального імпорту. Запустіть переімпорт модуля.",
-    "missing": "Перекладу для цього контексту немає. Відкрийте розширену перевірку, щоб підготувати переклад.",
+    "missing": "Перекладу для цього контексту немає. Додайте чернетку, якщо підтверджено контекст запису.",
     "review": "Для цього перекладу бракує чинної перевірки, дозволу або підтвердженого зіставлення.",
-    "conflict": "Є неоднозначні варіанти. Звірте оригінали й джерела в розширеній перевірці.",
+    "conflict": "Є неоднозначні варіанти. Звірте оригінали й джерела перед підтвердженням кандидата.",
     "rejected": "Збережено рішення відхилити або відкласти переклад. Перегляньте рішення вручну.",
     "invalid": "Бракує перевіреного оригіналу або не підтримується контекст чи формат. Перевірте джерела.",
     "stale": "Попередні докази змінилися. Перевірте відповідність і версію джерела.",
-    "multiple_originals": "Spoken містить різні оригінали для цієї події. Перевірте кожен контекст окремо.",
+    "multiple_originals": "Spoken містить різні оригінали для цієї події. Гра передає лише ID квесту та етап, тому цей запис не можна безпечно додати до ZIP.",
 }
 MAPPING_STATES = {"mapping_verified", "mapping_provisional", "mapping_pending",
                   "mapping_conflict", "mapping_rejected", "invalid_context", "stale"}
@@ -29,13 +30,13 @@ TRANSLATION_STATES = {"translation_available", "translation_missing", "translati
                       "translation_approved", "translation_rejected"}
 
 
-def latest_units(db, archive, spoken_revision, classicua_revision):
+def latest_units(db, archive, spoken_revision, classicua_revision, module=MODULE):
     db.execute("BEGIN")
     try:
         head = db.execute("""SELECT s.id, s.artifact_sha256, s.created_at
-            FROM build_import_head h JOIN build_import_snapshots s ON s.id=h.snapshot_id
-            WHERE h.singleton=1 AND s.spoken_revision=? AND s.classicua_revision=?""",
-            (spoken_revision, classicua_revision)).fetchone()
+            FROM module_build_heads h JOIN build_import_snapshots s ON s.id=h.snapshot_id
+            WHERE h.module=? AND s.module=? AND s.spoken_revision=? AND s.classicua_revision=?""",
+            (module, module, spoken_revision, classicua_revision)).fetchone()
         if not head or file_stamp(archive) != head[1]:
             return {}, None
         rows = db.execute("""SELECT domain, unit_key, source, route, text_sha256
@@ -47,14 +48,15 @@ def latest_units(db, archive, spoken_revision, classicua_revision):
 
 
 class ModuleInventory:
-    def __init__(self, rows, build, units):
-        self.rows = {r["id"]: r for r in rows}
+    def __init__(self, rows, build, units, module=MODULE):
+        self.module = module
+        self.rows = {r["id"]: r for r in rows if r["type"] == MODULE_DOMAINS[module]}
         self.build = build
         self.units = units
 
     def summary(self):
         result = {}
-        for kind in ("quest", "gossip"):
+        for kind in (MODULE_DOMAINS[self.module],):
             rows = [r for r in self.rows.values() if r["type"] == kind]
             counts = Counter(r["status"] for r in rows)
             pending = Counter(r["status"] for r in rows if r["built"] is None)
@@ -83,7 +85,7 @@ class ModuleInventory:
         return result
 
     def page(self, *, module=MODULE, query="", kind="all", filter_by="all", status="all", offset=0, limit=30):
-        if (module != MODULE or kind not in ("all", "quest", "gossip")
+        if (module != self.module or kind not in ("all", MODULE_DOMAINS[self.module])
                 or filter_by not in ("all", "imported", "not_imported", "conflicts", "multiple_originals")
                 or status not in {"all", *STATUS_HELP, *MAPPING_STATES, *TRANSLATION_STATES}
                 or type(query) is not str or len(query) > 200
@@ -114,7 +116,7 @@ class ModuleInventory:
                 "total": len(matches), "items": matches[offset:offset + limit]}
 
     def detail(self, *, module=MODULE, identity):
-        if module != MODULE or type(identity) is not str or identity not in self.rows:
+        if module != self.module or type(identity) is not str or identity not in self.rows:
             raise ValueError("manager_item_not_found")
         row = self.rows[identity]
         help_text = ("Переклад доступний у перевіреній локальній збірці."
@@ -171,7 +173,7 @@ def status_for(originals, candidates, *, conflict=False, ready=False, unsupporte
     return "review"
 
 
-def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=None):
+def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skipped=(), state=None):
     from tools.build_ukrainian import local_gossip_texts
     from tools.review_ui_server import build_state
 
@@ -218,7 +220,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
     quest_versions = state.translations.file.data
     quest_machine = state.machine_imports.file.data
     with connection(db_path) as db:
-        units, build = latest_units(db, archive, state.inventory.revision, state.source.revision)
+        units, build = latest_units(db, archive, state.inventory.revision, state.source.revision, module)
         agent = list(recorded_imports(db))
         assessments = assessment_rows(db, latest=True)
         stale_assessments = stale_ids(db)
@@ -227,6 +229,8 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
         saved = db.execute("SELECT payload FROM ledger_documents WHERE ledger_name=?", (gossip_machine.name,)).fetchone()
         gm = validate_ledger(strict_json(saved[0])) if saved else EMPTY
         source_selected = {r[0] for r in db.execute("SELECT candidate_id FROM source_active_selections")}
+        source_status = dict(db.execute("""SELECT candidate_id, decision FROM source_candidate_decisions
+            WHERE id IN (SELECT MAX(id) FROM source_candidate_decisions GROUP BY candidate_id)"""))
 
     indexed_quest = defaultdict(list)
     indexed_gossip = defaultdict(list)
@@ -268,7 +272,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
             elif scores:
                 choice["validation"] = "stale"
         # Preserve different review decisions for the same source text.
-        choices = list({(r["sha256"], r["provider"], r["reference"], r["review"]): r
+        choices = list({(r["sha256"], r["provider"], r["reference"], r["review"], r.get("review_id")): r
                         for r in choices}.values())
         reason = next((skipped_ids[key] for key in targets if key in skipped_ids), extra.pop("reason", None))
         if reason and "conflict" in reason:
@@ -288,7 +292,9 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
         for source in candidate_sources[target]:
             is_active = source["id"] in source_selected
             choices.append(review_candidate(source["ukrainian_text"], source["provider"],
-                source["source_ref"], source["revision"], "source_selected" if is_active else "candidate"))
+                source["source_ref"], source["revision"],
+                "source_selected" if is_active else source_status.get(source["id"], "candidate"))
+                | {"review_id": source["id"], "review_kind": "source"})
 
     hints = defaultdict(list)
     quest_queue = defaultdict(set)
@@ -337,6 +343,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
                 contexts_for_wording = [c | {"index": i} for i, c in enumerate(state.inventory.contexts[target])
                                         if c["wording_sha256"] == wording]
                 original_variants.append({"target_id": target, "text": text, "contexts": contexts_for_wording,
+                                          "source_ids": sorted(hints[target]),
                                           "review_factions": sorted(quest_queue[target])})
         english = sorted({variant["text"] for variant in original_variants})
         multiple = len(english) > 1
@@ -353,6 +360,8 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
                 choices.append(review_candidate(r["text"], p.get("provider", "classicua" if method == "machine_1to1" else "manual"),
                     p.get("source_ref", r.get("source_file", r["source_id"])),
                     p.get("revision", r.get("source_revision")), quest_status(r) if method == "reviewed" else r["decision"]))
+                if method == "reviewed":
+                    choices[-1].update(review_id=r["id"], review_kind="quest")
                 recorded |= saved
                 if "shared_bindings" in r:
                     choices[-1]["shared_bindings"] = r["shared_bindings"]
@@ -409,6 +418,8 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
                 choices.append(review_candidate(r["text"], r.get("provider", "classicua"),
                     r.get("source_file", r.get("group_id")), r.get("source_revision", r.get("classicua_revision")),
                     version_status(r) if method == "reviewed" else r["decision"]))
+                if method == "reviewed":
+                    choices[-1].update(review_id=r["id"], review_kind="gossip")
         translation = raw_gossip["byNpc"].get(npc, {}).get(hashed) or raw_gossip["common"].get(hashed)
         if translation:
             current = eligible_gossip.get(target, {})
@@ -442,7 +453,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, skipped=(), state=Non
                     [identity], None, [], False, "invalid", npc_id=line.get("npcId"),
                     contexts=state.inventory.contexts[identity],
                     reason="gossip_context_unsupported" if identity in originals else "gossip_original_missing"))
-    return ModuleInventory(rows, build, units)
+    return ModuleInventory(rows, build, units, module)
 
 
 def state_path(name):

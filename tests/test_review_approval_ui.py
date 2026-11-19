@@ -362,9 +362,33 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertEqual(self.state.translations.file.data["imports"], [])
 
     def test_http_approval_routes_reject_csrf_unknown_fields_and_malformed_proofs(self):
-        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(self.state, "token", 0))
+        from types import SimpleNamespace
+        from tools.build_ukrainian import QUEST_MODULE
+        from tools.manager_review import apply_review
+
+        target = self.request["target_id"]
+        def action(name, fields):
+            if fields.get("module") != QUEST_MODULE or fields.get("identity") != target:
+                raise ValueError("manager_item_not_found")
+            versions = self.state.translations.file.data["versions"]
+            from adapters.translation_approvals import status
+            row = {"id": target, "original_variants": [{"target_id": target}],
+                   "originals": [self.state.original_index.original_english[target]],
+                   "mapping_state": "mapping_verified",
+                   "candidates": [{"text": v["text"], "review": status(v),
+                                   "review_kind": "quest", "review_id": v["id"]} for v in versions]}
+            if name == "detail":
+                return self.state.translation_page()
+            payload = {k: v for k, v in fields.items() if k != "module"}
+            apply_review(name, payload, QUEST_MODULE, row, self.state, None, None)
+            if name == "review_mapping":
+                self.state.translation_action("refresh", {})
+                return {"identity_approved": True}
+            return self.state.translation_action("import", {})
+        manager = SimpleNamespace(action=action)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("token", 0))
         port = server.server_address[1]
-        server.RequestHandlerClass = create_handler(self.state, "token", port)
+        server.RequestHandlerClass = create_handler("token", port, manager)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join()))
@@ -372,9 +396,13 @@ class ReviewApprovalUITests(unittest.TestCase):
         def post(route, body, headers=None):
             return urlopen(Request(base + route, data=body, method="POST", headers=headers or {
                 "Content-Type": "application/json", "Origin": base, "X-Review-Token": "token"}), timeout=5)
-        for route in ("/api/mapping/approve", "/api/translations/refresh", "/api/translations/edit",
-                      "/api/translations/decide", "/api/translations/import",
-                      "/api/translations/auto_import_one_to_one"):
+        mapping = "/api/manager/review_mapping"
+        candidate = "/api/manager/confirm_candidate"
+        edit = "/api/manager/save_translation"
+        detail = "/api/manager/detail"
+        record = {"module": QUEST_MODULE, "identity": target}
+        proof = record | {"join": self.request, "confirm": True}
+        for route in (mapping, candidate, edit, "/api/manager/reimport"):
             with self.subTest(route=route), self.assertRaises(HTTPError) as error:
                 post(route, b'{}', {"Content-Type": "application/json", "Origin": base})
             self.assertEqual(error.exception.code, 403)
@@ -384,7 +412,7 @@ class ReviewApprovalUITests(unittest.TestCase):
             {"Content-Type": "application/json", "Origin": base, "X-Review-Token": "token", "Host": "evil.example"},
         ):
             try:
-                post("/api/translations/import", b'{}', headers)
+                post(candidate, b'{}', headers)
             except HTTPError as error:
                 self.assertIn(error.code, (400, 403))
             except OSError as error:
@@ -397,42 +425,38 @@ class ReviewApprovalUITests(unittest.TestCase):
             else:
                 self.fail("invalid HTTP headers were accepted")
         for body in (b'{}', b'{"schema_version":1,"schema_version":1}',
-                     json.dumps(self.request | {"proof": {}}).encode()):
+                     json.dumps(proof | {"join": self.request | {"proof": {}}}).encode()):
             with self.assertRaises(HTTPError) as error:
-                post("/api/mapping/approve", body)
+                post(mapping, body)
             self.assertEqual(error.exception.code, 400)
         with self.assertLogs("spoken.review_ui", level="INFO") as emitted:
-            with post("/api/mapping/approve", json.dumps(self.request).encode()) as response:
+            with post(mapping, json.dumps(proof).encode()) as response:
                 self.assertTrue(json.load(response)["identity_approved"])
-        self.assertTrue(any("mapping.approve succeeded" in row for row in emitted.output))
+        self.assertTrue(any("manager.review_mapping succeeded" in row for row in emitted.output))
         self.assertFalse(any("invented wording" in row or "Invented mapping reviewer" in row
                              for row in emitted.output))
-        with post("/api/translations/refresh", b'{}') as response:
-            self.assertTrue(json.load(response)["saved"])
-        with urlopen(base + "/api/translations", timeout=5) as response:
+        with post(detail, json.dumps(record).encode()) as response:
             row = json.load(response)["versions"][0]
+        self.assertFalse(row["imported"])
+        approval = record | {"candidate": row["id"], "reviewer": "Invented reviewer", "confirm": True}
+        checks = CHECKS | {"all_contexts": True}
         with self.assertRaises(HTTPError) as incomplete:
-            post("/api/translations/decide", json.dumps({"identity": row["id"],
-                 "decision": "approved", "reviewer": "Invented reviewer",
-                 "checks": CHECKS | {"rights": False}}).encode())
+            post(candidate, json.dumps(approval | {"checks": checks | {"rights": False}}).encode())
         self.assertEqual(incomplete.exception.code, 400)
         self.assertEqual(json.load(incomplete.exception.fp)["reason"],
-                         "explicit_content_attestation_required")
-        with urlopen(base + "/api/translations", timeout=5) as response:
+                         "manager_review_checks_required")
+        with post(detail, json.dumps(record).encode()) as response:
             self.assertEqual(json.load(response)["versions"][0]["status"], "pending")
-        with post("/api/translations/decide", json.dumps({"identity": row["id"], "decision": "approved",
-                  "reviewer": "Invented reviewer", "checks": CHECKS}).encode()) as response:
-            self.assertTrue(json.load(response)["saved"])
-        with urlopen(base + "/api/translations", timeout=5) as response:
+        with post(candidate, json.dumps(approval | {"checks": checks}).encode()) as response:
+            self.assertEqual(json.load(response)["imported"], 1)
+        with post(detail, json.dumps(record).encode()) as response:
             after_approval = json.load(response)["versions"][0]
             self.assertEqual(after_approval["status"], "approved")
             self.assertEqual(after_approval["id"], row["id"])
-            self.assertFalse(after_approval["imported"])
-        with post("/api/translations/import", b'{}') as response:
-            self.assertEqual(json.load(response)["imported"], 1)
-        for route, body, expected in (("/api/translations/import?x=1", b'{}', 404),
-                                       ("/api/translations/edit", b'{"text":"bad"}', 400),
-                                       ("/api/translations/import", b'x' * 262145, 413)):
+            self.assertTrue(after_approval["imported"])
+        for route, body, expected in ((candidate + "?x=1", b'{}', 404),
+                                       (edit, b'{"text":"bad"}', 400),
+                                       (candidate, b'x' * 262145, 413)):
             with self.assertRaises(HTTPError) as error:
                 post(route, body)
             self.assertEqual(error.exception.code, expected)

@@ -103,9 +103,9 @@ UIParent = QuestFrame
 '''
         for name in (
                 "Spoken_Ukrainian/Core.lua",
-                "Spoken_Quests_UA/Translations.lua",
-                "Spoken_Quests_UA/Module.lua",
-                "Spoken_Quests_UA/NativeQuestFrame.lua"):
+                "Spoken_Quest_UA/Translations.lua",
+                "Spoken_Quest_UA/Module.lua",
+                "Spoken_Quest_UA/NativeQuestFrame.lua"):
             lua += "\n" + sources[name].decode("utf-8") + "\n"
         lua += r'''
 local nativeListener

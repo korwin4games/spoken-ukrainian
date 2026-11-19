@@ -78,33 +78,32 @@ jobs:
       - name: Build diagnostic pack
         run: uv run --locked python tools/build.py
 
-      - name: Validate local Review UI JavaScript syntax
-        run: node --check tools/review_ui/static/app.js
+      - name: Exercise Translation Manager DOM behavior
+        run: node --test tests/manager_frontend.test.cjs
 
       - name: Run tests
         run: uv run --locked python -m unittest discover -s tests -v
 
-      - name: Build local-test Spoken Ukrainian Quest module including Gossip (mandatory 1:1 auto-import)
+      - name: Build independent Quest and Gossip local-test modules
         run: |
-          uv run --locked python tools/build_ukrainian.py \
-            --classicua "$CLASSICUA_SOURCE" \
-            --spoken "$SPOKEN_SOURCE"
+          for module in Spoken_Quest_UA Spoken_Gossip_UA; do
+            uv run --locked python tools/build_ukrainian.py --module "$module" \
+              --classicua "$CLASSICUA_SOURCE" --spoken "$SPOKEN_SOURCE"
+          done
           uv run --locked python - <<'PY'
           from zipfile import ZipFile
           from pathlib import Path
-          p = Path("dist/Spoken_Ukrainian_Quest_Local_Test.zip")
+          p = Path("dist/Spoken_Quest_UA_Local_Test.zip")
           with ZipFile(p) as z:
               names = set(z.namelist())
               assert "Spoken_Ukrainian/Spoken_Ukrainian.toc" in names
-              assert "Spoken_Quests_UA/Spoken_Quests_UA.toc" in names
-              assert "Spoken_Quests_UA/Translations.lua" in names
-              assert "Spoken_Quests_UA/Module.lua" in names
-              assert "Spoken_Quests_UA/GossipQuestTitles.lua" in names
-              assert "Spoken_Quests_UA/GossipFrame.lua" in names
-              assert "Spoken_Quests_UA/GossipTranslations.lua" in names
-              assert not any(name.startswith("Spoken_Gossip_UA/") for name in names)
-              assert "SpokenUkrainian.GossipTexts = {" in z.read("Spoken_Quests_UA/GossipTranslations.lua").decode("utf-8")
-              corpus = z.read("Spoken_Quests_UA/Translations.lua").decode("utf-8")
+              assert "Spoken_Quest_UA/Spoken_Quest_UA.toc" in names
+              assert "Spoken_Quest_UA/Translations.lua" in names
+              assert "Spoken_Quest_UA/Module.lua" in names
+              assert "Spoken_Quest_UA/GossipQuestTitles.lua" in names
+              assert {name.split("/")[0] for name in names} == {"Spoken_Ukrainian", "Spoken_Quest_UA"}
+              assert not any("GossipTranslations.lua" in name or "GossipFrame.lua" in name for name in names)
+              corpus = z.read("Spoken_Quest_UA/Translations.lua").decode("utf-8")
               assert "SpokenUkrainian.GossipQuestTitles = {" in corpus
               assert "[97279] = \"Загублена зброя\"" in corpus
               # Pinned ClassicUA+Spoken: exact 97279 accept/progress/complete
@@ -115,7 +114,11 @@ jobs:
                          for event in ("accept", "progress", "complete"))
               assert not any(name.endswith(".mp3") or "Spoken_Quests/" in name for name in names)
               assert z.testzip() is None
-          print("Local Quest test pack: structure valid (not uploaded).")
+          with ZipFile("dist/Spoken_Gossip_UA_Local_Test.zip") as z:
+              assert {name.split("/")[0] for name in z.namelist()} == {"Spoken_Ukrainian", "Spoken_Gossip_UA"}
+              assert "SpokenUkrainian.GossipTexts = {" in z.read("Spoken_Gossip_UA/GossipTranslations.lua").decode("utf-8")
+              assert z.testzip() is None
+          print("Both independent local-test archives are structurally valid.")
           PY
 
       - name: Smoke-test local AddOns installer without touching upstream
@@ -126,17 +129,18 @@ jobs:
           echo official > build/install-ci/Interface/AddOns/Spoken_Quests/Spoken_Quests.toc
           uv run --locked python tools/install_addon.py --addons build/install-ci/Interface/AddOns --dry-run
           uv run --locked python tools/install_addon.py --addons build/install-ci/Interface/AddOns
+          uv run --locked python tools/install_addon.py --addons build/install-ci/Interface/AddOns --archive dist/Spoken_Gossip_UA_Local_Test.zip
           uv run --locked python - <<'PY'
           from pathlib import Path
           base = Path("build/install-ci/Interface/AddOns")
           assert (base / "Spoken/Spoken.toc").read_text().strip() == "official"
           assert (base / "Spoken_Quests/Spoken_Quests.toc").read_text().strip() == "official"
           assert (base / "Spoken_Ukrainian/Spoken_Ukrainian.toc").is_file()
-          assert (base / "Spoken_Quests_UA/Translations.lua").is_file()
-          assert (base / "Spoken_Quests_UA/NativeQuestFrame.lua").is_file()
-          assert (base / "Spoken_Quests_UA/GossipFrame.lua").is_file()
-          assert (base / "Spoken_Quests_UA/GossipTranslations.lua").is_file()
-          assert not (base / "Spoken_Gossip_UA").exists()
+          assert (base / "Spoken_Quest_UA/Translations.lua").is_file()
+          assert (base / "Spoken_Quest_UA/NativeQuestFrame.lua").is_file()
+          assert (base / "Spoken_Gossip_UA/GossipFrame.lua").is_file()
+          assert (base / "Spoken_Gossip_UA/GossipTranslations.lua").is_file()
+          assert not (base / "Spoken_Quests_UA").exists()
           print("Local test ZIP installed; official Spoken preserved.")
           PY
 
@@ -147,13 +151,12 @@ jobs:
           import json
           from pathlib import Path
           stats = json.loads(Path("build/import-statistics.json").read_text(encoding="utf-8"))
-          actual = stats["latest_successful_build"]
-          assert actual is not None
-          assert actual["total_text_records"] > 0
-          assert actual["categories"]["quests"] > 0
-          assert actual["categories"]["gossip"] > 0
-          assert all(r["text_records"] > 0 for r in actual["rows"])
-          assert all(r["source"] for r in actual["rows"])
+          quest = stats["module_builds"]["Spoken_Quest_UA"]
+          gossip = stats["module_builds"]["Spoken_Gossip_UA"]
+          assert quest["categories"]["quests"] > 0 and quest["categories"]["gossip"] == 0
+          assert gossip["categories"]["gossip"] > 0 and gossip["categories"]["quests"] == 0
+          assert quest["artifact_sha256"] != gossip["artifact_sha256"]
+          assert all(r["text_records"] > 0 and r["source"] for build in (quest, gossip) for r in build["rows"])
           assert stats["recorded_imports"]["total_text_records"] >= 0
           print("Source-attributed ZIP inventory verified; no text bodies exported")
           PY

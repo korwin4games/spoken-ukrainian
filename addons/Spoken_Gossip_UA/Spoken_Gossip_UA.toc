@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: Spoken Ukrainian: Gossip
+## Notes: Local test of Ukrainian NPC dialogue in native game windows.
+## Version: 0.1.0-test
+## Dependencies: Spoken_Ukrainian
+## Group: Spoken
+## X-Part-Of: Spoken Ukrainian
+
+GossipTranslations.lua
+GossipFrame.lua

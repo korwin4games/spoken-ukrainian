@@ -193,15 +193,17 @@ def _validate_build_rows(rows):
 
 
 def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
-                           classicua_revision, rows):
+                           classicua_revision, rows, module=None):
     """Persist metadata after a successful ZIP write, never before."""
     if (type(artifact_sha256) is not str or not HEX64.fullmatch(artifact_sha256)
             or any(type(x) is not str or not re.fullmatch(r"[a-f0-9]{40}", x)
                    for x in (spoken_revision, classicua_revision))):
         raise ValueError("invalid_build_inventory_revision")
     checked = _validate_build_rows(rows)
+    if module not in (None, "Spoken_Quest_UA", "Spoken_Gossip_UA"):
+        raise ValueError("manager_unknown_module")
     payload = json.dumps([artifact_sha256, spoken_revision, classicua_revision,
-                          checked], ensure_ascii=False, sort_keys=True,
+                          checked] + ([module] if module else []), ensure_ascii=False, sort_keys=True,
                          separators=(",", ":")).encode("utf-8")
     fingerprint = sha256(payload).hexdigest()
     with connection(db_path) as db:
@@ -215,9 +217,9 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
                 new = False
             else:
                 cur = db.execute("""INSERT INTO build_import_snapshots
-                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision)
-                    VALUES (?, ?, ?, ?)""",
-                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision))
+                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision, module)
+                    VALUES (?, ?, ?, ?, ?)""",
+                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision, module))
                 snapshot_id = cur.lastrowid
                 db.executemany("""INSERT INTO build_import_units
                     (snapshot_id, domain, unit_key, entity_key, source, route, text_sha256)
@@ -225,8 +227,12 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
                     [(snapshot_id, r["domain"], r["unit"], r["entity"],
                       r["source"], r["route"], r.get("text_sha256", "")) for r in checked])
                 new = True
-            db.execute("""INSERT INTO build_import_head(singleton, snapshot_id) VALUES(1, ?)
-                ON CONFLICT(singleton) DO UPDATE SET snapshot_id=excluded.snapshot_id""", (snapshot_id,))
+            if module is None:
+                db.execute("""INSERT INTO build_import_head(singleton, snapshot_id) VALUES(1, ?)
+                    ON CONFLICT(singleton) DO UPDATE SET snapshot_id=excluded.snapshot_id""", (snapshot_id,))
+            else:
+                db.execute("""INSERT INTO module_build_heads(module, snapshot_id) VALUES(?, ?)
+                    ON CONFLICT(module) DO UPDATE SET snapshot_id=excluded.snapshot_id""", (module, snapshot_id))
             db.commit()
         except BaseException:
             db.rollback()
@@ -234,11 +240,17 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
     return {"snapshot_id": snapshot_id, "new_snapshot": new, **_group(checked)}
 
 
-def latest_successful_build(db_path):
+def latest_successful_build(db_path, module=None):
     with connection(db_path) as db:
-        head = db.execute("""SELECT id, artifact_sha256, spoken_revision,
-            classicua_revision, created_at FROM build_import_snapshots
-            WHERE id = (SELECT snapshot_id FROM build_import_head WHERE singleton=1)""").fetchone()
+        if module is None:
+            head = db.execute("""SELECT id, artifact_sha256, spoken_revision,
+                classicua_revision, created_at FROM build_import_snapshots
+                WHERE id = (SELECT snapshot_id FROM build_import_head WHERE singleton=1)""").fetchone()
+        else:
+            head = db.execute("""SELECT s.id, s.artifact_sha256, s.spoken_revision,
+                s.classicua_revision, s.created_at FROM build_import_snapshots s
+                JOIN module_build_heads h ON h.snapshot_id=s.id
+                WHERE h.module=? AND s.module=?""", (module, module)).fetchone()
         if head is None:
             return None
         rows = [
@@ -253,4 +265,6 @@ def latest_successful_build(db_path):
 
 def report(db_path):
     return {**read_recorded_imports(db_path),
-            "latest_successful_build": latest_successful_build(db_path)}
+            "latest_successful_build": latest_successful_build(db_path),
+            "module_builds": {module: latest_successful_build(db_path, module)
+                              for module in ("Spoken_Quest_UA", "Spoken_Gossip_UA")}}

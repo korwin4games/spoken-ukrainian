@@ -12,7 +12,6 @@
   <header class="topbar">
     <div class="wrap top-inner">
       <div class="brand"><span class="mark" aria-hidden="true">SU</span><span>Spoken Ukrainian</span></div>
-      <a href="/advanced">Розширена перевірка <span aria-hidden="true">↗</span></a>
     </div>
   </header>
   <div id="loading-bar" class="loading-bar" role="progressbar"
@@ -25,7 +24,10 @@
       </div>
       <div class="module-select">
         <label for="module">Модуль</label>
-        <select id="module"><option value="Spoken_Quests_UA">Spoken_Quests_UA · Quest + Gossip</option></select>
+        <select id="module">
+          <option value="Spoken_Quest_UA">Spoken_Quest_UA</option>
+          <option value="Spoken_Gossip_UA">Spoken_Gossip_UA</option>
+        </select>
       </div>
     </section>
     <section class="overview" aria-label="Стан модуля">
@@ -39,7 +41,7 @@
       </div>
       <div class="actions">
         <button type="button" id="preview">Попередній перегляд</button>
-        <button type="button" id="reimport" class="primary">Переімпортувати Quest + Gossip</button>
+        <button type="button" id="reimport" class="primary">Переімпортувати Quest</button>
       </div>
       <p id="operation-status" class="status-line" role="status"></p>
       <details id="run-summary" hidden><summary>Результат операції</summary><div id="run-details"></div></details>
@@ -60,11 +62,6 @@
               <option value="not_imported">Не в ZIP</option>
               <option value="conflicts">Конфлікти кандидатів</option>
               <option value="multiple_originals">Кілька перевірених оригіналів</option>
-            </select>
-          </label>
-          <label>Тип
-            <select id="kind">
-              <option value="all">Усі типи</option><option value="quest">Quest</option><option value="gossip">Gossip</option>
             </select>
           </label>
           <label>Стан

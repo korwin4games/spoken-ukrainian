@@ -54,24 +54,43 @@ class InstallAddonTests(TestCase):
         self.assertTrue(result["dry_run"])
         self.assertEqual(result["replaced"], [])
         self.assertFalse((self.addons / "Spoken_Ukrainian").exists())
-        self.assertFalse((self.addons / "Spoken_Quests_UA").exists())
+        self.assertFalse((self.addons / "Spoken_Quest_UA").exists())
         self.assertFalse((self.addons / ".spoken-ukrainian-backups").exists())
 
     def test_existing_ukrainian_folders_are_backed_up_before_replacing(self):
-        for name in install_addon.EXPECTED:
+        for name in ("Spoken_Ukrainian", builder.QUEST_MODULE):
             folder = self.addons / name
             folder.mkdir()
             (folder / "old.txt").write_text("user original")
         result = install_addon.install(self.archive, self.addons)
-        self.assertEqual(set(result["replaced"]), set(install_addon.EXPECTED))
+        self.assertEqual(set(result["replaced"]), {"Spoken_Ukrainian", builder.QUEST_MODULE})
         self.assertTrue(result["backup"].is_dir())
-        for name in install_addon.EXPECTED:
+        for name in ("Spoken_Ukrainian", builder.QUEST_MODULE):
             self.assertFalse((self.addons / name / "old.txt").exists())
             self.assertEqual((result["backup"] / name / "old.txt").read_text(),
                              "user original")
         for name in ("Spoken", "Spoken_Quests"):
             self.assertEqual((self.addons / name / (name + ".toc")).read_text(),
                              "original official")
+
+    def test_legacy_addon_blocks_install_without_deletion(self):
+        legacy = self.addons / "Spoken_Quests_UA"
+        legacy.mkdir()
+        marker = legacy / "user.lua"
+        marker.write_bytes(b"user file")
+        with self.assertRaisesRegex(install_addon.InstallError, "Legacy Spoken_Quests_UA"):
+            install_addon.install(self.archive, self.addons)
+        self.assertEqual(marker.read_bytes(), b"user file")
+        self.assertFalse((self.addons / builder.QUEST_MODULE).exists())
+
+    def test_gossip_installs_without_the_official_quest_module(self):
+        self.files = builder.template_entries(gossip_lua=builder.render_gossip_lua(
+            {"common": {}, "byNpc": {}}), module=builder.GOSSIP_MODULE)
+        self.write_archive()
+        (self.addons / "Spoken_Quests" / "Spoken_Quests.toc").unlink()
+        result = install_addon.install(self.archive, self.addons)
+        self.assertEqual(set(result["installed"]), {"Spoken_Ukrainian", builder.GOSSIP_MODULE})
+        self.assertFalse((self.addons / builder.QUEST_MODULE).exists())
 
     def test_corrupt_checksum_refuses_write(self):
         with self.archive.open("ab") as stream:
@@ -82,8 +101,8 @@ class InstallAddonTests(TestCase):
         self.assertFalse((self.addons / "Spoken_Ukrainian").exists())
 
     def test_unexpected_zip_member_and_traversal_refused_even_with_good_checksum(self):
-        for bad in ("../Spoken/Spoken.toc", "Spoken_Quests_UA/evil.lua",
-                    "Spoken_Quests_UA/Module.lua/extra"):
+        for bad in ("../Spoken/Spoken.toc", "Spoken_Quest_UA/evil.lua",
+                    "Spoken_Quest_UA/Module.lua/extra"):
             with self.subTest(bad=bad):
                 self.files[bad] = b"do not extract"
                 self.write_archive()
@@ -105,14 +124,14 @@ class InstallAddonTests(TestCase):
     def test_symlink_existing_addon_refused(self):
         fake = self.root / "outside"
         fake.mkdir()
-        (self.addons / "Spoken_Quests_UA").symlink_to(fake, target_is_directory=True)
+        (self.addons / "Spoken_Quest_UA").symlink_to(fake, target_is_directory=True)
         with self.assertRaisesRegex(install_addon.InstallError,
                                     "unsafe_existing_destination"):
             install_addon.install(self.archive, self.addons)
         self.assertEqual(list(fake.iterdir()), [])
 
     def test_partial_failure_restores_original_without_touching_official(self):
-        for name in install_addon.EXPECTED:
+        for name in ("Spoken_Ukrainian", builder.QUEST_MODULE):
             folder = self.addons / name
             folder.mkdir()
             (folder / "old.txt").write_text("old")
@@ -130,7 +149,7 @@ class InstallAddonTests(TestCase):
             with self.assertRaisesRegex(install_addon.InstallError,
                                         "install_failed_rolled_back"):
                 install_addon.install(self.archive, self.addons)
-        for name in install_addon.EXPECTED:
+        for name in ("Spoken_Ukrainian", builder.QUEST_MODULE):
             self.assertEqual((self.addons / name / "old.txt").read_text(), "old")
             self.assertFalse((self.addons / name / (name + ".toc")).exists())
         for name in ("Spoken", "Spoken_Quests"):

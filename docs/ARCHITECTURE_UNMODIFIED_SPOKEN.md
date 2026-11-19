@@ -61,3 +61,10 @@ browsing and private test builds. Its read model joins pinned originals with
 review state and the latest digest-matching ZIP inventory. Its write path
 orchestrates the existing guarded imports on a staged SQLite copy. These local
 tools do not establish runtime support for other modules.
+
+## Independent local Quest and Gossip addons
+
+`Spoken_Quest_UA` retains public v1 Quest registration and native quest hooks.
+`Spoken_Gossip_UA` uses native Gossip widgets and depends on shared
+`Spoken_Ukrainian`. The official `Spoken_Quests` remains a single upstream
+target. See the [installation and migration guide](QUEST_LOCAL_TEST_BUILD.md).

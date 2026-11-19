@@ -4,11 +4,34 @@ Atomic replacement plus an advisory lock and optimistic conflict detection avoid
 lost writes between tabs/processes. No authentication or publication is implied.
 """
 from contextlib import contextmanager
-import fcntl
 import json
 import os
 from pathlib import Path
 import tempfile
+
+
+@contextmanager
+def file_lock(path, *, blocking=True):
+    """Exclusive advisory lock used by the JSON store and private builder."""
+    if path.is_symlink():
+        raise ValueError("unsafe_local_lock_path")
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "r+b") as handle:
+        if path.is_symlink() or not os.path.samestat(path.stat(), os.fstat(fd)):
+            raise ValueError("unsafe_local_lock_path")
+        if os.name == "nt":
+            import errno
+            import msvcrt
+            try:
+                msvcrt.locking(fd, msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                if not blocking and exc.errno == errno.EACCES:
+                    raise BlockingIOError from exc
+                raise
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
+        yield
 
 
 def strict_json(text):
@@ -61,9 +84,7 @@ class LocalFile:
         self._guard()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         lock = self.path.with_name(self.path.name + ".lock")
-        fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, "a") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
+        with file_lock(lock):
             self.check_unchanged()
             yield
 
@@ -87,11 +108,12 @@ class LocalFile:
                         os.fsync(out.fileno())
                     self._guard()
                     os.replace(name, self.path)
-                    directory = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
-                    try:
-                        os.fsync(directory)
-                    finally:
-                        os.close(directory)
+                    if hasattr(os, "O_DIRECTORY"):
+                        directory = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                        try:
+                            os.fsync(directory)
+                        finally:
+                            os.close(directory)
                 finally:
                     if name and os.path.exists(name):
                         os.unlink(name)

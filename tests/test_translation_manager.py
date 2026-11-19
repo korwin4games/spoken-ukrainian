@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from types import SimpleNamespace
 import unittest
+import tools.translation_manager as manager_module
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -43,33 +44,37 @@ class ManagerTests(unittest.TestCase):
             row("gossip:3:27:a", "gossip", "Fixture NPC", "missing", english="Which way?"),
             row("q:43:progress", "quest", "Road", "conflict", recorded=True),
         ], {"sha256": "fixture"}, {("gossip_common", "common:27"): {}})
-        for name in ("ARCHIVE", "DIST"):
-            stub = patch.object(builder, name, self.archive if name == "ARCHIVE" else self.root)
+        self.gossip_archive = self.root / "gossip.zip"
+        self.archives = {MODULE: self.archive, builder.GOSSIP_MODULE: self.gossip_archive}
+        for target, name, value in (
+                (builder, "DIST", self.root), (manager_module, "ARCHIVES", self.archives)):
+            stub = patch.object(target, name, value)
             stub.start()
             self.addCleanup(stub.stop)
 
-    def fake_build(self, classicua, spoken, *, prepare, destination, skipped):
+    def fake_build(self, classicua, spoken, *, module, before_import, prepare, destination, skipped):
         self.assertEqual((classicua, spoken), self.paths)
-        artifact, digest = builder.write_zip({"Spoken_Quests_UA/Translations.lua":
+        artifact, digest = builder.write_zip({"Spoken_Quest_UA/Translations.lua":
                 'local sample = "Вітаю, {ім\'я}!"'.encode()}, destination)
         import os
         inventory = store_successful_build(os.environ[DB_ENV], artifact_sha256=digest,
-            spoken_revision="a" * 40, classicua_revision="b" * 40,
+            spoken_revision="a" * 40, classicua_revision="b" * 40, module=module,
             rows=[{"domain": "quests", "unit": "42:accept", "entity": "42",
                    "source": "classicua", "route": "machine_1to1"}])
         return {"artifact": artifact, "sha256": digest, "import_inventory": inventory}
 
     def test_inventory_search_filters_pages_and_missing_details(self):
-        self.assertEqual(self.view.page()["total"], 3)
-        self.assertEqual(self.view.page(filter_by="not_imported")["total"], 2)
+        self.assertEqual(self.view.page()["total"], 2)
+        self.assertEqual(self.view.page(filter_by="not_imported")["total"], 1)
         items = self.view.page(filter_by="not_imported", limit=1)["items"]
-        self.assertEqual(items[0]["status"], "missing")
-        self.assertEqual(self.view.page(filter_by="not_imported", offset=1, limit=1)["items"][0]["status"], "conflict")
-        self.assertEqual(self.view.page(kind="gossip", query="npc which 3")["total"], 1)
+        self.assertEqual(items[0]["status"], "conflict")
+        gossip = ModuleInventory([row("gossip:3:27:a", "gossip", "Fixture NPC", "missing",
+                                      english="Which way?")], None, {}, builder.GOSSIP_MODULE)
+        self.assertEqual(gossip.page(module=builder.GOSSIP_MODULE, query="npc which 3")["total"], 1)
         self.assertEqual(self.view.page(query="ВІТАЮ {ім'я}")["total"], 1)
         self.assertEqual(self.view.page(filter_by="imported")["total"], 1)
         self.assertTrue(self.view.page(filter_by="conflicts")["items"][0]["recorded"])
-        missing = self.view.detail(identity="gossip:3:27:a")
+        missing = gossip.detail(module=builder.GOSSIP_MODULE, identity="gossip:3:27:a")
         self.assertEqual(missing["originals"], ["Which way?"])
         self.assertEqual(missing["candidates"], [])
         self.assertIn("Перекладу", missing["help"])
@@ -89,7 +94,7 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(summary["quest"]["multiple_originals"], 1)
         self.assertEqual(summary["quest"]["mapping_states"]["mapping_conflict"], 2)
         self.assertEqual(summary["quest"]["included"], 1)
-        self.assertEqual(summary["gossip"]["multiple_originals"], 0)
+        self.assertNotIn("gossip", summary)
 
         for filter_by, match, excluded, expected in (
                 ("conflicts", "РІЧКА", "second crossing", conflict),
@@ -99,7 +104,6 @@ class ManagerTests(unittest.TestCase):
                 page = self.view.page(filter_by=filter_by, query=match, kind="quest", limit=1)
                 self.assertEqual([item["id"] for item in page["items"]], [expected["id"]])
                 self.assertEqual(self.view.page(filter_by=filter_by, query=excluded)["total"], 0)
-                self.assertEqual(self.view.page(filter_by=filter_by, kind="gossip")["total"], 0)
         self.assertEqual(self.view.page(status="multiple_originals", query="first crossing")["total"], 1)
         self.assertEqual(self.view.page(status="mapping_conflict")["total"], 2)
 
@@ -144,6 +148,7 @@ class ManagerTests(unittest.TestCase):
         self.archive.write_bytes(b"archive")
         stats = store_successful_build(self.db, artifact_sha256=sha256(b"archive").hexdigest(),
             spoken_revision="a" * 40, classicua_revision="b" * 40,
+            module=builder.GOSSIP_MODULE,
             rows=[{"domain": "gossip_common", "unit": f"common:{hashed}", "entity": "common",
                    "source": "classicua", "route": "agent_verified"},
                   {"domain": "gossip_excluded", "unit": f"npc:5:{hashed}", "entity": "5",
@@ -162,23 +167,23 @@ class ManagerTests(unittest.TestCase):
                 builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {hashed: text}}), patch(
                 "tools.manager_inventory.GossipMachineImport.inspect", return_value=([], placements, 0, set(), empty)), patch(
                 "tools.translation_agent.evidence", side_effect=lambda *a, **k: current):
-            result = load_inventory(*self.paths, self.db, self.archive, state=state)
+            result = load_inventory(*self.paths, self.db, self.archive, state=state, module=builder.GOSSIP_MODULE)
             current[:] = [assessment("changed")]
-            stale = load_inventory(*self.paths, self.db, self.archive, state=state)
+            stale = load_inventory(*self.paths, self.db, self.archive, state=state, module=builder.GOSSIP_MODULE)
         self.assertEqual(result.summary()["gossip"]["included"], 1)
         self.assertEqual(result.summary()["gossip"]["missing"], 1)
         self.assertEqual(result.summary()["gossip"]["unverified_alternatives"], 1)
         self.assertEqual(result.summary()["gossip"]["agent_warnings"], 1)
         self.assertEqual(result.summary()["gossip"]["conflicts"], 1)
-        self.assertIsNone(result.page(filter_by="conflicts")["items"][0]["built"])
+        self.assertIsNone(result.page(module=builder.GOSSIP_MODULE, filter_by="conflicts")["items"][0]["built"])
         self.assertEqual(result.summary()["gossip_archive_units"]["common_hashes"], 1)
-        included = result.page(filter_by="imported")["items"][0]
+        included = result.page(module=builder.GOSSIP_MODULE, filter_by="imported")["items"][0]
         self.assertFalse(included["recorded"])
-        assessed = result.detail(identity=included["id"])["candidates"][0]
+        assessed = result.detail(module=builder.GOSSIP_MODULE, identity=included["id"])["candidates"][0]
         self.assertIn("{ім'я}", assessed["text"])
         self.assertEqual(assessed["validation"], "needs_human_review")
         self.assertFalse(assessed["checks"]["line_breaks"])
-        past = stale.detail(identity=included["id"])["candidates"][0]
+        past = stale.detail(module=builder.GOSSIP_MODULE, identity=included["id"])["candidates"][0]
         self.assertEqual(past["validation"], "stale")
         self.assertNotIn("checks", past)
 
@@ -245,7 +250,7 @@ class ManagerTests(unittest.TestCase):
         with connection(self.db) as db:
             self.assertEqual(db.execute("SELECT secret FROM unrelated").fetchone()[0], "leave me")
             self.assertEqual(db.execute("SELECT id FROM source_candidates").fetchone()[0], "c")
-            self.assertFalse(db.execute("SELECT * FROM source_candidate_decisions").fetchall())
+            self.assertEqual(db.execute("SELECT decision FROM source_candidate_decisions").fetchone()[0], "rejected")
             self.assertEqual(db.execute("SELECT COUNT(*) FROM build_import_snapshots").fetchone()[0], 1)
             units, valid = latest_units(db, self.archive, "a" * 40, "b" * 40)
             self.assertIn(("quests", "42:accept"), units)
@@ -281,6 +286,49 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(self.archive.read_bytes(), b"previous archive")
         self.assertEqual(checksum.read_text(), "previous checksum")
 
+    def test_legacy_snapshot_does_not_become_a_module_build(self):
+        from adapters.import_statistics import latest_successful_build
+        values = dict(spoken_revision="a" * 40, classicua_revision="b" * 40, rows=[])
+        legacy = store_successful_build(self.db, artifact_sha256="a" * 64, **values)
+        self.assertIsNone(latest_successful_build(self.db, MODULE))
+        self.assertIsNone(latest_successful_build(self.db, builder.GOSSIP_MODULE))
+        gossip = store_successful_build(self.db, artifact_sha256="b" * 64,
+                                       module=builder.GOSSIP_MODULE, **values)
+        with patch.object(builder, "build", side_effect=self.fake_build), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view):
+            quest = reimport(*self.paths, self.db, reset=True, confirm=True)
+        self.assertNotEqual(quest["inventory"]["snapshot_id"], gossip["snapshot_id"])
+        self.assertEqual(latest_successful_build(self.db, builder.GOSSIP_MODULE)["snapshot_id"],
+                         gossip["snapshot_id"])
+        self.assertEqual(latest_successful_build(self.db)["snapshot_id"], legacy["snapshot_id"])
+
+    def test_new_review_routes_reject_unsafe_http_before_dispatch(self):
+        manager = ManagerUI(*self.paths, self.db)
+        http = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("token", 0))
+        port = http.server_address[1]
+        http.RequestHandlerClass = create_handler("token", port, manager)
+        thread = Thread(target=http.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (http.shutdown(), http.server_close(), thread.join(5)))
+        origin = f"http://127.0.0.1:{port}"
+        standard = {"Content-Type": "application/json", "Origin": origin, "X-Review-Token": "token"}
+        cases = [
+            (standard | {"Host": "invalid.example"}, b"{}", 403),
+            (standard | {"Origin": "http://invalid.example"}, b"{}", 403),
+            (standard | {"X-Review-Token": ""}, b"{}", 403),
+            (standard | {"Content-Type": "text/plain"}, b"{}", 403),
+            (standard, b'{"module":1,"module":2}', 400),
+            (standard, b"x" * 262145, 413),
+        ]
+        with patch.object(manager, "action") as dispatch:
+            for action in ("confirm_candidate", "review_mapping", "save_translation"):
+                for headers, body, status in cases:
+                    with self.subTest(action=action, status=status), self.assertRaises(HTTPError) as err:
+                        urlopen(Request(origin + "/api/manager/" + action, headers=headers,
+                                        data=body), timeout=5)
+                    self.assertEqual(err.exception.code, status)
+            dispatch.assert_not_called()
+
     def test_reset_rejects_sqlite_path_in_sources_and_stale_writer(self):
         self.paths[0].mkdir()
         with self.assertRaisesRegex(ValueError, "unsafe_database_path"):
@@ -304,14 +352,14 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(payload["artifact"], str(self.archive))
         self.assertEqual(payload["sha256"], sha256(self.archive.read_bytes()).hexdigest())
         with ZipFile(self.archive) as zipped:
-            self.assertIn("{ім'я}", zipped.read("Spoken_Quests_UA/Translations.lua").decode())
+            self.assertIn("{ім'я}", zipped.read("Spoken_Quest_UA/Translations.lua").decode())
 
     def test_http_contract_and_worker_cli_equivalence(self):
         manager = ManagerUI(*self.paths, self.db)
-        http = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(None, "test", 0))
+        http = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("test", 0))
         self.addCleanup(http.server_close)
         port = http.server_address[1]
-        http.RequestHandlerClass = create_handler(None, "test", port, manager=manager)
+        http.RequestHandlerClass = create_handler("test", port, manager=manager)
         worker = Thread(target=http.serve_forever, daemon=True)
         worker.start()
         self.addCleanup(worker.join, 5)
@@ -327,12 +375,18 @@ class ManagerTests(unittest.TestCase):
 
         with urlopen(url + "/", timeout=5) as response:
             body = response.read().decode()
-        self.assertEqual(body.count("Переімпортувати Quest + Gossip"), 1)
-        self.assertIn('href="/advanced"', body)
+        self.assertEqual(body.count("Переімпортувати Quest"), 1)
+        self.assertNotIn('/advanced', body)
+        with self.assertRaises(HTTPError) as missing:
+            urlopen(url + "/advanced", timeout=5)
+        self.assertEqual(missing.exception.code, 404)
         with patch("tools.manager_inventory.load_inventory", return_value=self.view), patch.object(
                 manager, "validate_checkouts", return_value=("fixture",)):
-            self.assertEqual(post("list", {"module": MODULE, "kind": "gossip"})["total"], 1)
-            self.assertEqual(post("detail", {"module": MODULE, "identity": "gossip:3:27:a"})["status"], "missing")
+            self.assertEqual(post("list", {"module": MODULE})["total"], 2)
+            self.assertEqual(post("detail", {"module": MODULE, "identity": "q:43:progress"})["status"], "conflict")
+            with self.assertRaises(HTTPError) as cross_module:
+                post("detail", {"module": MODULE, "identity": "gossip:3:27:a"})
+            self.assertEqual(cross_module.exception.code, 400)
         with self.assertRaises(HTTPError) as error:
             post("reimport", {"module": MODULE, "confirm": True, "path": "/anything"})
         self.assertEqual(error.exception.code, 400)
@@ -375,11 +429,7 @@ class ManagerTests(unittest.TestCase):
                     post("reimport", {"module": MODULE, "confirm": True})
                 self.assertEqual(error.exception.code, 400)
                 self.assertEqual(json.load(error.exception)["reason"], reason)
-        with patch("tools.translation_manager.subprocess.run",
-                   side_effect=subprocess.TimeoutExpired("private path", 600, stderr=b"PRIVATE")):
-            with self.assertRaises(HTTPError) as error:
-                post("reimport", {"module": MODULE, "confirm": True})
-            self.assertEqual(json.load(error.exception)["reason"], "manager_reimport_timed_out_check_build")
+        self.assertNotIn("timeout", worker_run.call_args.kwargs)
 
     def test_cached_inventory_revalidates_both_source_repositories(self):
         def git(path, *args):

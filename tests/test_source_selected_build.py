@@ -52,7 +52,7 @@ class SourceSelectedBuildTests(unittest.TestCase):
                 "human_reviewed_imported_total": 0}}
             preview = {1: {"accept": {"text": "Синтетичний квест", "reviewed": False}}}
             captured = {}
-            def write_zip(files):
+            def write_zip(files, destination):
                 captured.update(files)
                 return Path("dist/synthetic.zip"), "c" * 64
             with enable_sqlite(db), patch.object(
@@ -77,8 +77,8 @@ class SourceSelectedBuildTests(unittest.TestCase):
                 builder, "import_reason_for_quest", return_value={"quest_id": 97279}), patch.object(
                 builder, "write_zip", side_effect=write_zip), patch(
                 "tools.import_build_inventory.collect_build_rows", return_value=[]) as collect:
-                result = builder.build(Path("/unused/classicua"), Path("/unused/spoken"), skipped=skipped)
-            lua = captured["Spoken_Quests_UA/GossipTranslations.lua"].decode("utf-8")
+                result = builder.build(Path("/unused/classicua"), Path("/unused/spoken"), module=builder.GOSSIP_MODULE, skipped=skipped)
+            lua = captured["Spoken_Gossip_UA/GossipTranslations.lua"].decode("utf-8")
             if conflict:
                 from lua_runtime import run_lua
                 self.assertNotIn("Альтернативний переклад", lua)
@@ -98,7 +98,7 @@ function hooksecurefunc(tbl, key, cb)
 end
 function SpokenUkrainian:ExpandQuestText(text) return text end
 GossipOptionButtonMixin = {Setup = function(widget, info) widget:SetText(info.name) end}
-''' + captured["Spoken_Quests_UA/GossipFrame.lua"].decode("utf-8") + r'''
+''' + captured["Spoken_Gossip_UA/GossipFrame.lua"].decode("utf-8") + r'''
 local widget = {GetText = function(self) return self.text end,
                 SetText = function(self, text) self.text = text end}
 local option = {name = "Hello traveler."}

@@ -93,8 +93,8 @@ GetAvailableQuestInfo = function(id)
 end
 GetActiveQuestID = function(id) return id == 1 and 97279 or 42 end
 '''
-        for name in ("Spoken_Quests_UA/Translations.lua",
-                     "Spoken_Quests_UA/GossipQuestTitles.lua"):
+        for name in ("Spoken_Quest_UA/Translations.lua",
+                     "Spoken_Quest_UA/GossipQuestTitles.lua"):
             script += "\n" + files[name].decode("utf-8") + "\n"
         script += r'''
 assert(#createdFrames == 1)
