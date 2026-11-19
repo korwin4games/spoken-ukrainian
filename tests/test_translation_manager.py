@@ -305,6 +305,22 @@ class ManagerTests(unittest.TestCase):
                          gossip["snapshot_id"])
         self.assertEqual(latest_successful_build(self.db)["snapshot_id"], legacy["snapshot_id"])
 
+    def test_import_ready_uses_incremental_builder_only_for_quest(self):
+        from tools.translation_manager import reimport
+        with patch.object(builder, "build", side_effect=self.fake_build) as build, patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view):
+            result = reimport(*self.paths, self.db, confirm=True, import_ready=True)
+        self.assertEqual(result["build"], "success")
+        self.assertTrue(build.call_args.kwargs["incremental"])
+        self.assertEqual(result["agent"], {"eligible": 0, "skipped": 0, "reasons": []})
+        self.assertFalse(self.gossip_archive.exists())
+        with self.assertRaisesRegex(ValueError, "manager_invalid_options"):
+            reimport(*self.paths, self.db, module=builder.GOSSIP_MODULE,
+                     confirm=True, import_ready=True)
+        with self.assertRaisesRegex(ValueError, "manager_invalid_options"):
+            reimport(*self.paths, self.db, confirm=True,
+                     reset=True, import_ready=True)
+
     def test_registering_candidate_promotes_only_quest_ledger_without_building(self):
         self.gossip_archive.write_bytes(b"existing gossip archive")
         with connection(self.db) as db:
