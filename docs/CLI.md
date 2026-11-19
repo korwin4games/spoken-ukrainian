@@ -1,5 +1,7 @@
 # Spoken Ukrainian CLI
 
+**Quest local UI:** For normal Quest translation selection, use the simplified [Translation Manager guide](TRANSLATION_MANAGER.md). Historic advanced review commands remain available for migration and diagnostics, but the Quest screen no longer requires reviewers or attestations.
+
 [Українська](CLI.uk.md)
 
 ## Setup and source pins
