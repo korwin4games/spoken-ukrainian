@@ -70,7 +70,7 @@ Object.assign(errors, {
   manager_invalid_review_request: "Перевірте вибраний запис і підтвердження.",
   manager_review_checks_required: "Підтвердьте всі п’ять перевірок.",
   manager_review_context_blocked: "Цей контекст не можна безпечно зіставити з ігровим записом.",
-  manager_invalid_translation_format: "Перевірте підстановки та форматування за англійським оригіналом.",
+  manager_invalid_translation_format: "Введіть непорожній текст до 60 000 символів без NUL.",
   manager_candidate_unavailable: "Кандидат застарів, відхилений або відсутній. Оновіть запис.",
   manager_candidate_not_built: "Текст не ввійшов до ZIP. Перевірте конфлікти та чинні схвалення.",
   conflicting_quest_runtime_variants: "Спершу відкличте суперечливе чинне схвалення або вибір джерела.",
@@ -245,9 +245,7 @@ function simpleQuestControls(row) {
     apply.disabled = !editable;
     apply.addEventListener("click", () => {
       const key = select.value || first;
-      if (key && window.confirm("Застосувати цей переклад до квесту та оновити Quest ZIP?")) {
-        run("choose_quest", {candidate: key});
-      }
+      if (key) run("choose_quest", {candidate: key});
     });
     panel.append(select, preview, apply);
   }
@@ -265,7 +263,7 @@ function simpleQuestControls(row) {
   codex.type = "button";
   codex.addEventListener("click", async () => {
     const prompt = "Translate these WoW: Forever Quest texts to natural Ukrainian. " +
-      "Preserve all variables, placeholders, gender markers and formatting exactly. " +
+      "Keep in-game names and formatting readable when translating. " +
       "Use Ukrainian Warcraft terminology, not Russian localization. " +
       "One Ukrainian translation must work for ALL English variants. " +
       "Return ONLY the Ukrainian translation:\n\n" + row.originals.join("\n\n---\n\n");
