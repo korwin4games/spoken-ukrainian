@@ -424,6 +424,9 @@ class ManagerUI:
         if type(module) is not str or module not in MODULE_DOMAINS:
             raise ValueError("manager_unknown_module")
         mutations = ("confirm_candidate", "choose_quest", "save_quest", *REVIEW_ONLY)
+        if action in ("choose_quest", "save_quest"):
+            with timing("api", module, action):
+                return self._save_quest(action, module, payload)
         if action in ("reimport", "import_ready") or action in mutations:
             review = None if action in ("reimport", "import_ready") else (action, {k: v for k, v in payload.items() if k != "module"})
             options = payload if review is None else {"module": module, "confirm": True}
@@ -439,6 +442,64 @@ class ManagerUI:
                 return self._browse(action, module, payload)
             except sqlite3.Error:
                 raise ValueError("manager_state_changed_retry_reimport") from None
+
+    def _catalog_stamp(self, module):
+        with timing("sqlite_generation", module):
+            database = self._database_generation()
+        legacy = tuple(self._stat(ROOT / "build" / name) for name in MODULE_LEDGERS)
+        return database, file_stamp(ARCHIVES[module]), legacy
+
+    def _save_quest(self, action, module, payload):
+        """Store one Quest selection using the verified warm catalog, no source re-audit.
+
+        Browser saves are small SQLite transactions. Module builds still use
+        the staged worker, checksum verification, and atomic ZIP promotion.
+        """
+        from tools.build_ukrainian import DIST
+        from tools.quest_simple import apply_choice
+
+        expected = ({"module", "identity", "binding", "candidate", "confirm"}
+                    if action == "choose_quest" else
+                    {"module", "identity", "binding", "text", "confirm"})
+        if (module != QUEST_MODULE or set(payload) != expected
+                or payload.get("confirm") is not True):
+            raise ValueError("manager_invalid_review_request")
+        if (self.db_path.suffix not in (".sqlite", ".sqlite3", ".db")
+                or any(self.db_path.resolve().is_relative_to(root)
+                       for root in (self.classicua, self.spoken, ROOT / "addons"))
+                or self.db_path.exists() and
+                (not self.db_path.is_file() or self.db_path.stat().st_nlink != 1)):
+            raise ValueError("manager_unsafe_database_path")
+        with manager_lock(DIST):
+            # Reuse the same pinned catalog already used to display the Quest.
+            # Rebuild only if it has genuinely changed since browsing.
+            row = self._browse("detail", module, {"module": module, "identity": payload["identity"]})
+            with self._lock:
+                cached = self._cached.get(module)
+                if (cached is None or cached[1].state is None
+                        or cached[0] != self._catalog_stamp(module)):
+                    raise ValueError("manager_state_changed_retry_reimport")
+                pinned = self._pins
+                source_before = source_stamps()
+                with connection(self.db_path) as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    try:
+                        # Writers outside the manager cannot change the DB after
+                        # BEGIN IMMEDIATE. Recheck for commits before this lock.
+                        if cached[0] != self._catalog_stamp(module):
+                            raise ValueError("manager_state_changed_retry_reimport")
+                        apply_choice(action, {k: v for k, v in payload.items() if k != "module"},
+                                     row, cached[1].state, self.db_path,
+                                     revalidate_inputs=False, db=db)
+                        if (self.validate_checkouts() != pinned
+                                or source_stamps() != source_before):
+                            raise ValueError("manager_source_configuration_changed")
+                        db.commit()
+                    except BaseException:
+                        db.rollback()
+                        raise
+                self._cached.clear()
+        return {"module": module, "build": "review_saved"}
 
     def _run_worker(self, action, module, options, review):
         from tools.build_ukrainian import DIST
@@ -519,12 +580,6 @@ class ManagerUI:
         if set(payload) - allowed:
             raise ValueError("manager_invalid_options")
 
-        def stamp():
-            with timing("sqlite_generation", module):
-                database = self._database_generation()
-            legacy = tuple(self._stat(ROOT / "build" / name) for name in MODULE_LEDGERS)
-            return database, file_stamp(ARCHIVES[module]), legacy
-
         with self._lock:
             with timing("pinned_validation", module):
                 pins = self.validate_checkouts()
@@ -532,7 +587,7 @@ class ManagerUI:
                 self._cached.clear()
                 self._inputs = None
                 self._pins = pins
-            before = stamp()
+            before = self._catalog_stamp(module)
             cached = self._cached.get(module)
             if cached is not None and cached[0] == before:
                 with timing("cache_hit", module):
@@ -547,7 +602,7 @@ class ManagerUI:
                                 self._cached.clear()
                                 self._inputs = None
                                 raise ValueError("manager_source_configuration_changed")
-                        after = stamp()
+                        after = self._catalog_stamp(module)
                         if before == after:
                             break
                         before = after

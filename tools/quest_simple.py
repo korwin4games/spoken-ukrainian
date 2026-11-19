@@ -114,7 +114,7 @@ def resolved(state, db_path):
     return result
 
 
-def apply_choice(action, payload, row, state, db_path):
+def apply_choice(action, payload, row, state, db_path, *, revalidate_inputs=True, db=None):
     required = ({"identity", "binding", "candidate", "confirm"} if action == "choose_quest"
                 else {"identity", "binding", "text", "confirm"})
     if set(payload) != required or payload.get("confirm") is not True:
@@ -122,7 +122,7 @@ def apply_choice(action, payload, row, state, db_path):
     if (row.get("type") != "quest" or not row.get("review_binding")
             or payload["binding"] != row["review_binding"]):
         raise ValueError("manager_review_context_blocked")
-    if state.revalidate_inputs is not None:
+    if revalidate_inputs and state.revalidate_inputs is not None:
         state.revalidate_inputs()
     targets = {v["target_id"] for v in row["original_variants"]}
     evidence, originals = binding(state, row["id"], targets)
@@ -139,7 +139,9 @@ def apply_choice(action, payload, row, state, db_path):
         if len(candidates) != 1:
             raise ValueError("manager_candidate_unavailable")
         text = next(iter(candidates))
-        prior = selections(db_path).get(row["id"])
+        prior = (db.execute("""SELECT evidence, text, text_sha256, source
+            FROM quest_simple_choices WHERE moment=?""", (row["id"],)).fetchone()
+            if db is not None else selections(db_path).get(row["id"]))
         if prior and prior[0] == payload["binding"] and prior[1] == text:
             source = prior[3]
         elif any(c["text"] == text and c.get("provider") == "classicua" for c in row["candidates"]):
@@ -150,12 +152,16 @@ def apply_choice(action, payload, row, state, db_path):
         text, source = payload["text"], "manual"
     if not usable_text(text):
         raise ValueError("manager_invalid_translation_format")
-    with connection(db_path) as db:
-        db.execute("""INSERT INTO quest_simple_choices
+    statement = """INSERT INTO quest_simple_choices
             (moment, evidence, text, text_sha256, source)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(moment) DO UPDATE SET evidence=excluded.evidence,
                 text=excluded.text, text_sha256=excluded.text_sha256,
-                source=excluded.source, changed_at=CURRENT_TIMESTAMP""",
-            (row["id"], digest(evidence), text, sha(text), source))
+                source=excluded.source, changed_at=CURRENT_TIMESTAMP"""
+    values = (row["id"], digest(evidence), text, sha(text), source)
+    if db is None:
+        with connection(db_path) as own_db:
+            own_db.execute(statement, values)
+    else:
+        db.execute(statement, values)
     return sha(text)
