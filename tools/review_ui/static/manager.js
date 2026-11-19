@@ -56,6 +56,7 @@ const errors = {
   manager_spoken_checkout_invalid: "Потрібна чиста копія Spoken на закріпленій ревізії.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
+let readyCount = 0;
 let loading = 0;
 const pageSize = 30;
 
@@ -111,6 +112,25 @@ async function call(action, payload) {
 
 function metrics(summary, build) {
   const tally = key => summary[domain()][key];
+  if (domain() === "quest") {
+    const q = summary.quest;
+    const cards = [
+      ["Імпортовано", q.quest_imported ?? 0],
+      ["Готові до імпорту", q.ready ?? 0],
+      ["Проблемні", q.quest_problem ?? 0],
+    ];
+    el("metrics").className = "metrics quest-summary";
+    el("metrics").replaceChildren(...cards.map(([name, value]) => {
+      const card = make("div", undefined, "metric");
+      card.append(make("span", name), make("strong", number.format(value)));
+      return card;
+    }));
+    el("build-state").textContent = build ?
+      "Останній Quest ZIP: " + build.built_at + " UTC" :
+      "Quest ZIP ще не зібрано.";
+    return;
+  }
+  el("metrics").className = "metrics";
   const cells = [
     ["Усього записів", "total"], ["Імпортовано в ZIP", "included"], ["Не в ZIP", "not_included"],
     ["Конфлікти кандидатів", "conflicts"], ["Кілька перевірених оригіналів", "multiple_originals"],
@@ -164,9 +184,9 @@ function renderList(data) {
   });
   el("rows").replaceChildren(...rows);
   if (domain() === "quest") {
-    const count = Number(data.summary.quest?.ready || 0);
-    el("reimport").textContent = "Імпортувати все (" + number.format(count) + ")";
-    el("reimport").disabled = busy || count === 0;
+    readyCount = Number(data.summary.quest?.ready || 0);
+    el("reimport").textContent = "Імпортувати все (" + number.format(readyCount) + ")";
+    el("reimport").disabled = busy || readyCount === 0;
   }
   el("list-message").hidden = rows.length > 0;
   el("list-message").textContent = rows.length ? "" : "За цими фільтрами записів немає.";
@@ -182,7 +202,8 @@ async function list() {
   el("list-message").textContent = "Оновлюємо список…";
   try {
     const result = await call("list", {
-      query: el("query").value, filter_by: el("filter").value,
+      query: el("query").value,
+      filter_by: domain() === "quest" ? el("quest-filter").value : el("filter").value,
       status: el("translation-status").value, offset, limit: pageSize,
     });
     if (seq === listSeq) renderList(result);
@@ -231,6 +252,7 @@ function simpleQuestControls(row) {
     } finally {
       busy = false;
       for (const id of ["preview", "reimport", "module"]) el(id).disabled = false;
+      el("reimport").disabled = domain() === "quest" && readyCount === 0;
     }
   };
   panel.append(make("h3", options.size > 1 ? "Оберіть переклад" :
@@ -629,6 +651,7 @@ async function reimport(dryRun) {
   finally {
     busy = false;
     for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = false;
+    el("reimport").disabled = domain() === "quest" && readyCount === 0;
   }
 }
 
@@ -639,12 +662,16 @@ el("query").addEventListener("input", () => {
   timer = setTimeout(resetList, 275);
 });
 el("filters").addEventListener("submit", event => { event.preventDefault(); resetList(); });
-for (const id of ["filter", "translation-status"]) el(id).addEventListener("change", resetList);
+for (const id of ["filter", "translation-status", "quest-filter"])
+  el(id).addEventListener("change", resetList);
 function refreshModuleControls() {
   el("reimport").textContent = domain() === "quest" ? "Імпортувати все" : "Оновити " + domainName();
   const simple = domain() === "quest";
-  for (const id of ["metrics", "build-state", "reset-control", "filter-control",
-                    "translation-status-control", "preview"]) el(id).hidden = simple;
+  for (const id of ["reset-control", "filter-control", "translation-status-control", "preview"])
+    el(id).hidden = simple;
+  el("quest-filter-control").hidden = !simple;
+  el("metrics").hidden = false;
+  el("build-state").hidden = false;
   el("operation-heading").textContent = simple ? "Автоматичний імпорт" : "Оновити переклади модуля";
   el("inventory-heading").textContent = "Переклади " + domainName();
   for (const option of document.querySelectorAll('option[value="multiple_originals"]')) {
@@ -654,7 +681,8 @@ function refreshModuleControls() {
 el("module").addEventListener("change", () => {
   detailSeq++;
   selected = null;
-  el("filter").value = el("translation-status").value = "all";
+  el("filter").value = el("translation-status").value = el("quest-filter").value = "all";
+  readyCount = 0;
   el("reset").checked = false;
   for (const id of ["metrics", "rows", "selected", "operation-status", "build-state", "match-count", "page"])
     el(id).replaceChildren();
