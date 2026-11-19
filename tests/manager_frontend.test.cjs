@@ -178,6 +178,34 @@ test("Quest bulk button imports all ready records and skips confirmation modal",
   assert.equal(b.el("operation-status").textContent, "Усі готові переклади імпортовано в Quest ZIP.");
 });
 
+test("Quest summary and filters show only imported, ready and problematic buckets", async () => {
+  const b = browser((action, body) => {
+    assert.equal(action, "list");
+    return body.module === quest ? {
+      items: [], total: 10, build: null,
+      summary: {quest: {total: 10, quest_imported: 5, ready: 2, quest_problem: 3}},
+    } : listing(body.module);
+  });
+  await flush();
+  assert.equal(b.el("quest-filter-control").hidden, false);
+  assert.equal(b.el("filter-control").hidden, true);
+  assert.equal(b.el("metrics").children.length, 3);
+  assert.deepEqual(b.el("metrics").children.map(x => x.children[0].textContent),
+    ["Імпортовано", "Готові до імпорту", "Проблемні"]);
+  assert.deepEqual(b.el("metrics").children.map(x => x.children[1].textContent),
+    ["5", "2", "3"]);
+  assert.equal(b.el("reimport").textContent, "Імпортувати все (2)");
+  b.el("quest-filter").value = "quest_problem";
+  b.el("quest-filter").events.change();
+  await flush();
+  assert.equal(b.requests.at(-1).filter_by, "quest_problem");
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  assert.equal(b.el("quest-filter-control").hidden, true);
+  assert.equal(b.el("filter-control").hidden, false);
+});
+
 test("Quest missing translation can be entered without reviewer identity", async () => {
   const row = {...fixture, status:"missing", review_binding:"pinned-binding", candidates:[]};
   const b = browser((action, body) => {
