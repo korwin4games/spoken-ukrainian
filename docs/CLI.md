@@ -169,12 +169,9 @@ import states separately, with review queue coverage, agent warnings by
 assessed version and unverified Gossip alternatives by NPC/hash occurrence.
 The summary counts candidate conflicts (`conflicts`) and rows with multiple
 verified English originals (`multiple_originals`) separately.
-Register a ClassicUA candidate, write a canonical Quest draft, or confirm a
-selected version in the Manager. Confirmation records five human checks and
-verifies the selected text against the actual Quest ZIP. For multiple originals,
-one approval covers the exact pinned set of wordings and contexts. A changed
-revision or variant requires a new review. Quest-only `reimport` reapplies
-current decisions without changing the Gossip ZIP or build head. Use the
+Use **Save translation** or **Save selection** for a Quest moment in the
+Manager. **Import all** applies only ready Quest moments. The Quest ZIP and
+Gossip ZIP have separate build heads. Use the
 [Manager example](TRANSLATION_MANAGER.md#приклад-перевірки-quest) for selecting
 between translations and testing the Quest Journal and font in WoW: Forever.
 `--json` includes detailed results
@@ -186,3 +183,25 @@ uv run --locked python tools/translation_manager.py reimport --module Spoken_Que
 uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm
 uv run --locked python tools/translation_manager.py reimport --module Spoken_Gossip_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm
 ```
+
+### Manager cache and timings
+
+The server keeps one catalog per module and shares the parsed, pinned source
+inputs between them. Search, filters, pagination and details reuse those
+catalogs. Each browse still checks both Git checkouts for the expected revision
+and cleanliness. Source pin, manifest or provider policy changes reload the
+shared inputs. Database commits, database replacement, legacy ledger changes,
+or a changed module ZIP invalidate affected catalog reads. SQLite
+`PRAGMA data_version` detects external commits that are still in the WAL.
+Successful promotion clears the catalogs. A failed worker leaves the current
+catalog eligible for reuse if its input fingerprints match.
+
+Set `SPOKEN_MANAGER_TIMING=1` in the environment before launching
+`review_ui_server.py`. Lines marked `manager_timing` report stages, module,
+action and milliseconds. The logs omit translation bodies and reviewer data.
+Compare builds using the same source commits and copies of the same private
+SQLite database and ZIPs. Start a fresh server, open Quest, repeat the list or
+search, switch to Gossip, repeat, then switch back and forth. Use `api` for
+server dispatch latency and `api_response` to include response serialization
+and writing. The first visit to each module is a catalog miss. A first visit
+to Gossip after Quest can already reuse the shared sources.

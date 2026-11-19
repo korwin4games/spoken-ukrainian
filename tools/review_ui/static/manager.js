@@ -44,7 +44,7 @@ const routes = {
 const errors = {
   manager_confirmation_required: "Підтвердіть переімпорт.",
   manager_reimport_already_running: "Інший переімпорт уже триває. Дочекайтеся його завершення.",
-  manager_state_changed_retry_reimport: "Дані змінилися під час збірки. Оновіть список і повторіть.",
+  manager_state_changed_retry_reimport: "Дані змінилися або база зайнята. Оновіть список і повторіть дію.",
   no_unambiguous_quest_imports_for_local_test_pack: "Для збірки бракує однозначних перекладів квестів.",
   manager_reimport_timed_out_check_build: "Час очікування минув. Оновіть список, щоб перевірити стан збірки.",
   manager_reimport_worker_unavailable: "Не вдалося запустити збірку. Перезапустіть локальний менеджер.",
@@ -57,7 +57,8 @@ const errors = {
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
 let readyCount = 0;
-let loading = 0;
+const loading = new Map();
+const recentLists = new Map();
 const pageSize = 30;
 
 function make(tag, text, cls) {
@@ -86,14 +87,19 @@ function errorMessage(error) {
 function domain() { return el("module").value === "Spoken_Quest_UA" ? "quest" : "gossip"; }
 function domainName() { return domain() === "quest" ? "Quest" : "Gossip"; }
 
-async function whileLoading(work) {
-  loading += 1;
+function stopLoading(lane) {
+  loading.delete(lane);
+  el("loading-bar").hidden = loading.size === 0;
+}
+
+async function whileLoading(work, lane = Symbol()) {
+  const request = Symbol();
+  loading.set(lane, request);
   el("loading-bar").hidden = false;
   try {
     return await work();
   } finally {
-    loading -= 1;
-    el("loading-bar").hidden = loading === 0;
+    if (loading.get(lane) === request) stopLoading(lane);
   }
 }
 
@@ -106,8 +112,9 @@ async function call(action, payload) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.reason || result.error || "manager_request_failed");
+    if (!["list", "detail"].includes(action) && !payload.dry_run) recentLists.clear();
     return result;
-  });
+  }, action);
 }
 
 function metrics(summary, build) {
@@ -196,17 +203,25 @@ function renderList(data) {
   el("next").disabled = offset + pageSize >= data.total;
 }
 
-async function list() {
+async function list(restore = false) {
   const seq = ++listSeq;
+  const module = el("module").value;
+  const payload = {
+    query: el("query").value,
+    filter_by: domain() === "quest" ? el("quest-filter").value : el("filter").value,
+    status: el("translation-status").value, offset, limit: pageSize,
+  };
+  const key = JSON.stringify(payload);
+  const previous = recentLists.get(module);
+  if (restore && previous?.key === key) renderList(previous.result);
   el("list-message").hidden = false;
   el("list-message").textContent = "Оновлюємо список…";
   try {
-    const result = await call("list", {
-      query: el("query").value,
-      filter_by: domain() === "quest" ? el("quest-filter").value : el("filter").value,
-      status: el("translation-status").value, offset, limit: pageSize,
-    });
-    if (seq === listSeq) renderList(result);
+    const result = await call("list", payload);
+    if (seq === listSeq) {
+      recentLists.set(module, {key, result});
+      renderList(result);
+    }
   } catch (error) {
     if (seq === listSeq) el("list-message").textContent = errorMessage(error);
   }
@@ -674,6 +689,8 @@ async function reimport(dryRun) {
 let timer;
 function resetList() { offset = 0; clearTimeout(timer); list(); }
 el("query").addEventListener("input", () => {
+  listSeq++;
+  stopLoading("list");
   clearTimeout(timer);
   timer = setTimeout(resetList, 275);
 });
@@ -696,6 +713,7 @@ function refreshModuleControls() {
 }
 el("module").addEventListener("change", () => {
   detailSeq++;
+  stopLoading("detail");
   selected = null;
   el("filter").value = el("translation-status").value = el("quest-filter").value = "all";
   readyCount = 0;
@@ -705,7 +723,9 @@ el("module").addEventListener("change", () => {
   el("prev").disabled = el("next").disabled = true;
   el("run-summary").hidden = true;
   refreshModuleControls();
-  resetList();
+  offset = 0;
+  clearTimeout(timer);
+  list(true);
 });
 refreshModuleControls();
 el("prev").addEventListener("click", () => { offset = Math.max(0, offset - pageSize); list(); });

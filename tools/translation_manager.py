@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Browse and rebuild the private Quest and Gossip module."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from hashlib import sha256
 import json
@@ -22,6 +23,7 @@ from adapters.sqlite_translation_store import (
 
 from adapters.local_review_store import file_lock, strict_json
 from tools.build_ukrainian import ARCHIVES, MODULE_DOMAINS, QUEST_MODULE
+from tools.manager_timing import timing
 
 MODULE = QUEST_MODULE
 MANAGER_WORKER_TIMEOUT_SECONDS = 600
@@ -351,9 +353,50 @@ class ManagerUI:
         self.classicua, self.spoken = Path(classicua).resolve(), Path(spoken).resolve()
         self.db_path = protected_path(db_path)
         self._lock = Lock()
-        self._cached = None
-        self._stamp = None
+        self._cached = {}
         self._pins = None
+        self._inputs = None
+        self._reader = None
+        self._reader_identity = None
+
+    def close(self):
+        with self._lock:
+            if self._reader is not None:
+                self._reader.close()
+                self._reader = None
+            self._cached.clear()
+            self._inputs = None
+            self._pins = None
+
+    @staticmethod
+    def _stat(path):
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return None
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+    def _database_generation(self):
+        stamp = self._stat(protected_path(self.db_path))
+        identity = stamp[:2] if stamp else None
+        if self._reader is not None and identity != self._reader_identity:
+            self._reader.close()
+            self._reader = None
+            self._cached.clear()
+        if identity is None:
+            return None
+        if self._reader is None:
+            self._reader = sqlite3.connect(self.db_path.as_uri() + "?mode=ro", uri=True,
+                                           isolation_level=None, check_same_thread=False)
+            self._reader_identity = identity
+        return stamp, self._reader.execute("PRAGMA data_version").fetchone()[0]
+
+    def _load_inputs(self):
+        from tools.review_ui_server import load_review_inputs
+
+        if self._inputs is None:
+            self._inputs = load_review_inputs(self.classicua, self.spoken, keep_lines=True)
+        return self._inputs
 
     def validate_checkouts(self):
         """Validate Git identity and tracked cleanliness without rebuilding the catalog."""
@@ -362,14 +405,17 @@ class ManagerUI:
 
         pin_file = (ROOT / "sources.lock.json").read_bytes()
         pins = json.loads(pin_file)
-        try:
-            GitSource(self.classicua, pins["classicua"]["revision"])
-        except (SourceError, OSError):
-            raise ValueError("manager_classicua_checkout_invalid") from None
-        try:
-            PublicSource(self.spoken, pins["spoken"])
-        except (ValueError, OSError):
-            raise ValueError("manager_spoken_checkout_invalid") from None
+        with ThreadPoolExecutor(max_workers=2) as checks:
+            classicua = checks.submit(GitSource, self.classicua, pins["classicua"]["revision"])
+            spoken = checks.submit(PublicSource, self.spoken, pins["spoken"])
+            try:
+                classicua.result()
+            except (SourceError, OSError):
+                raise ValueError("manager_classicua_checkout_invalid") from None
+            try:
+                spoken.result()
+            except (ValueError, OSError):
+                raise ValueError("manager_spoken_checkout_invalid") from None
         return (pin_file, (ROOT / "config/translation_sources.json").read_bytes(),
                 (ROOT / "tests/stage3_sources.json").read_bytes())
 
@@ -386,8 +432,13 @@ class ManagerUI:
                     or action == "import_ready" and (module != QUEST_MODULE or
                        options.get("reset") or options.get("dry_run") or not options.get("confirm"))):
                 raise ValueError("manager_invalid_options")
-            return self._run_worker(action, module, options, review)
-        return self._browse(action, module, payload)
+            with timing("api", module, action):
+                return self._run_worker(action, module, options, review)
+        with timing("api", module, action if action in ("list", "detail", "stats") else "-"):
+            try:
+                return self._browse(action, module, payload)
+            except sqlite3.Error:
+                raise ValueError("manager_state_changed_retry_reimport") from None
 
     def _run_worker(self, action, module, options, review):
         from tools.build_ukrainian import DIST
@@ -448,10 +499,12 @@ class ManagerUI:
             raise ValueError("manager_source_configuration_changed")
         review_only = action in REVIEW_ONLY
         try:
-            promote(self.db_path, workspace / "translations.sqlite3", baseline, ARCHIVES[module],
-                    None if review_only else staged_zip(workspace), archive_baseline, workspace,
-                    reset or action == "confirm_candidate", module,
-                    expected_sha=None if review_only else result["sha256"])
+            with self._lock:
+                promote(self.db_path, workspace / "translations.sqlite3", baseline, ARCHIVES[module],
+                        None if review_only else staged_zip(workspace), archive_baseline, workspace,
+                        reset or action == "confirm_candidate", module,
+                        expected_sha=None if review_only else result["sha256"])
+                self._cached.clear()
         except (ValueError, OSError, RuntimeError, sqlite3.Error) as error:
             reason = str(error)
             raise ValueError(reason if reason in WORKER_ERRORS else "manager_reimport_failed") from None
@@ -467,33 +520,40 @@ class ManagerUI:
             raise ValueError("manager_invalid_options")
 
         def stamp():
-            paths = (self.db_path, ARCHIVES[module])
-            def stat(path):
-                try:
-                    result = path.stat()
-                except FileNotFoundError:
-                    return None
-                return result.st_ino, result.st_mtime_ns, result.st_size
-            return tuple(stat(path) for path in paths)
+            with timing("sqlite_generation", module):
+                database = self._database_generation()
+            legacy = tuple(self._stat(ROOT / "build" / name) for name in MODULE_LEDGERS)
+            return database, file_stamp(ARCHIVES[module]), legacy
 
         with self._lock:
-            pins = self.validate_checkouts()
-            before = (module, stamp())
-            if self._cached is None or pins != self._pins or self._stamp != before:
-                view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVES[module], module=module)
-                if self.validate_checkouts() != pins:
-                    raise ValueError("manager_source_configuration_changed")
-                after = (module, stamp())
-                if before != after:
-                    # First access can initialize SQLite or migrate a legacy ledger.
-                    view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVES[module], module=module)
-                    if after != (module, stamp()) or self.validate_checkouts() != pins:
-                        raise ValueError("manager_state_changed_retry_reimport")
-                    before = after
-                self._cached = view
+            with timing("pinned_validation", module):
+                pins = self.validate_checkouts()
+            if pins != self._pins:
+                self._cached.clear()
+                self._inputs = None
                 self._pins = pins
-                self._stamp = before
-            view = self._cached
+            before = stamp()
+            cached = self._cached.get(module)
+            if cached is not None and cached[0] == before:
+                with timing("cache_hit", module):
+                    view = cached[1]
+            else:
+                with timing("cache_miss", module):
+                    for _ in range(2):
+                        view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVES[module],
+                                              module=module, input_loader=self._load_inputs)
+                        after = stamp()
+                        if before == after:
+                            break
+                        before = after
+                    else:
+                        raise ValueError("manager_state_changed_retry_reimport")
+                with timing("pinned_validation", module):
+                    if self.validate_checkouts() != pins:
+                        self._cached.clear()
+                        self._inputs = None
+                        raise ValueError("manager_source_configuration_changed")
+                self._cached[module] = (after, view)
         if action == "stats":
             return {"module": module, "summary": view.summary(), "build": view.build}
         return view.page(**payload) if action == "list" else view.detail(**payload)

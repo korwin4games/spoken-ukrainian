@@ -4,11 +4,12 @@ from hashlib import sha256
 from http.server import ThreadingHTTPServer
 import io
 import json
+import sqlite3
 from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from threading import Thread
+from threading import Event, Thread
 from types import SimpleNamespace
 import unittest
 import tools.translation_manager as manager_module
@@ -165,13 +166,17 @@ class ManagerTests(unittest.TestCase):
                 context=context, provenance={"source_file": target}, identity=True, rights=True)
         current = [assessment("one")]
         TranslationAgent(self.db, lambda: current).run("one", candidate_ids=[current[0]["id"]])
-        with patch("tools.manager_inventory.read_pinned_corpus", return_value=lines), patch.object(
+        inputs = (None, state.source, state.inventory, state.original_index, lines)
+        with patch("tools.manager_inventory.load_source_policy", return_value=state.policy), patch(
+                "tools.review_ui_server.build_state", side_effect=AssertionError("Quest state loaded for Gossip")), patch.object(
                 builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {hashed: text}}), patch(
                 "tools.manager_inventory.GossipMachineImport.inspect", return_value=([], placements, 0, set(), empty)), patch(
                 "tools.translation_agent.evidence", side_effect=lambda *a, **k: current):
-            result = load_inventory(*self.paths, self.db, self.archive, state=state, module=builder.GOSSIP_MODULE)
+            result = load_inventory(*self.paths, self.db, self.archive, input_loader=lambda: inputs,
+                                    module=builder.GOSSIP_MODULE)
             current[:] = [assessment("changed")]
-            stale = load_inventory(*self.paths, self.db, self.archive, state=state, module=builder.GOSSIP_MODULE)
+            stale = load_inventory(*self.paths, self.db, self.archive, input_loader=lambda: inputs,
+                                   module=builder.GOSSIP_MODULE)
         self.assertEqual(result.summary()["gossip"]["included"], 1)
         self.assertEqual(result.summary()["gossip"]["missing"], 1)
         self.assertEqual(result.summary()["gossip"]["unverified_alternatives"], 1)
@@ -205,8 +210,12 @@ class ManagerTests(unittest.TestCase):
         state = LocalReviewState(fixture.dataset, fixture.inventory(), inventory,
             TextIndex({}, (identity,), {}, {identity: texts}), self.root / "decisions.json", self.root)
         with patch("tools.manager_inventory.read_pinned_corpus", return_value=[]), patch(
-                "tools.gossip_coverage.read_pinned_corpus", return_value=[]):
+                "tools.manager_inventory.GossipMachineImport.inspect") as gossip_inspection, patch(
+                "tools.manager_inventory.discover_groups") as gossip_groups, patch(
+                "tools.manager_inventory.gossip_evidence") as gossip_hashes:
             catalog = load_inventory(*self.paths, self.db, self.archive, state=state)
+        for gossip_work in (gossip_inspection, gossip_groups, gossip_hashes):
+            gossip_work.assert_not_called()
         detail = catalog.detail(identity=identity)
         self.assertEqual(detail["status"], "multiple_originals")
         self.assertEqual(detail["mapping_state"], "mapping_pending")
@@ -388,6 +397,7 @@ class ManagerTests(unittest.TestCase):
 
     def test_new_review_routes_reject_unsafe_http_before_dispatch(self):
         manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
         http = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("token", 0))
         port = http.server_address[1]
         http.RequestHandlerClass = create_handler("token", port, manager)
@@ -440,6 +450,7 @@ class ManagerTests(unittest.TestCase):
 
     def test_http_contract_and_worker_cli_equivalence(self):
         manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
         http = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("test", 0))
         self.addCleanup(http.server_close)
         port = http.server_address[1]
@@ -540,6 +551,7 @@ class ManagerTests(unittest.TestCase):
 
     def test_killed_staging_worker_preserves_live_state_and_releases_lock(self):
         manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
         with connection(self.db):
             pass
         checksum = self.archive.with_suffix(".zip.sha256")
@@ -607,6 +619,7 @@ sleep(60)
         lock = self.root / "sources.lock.json"
         lock.write_text(json.dumps(pins))
         manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
         with patch("tools.translation_manager.ROOT", self.root), patch(
                 "tools.manager_inventory.load_inventory", return_value=self.view) as load:
             manager.action("list", {"module": MODULE})
@@ -622,3 +635,99 @@ sleep(60)
             lock.write_text(json.dumps(pins))
             manager.action("list", {"module": MODULE})
             self.assertEqual(load.call_count, 2)
+
+    def test_cached_catalogs_survive_switching_and_refresh_on_zip_or_pins(self):
+        manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
+        gossip = ModuleInventory([], None, {}, builder.GOSSIP_MODULE)
+        views = {MODULE: self.view, builder.GOSSIP_MODULE: gossip}
+
+        def browse(module, **fields):
+            return manager.action("list", {"module": module, **fields})
+
+        with patch.object(manager, "validate_checkouts", return_value=("first",)) as pins, patch(
+                "tools.manager_inventory.load_inventory", side_effect=lambda *a, module, **k: views[module]) as load:
+            browse(MODULE)
+            browse(builder.GOSSIP_MODULE)
+            self.assertEqual(browse(MODULE, query="Invented", limit=1)["total"], 1)
+            self.assertEqual(browse(MODULE, offset=1, limit=1)["items"][0]["id"], "q:43:progress")
+            self.assertEqual(load.call_count, 2)
+
+            self.archive.write_bytes(b"new archive")
+            browse(MODULE)
+            browse(builder.GOSSIP_MODULE)
+            self.assertEqual(load.call_count, 3)
+            pins.return_value = ("second",)
+            browse(builder.GOSSIP_MODULE)
+            browse(MODULE)
+            self.assertEqual(load.call_count, 5)
+
+    def test_wal_commit_during_catalog_build_retries_and_invalidates_both_modules(self):
+        manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
+        entered, committed = Event(), Event()
+        document = '"quest_cache_fixture"'
+        started = []
+        with connection(self.db) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute(f"CREATE TABLE {document} (value INTEGER)")
+            db.execute(f"INSERT INTO {document} VALUES (0)")
+
+        def load(*args, module, **kwargs):
+            with connection(self.db) as db:
+                value = db.execute(f"SELECT value FROM {document}").fetchone()[0]
+            if not started:
+                started.append(value)
+                entered.set()
+                self.assertTrue(committed.wait(5))
+            return ModuleInventory([], {"value": value}, {}, module)
+
+        def write():
+            if entered.wait(5):
+                with connection(self.db) as db:
+                    db.execute(f"UPDATE {document} SET value = 1")
+                committed.set()
+
+        thread = Thread(target=write)
+        thread.start()
+        try:
+            with patch.object(manager, "validate_checkouts", return_value=("pins",)), patch(
+                    "tools.manager_inventory.load_inventory", side_effect=load) as inventory:
+                result = manager.action("list", {"module": MODULE})
+                self.assertEqual(result["build"], {"value": 1})
+                self.assertEqual(inventory.call_count, 2)
+                manager.action("list", {"module": builder.GOSSIP_MODULE})
+                with sqlite3.connect(self.db, isolation_level=None) as db:
+                    db.execute("PRAGMA wal_autocheckpoint=0")
+                    stamp = self.db.stat().st_mtime_ns
+                    db.execute(f"UPDATE {document} SET value = 2")
+                    self.assertEqual(self.db.stat().st_mtime_ns, stamp)
+                    for module in (MODULE, builder.GOSSIP_MODULE):
+                        self.assertEqual(manager.action("list", {"module": module})["build"], {"value": 2})
+                    self.assertEqual(inventory.call_count, 5)
+                db.close()
+        finally:
+            thread.join(5)
+
+    def test_successful_save_and_ready_import_invalidate_but_failed_promotion_keeps_cache(self):
+        manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
+        (self.root / "promotion.json").write_text(json.dumps(["db", [None, None], ["pins"]]))
+        with patch.object(manager, "validate_checkouts", return_value=("pins",)), patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view) as load, patch(
+                "tools.translation_manager.source_stamps", return_value=["pins"]), patch(
+                "tools.translation_manager.promote") as promote:
+            browse = lambda: manager.action("list", {"module": MODULE})
+            browse()
+            manager._promote_worker_result(self.root, MODULE, "save_quest", False, {})
+            browse()
+            self.assertEqual(load.call_count, 2)
+            promote.side_effect = ValueError("manager_reimport_failed")
+            with self.assertRaisesRegex(ValueError, "manager_reimport_failed"):
+                manager._promote_worker_result(self.root, MODULE, "import_ready", False, {"sha256": "fixture"})
+            browse()
+            self.assertEqual(load.call_count, 2)
+            promote.side_effect = None
+            manager._promote_worker_result(self.root, MODULE, "import_ready", False, {"sha256": "fixture"})
+            browse()
+            self.assertEqual(load.call_count, 3)

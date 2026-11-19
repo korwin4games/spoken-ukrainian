@@ -35,7 +35,7 @@ def ambiguous_quest_moments(index):
             if TARGET_PATTERNS["quest"].fullmatch(identity) and len(variants) > 1}
 
 
-def index_verified_originals(reader, inventory):
+def index_verified_originals(reader, inventory, *, corpus=None):
     """Find actual public originals, with no fabricated text or guessed joins.
 
     The reader is a pinned PublicSource in production. Its read() independently
@@ -57,7 +57,8 @@ def index_verified_originals(reader, inventory):
         observed.setdefault(identity, set()).add(text)
 
     path = "pipelines/quests/corpus/corpus.json.gz"
-    corpus = json.loads(gzip.decompress(reader.read(path)))
+    if corpus is None:
+        corpus = json.loads(gzip.decompress(reader.read(path)))
     for row in corpus["lines"]:
         source = row["source"]
         if source in ("accept", "progress", "complete", "gossip"):

@@ -123,6 +123,31 @@ test("switching module clears detail, resets pagination, and ignores stale respo
   assert.match(b.el("reimport").textContent, /Gossip/);
 });
 
+test("obsolete search and detail requests do not keep the loading indicator active", async () => {
+  let resolveSearch, resolveDetail;
+  const search = new Promise(resolve => { resolveSearch = resolve; });
+  const detail = new Promise(resolve => { resolveDetail = resolve; });
+  let holdSearch = false;
+  const b = browser((action, body) => action === "detail" ? detail :
+    holdSearch && body.module === quest ? search : listing(body.module));
+  await flush();
+  holdSearch = true;
+  const oldList = b.run("list()");
+  const oldDetail = b.run('detail("q:42:accept")');
+  assert.equal(b.el("loading-bar").hidden, false);
+  b.el("query").value = "new query";
+  b.el("query").events.input();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  assert.equal(b.el("loading-bar").hidden, true);
+  resolveSearch(listing(quest));
+  resolveDetail(fixture);
+  await Promise.all([oldList, oldDetail]);
+  assert.equal(b.el("selected").childElementCount, 0);
+  assert.equal(b.el("metrics").children[0].children[1].textContent, "70");
+});
+
 test("Quest selection shows all candidates without reviewer forms or checkboxes", async () => {
   const choices = [
     {text:"Вітаю.", provider:"classicua", sha256:"choice-a", eligibility:"mapping_required"},

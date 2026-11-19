@@ -62,7 +62,6 @@ def connection(path):
     try:
         db.execute("PRAGMA busy_timeout=10000")
         db.execute("PRAGMA synchronous=FULL")
-        db.execute("PRAGMA journal_mode=DELETE")
         db.execute("PRAGMA foreign_keys=ON")
         db.executescript("""
             CREATE TABLE IF NOT EXISTS schema_migrations (

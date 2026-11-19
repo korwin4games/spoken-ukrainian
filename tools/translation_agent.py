@@ -24,95 +24,102 @@ RIGHTS = "docs/CLASSICUA_PERMISSION.md#classicua-permission-record"
 
 
 def evidence(state, spoken, db_path, *, revalidate=True, lines=None,
-             observations=None, quest_machine=None, gossip_machine=None):
+             observations=None, quest_machine=None, gossip_machine=None, domain=None):
     from tools.build_ukrainian import local_gossip_texts
     from adapters.crosswalk import digest as spoken_digest
     from adapters.mapping import target_context
     from tools.gossip_coverage import classicua_hash, read_pinned_corpus
     from tools.gossip_translation_review import normalized
-    from tools.source_revision_review import trusted_inventory
+    from tools.source_revision_review import gossip_contexts, quest_contexts
 
     if revalidate:
         state.revalidate_inputs()
-    if lines is None:
+    if lines is None and domain != "quest":
         lines = read_pinned_corpus(spoken, state.inventory.revision)
-    trusted = trusted_inventory(state, lines)
+    trusted = {}
+    if domain != "gossip":
+        trusted.update(quest_contexts(state))
+    if domain != "quest":
+        trusted.update(gossip_contexts(lines))
     target_revision = state.inventory.revision
-    ambiguous_quests = ambiguous_quest_moments(state.original_index)
     rows = []
-    mapped = set()
-    joins = {review.decision.target_id: review.decision.source_evidence_sha256
-             for review in state.reviews}
-    for observation in state.translation_observations() if observations is None else observations:
-        row = observation.row()
-        provenance = row["provenance"][0]
-        if provenance["provider"] != "classicua":
-            continue
-        if not state.policy.stores("classicua"):
-            continue
-        target = row["target_id"]
-        mapped.add(target)
-        rows.append(candidate(domain="quest", target_id=target, provider="classicua",
-            revision=state.source.revision, target_revision=target_revision,
-            original=observation.original, text=row["text"],
-            context=digest([row["target_context_sha256"], row["source_context_sha256"],
-                            row["source_id"], row["grammar_sha256"], joins[target]]),
-            provenance={**provenance, "rights_ref": RIGHTS, "mapping_evidence": joins[target],
-                        "target_file_sha256": state.inventory.targets[target].evidence_sha256},
-            identity=quest_moment(target) not in ambiguous_quests,
-            rights=row["rights_status"] == "reviewed"))
-    if "classicua" in state.policy.sources and state.policy.stores("classicua"):
-        # Quest 1:1 hints are reviewable, but require a Stage 3 join for import.
-        if quest_machine is None:
-            quest_machine = machine_candidates(state.dataset, state.source, state.inventory,
-                state.original_index, state._hints,
-                allow_ai_transations=state.policy.allows_ai_transations("classicua"))
-        for row in quest_machine:
-            if row["target_id"] in mapped:
+    if domain != "gossip":
+        ambiguous_quests = ambiguous_quest_moments(state.original_index)
+        mapped = set()
+        joins = {review.decision.target_id: review.decision.source_evidence_sha256
+                 for review in state.reviews}
+        for observation in state.translation_observations() if observations is None else observations:
+            row = observation.row()
+            provenance = row["provenance"][0]
+            if provenance["provider"] != "classicua":
                 continue
-            rows.append(candidate(domain="quest", target_id=row["target_id"], provider="classicua",
+            if not state.policy.stores("classicua"):
+                continue
+            target = row["target_id"]
+            mapped.add(target)
+            rows.append(candidate(domain="quest", target_id=target, provider="classicua",
                 revision=state.source.revision, target_revision=target_revision,
-                original=state.original_index.original_english[row["target_id"]],
-                text=row["text"], context=digest([row["target_context_sha256"],
-                                                row["source_context_sha256"]]),
-                provenance={k: row[k] for k in ("source_id", "source_file", "source_file_sha256",
-                            "source_layer", "field_sha256")} |
-                           {"rights_ref": RIGHTS} |
-                           ({"shared_bindings": row["shared_bindings"]} if "shared_bindings" in row else {}), rights=True,
-                ai=state.source.units[row["source_id"]].ai))
-        if gossip_machine is None:
-            gossip_machine, _, _ = gossip_candidates(state, lines, local_gossip_texts(state))
-        canonical = defaultdict(set)
-        for line in lines:
-            moment = line.get("lineId")
-            original = line.get("originalText")
-            npc = line.get("npcId")
-            if line.get("source") != "gossip" or not isinstance(original, str):
-                continue
-            target = state.inventory.targets.get(moment)
-            if (target and target.family == "gossip" and any(
-                    context["npc_id"] == npc and context["npc_type"] == line.get("npcType")
-                    and context["wording_sha256"] == spoken_digest(original)
-                    for context in state.inventory.contexts.get(moment, ()))):
-                canonical[npc, classicua_hash(original)].add(moment)
-        for row in gossip_machine:
-            hashed = row["target_id"].rsplit(":", 1)[1]
-            originals = [trusted["gossip", f"gossip:{npc}:{hashed}"]["english_original"]
-                         for npc in row["bindings"]]
-            contexts = {str(npc): sorted(canonical[npc, int(hashed)]) for npc in row["bindings"]}
-            moments = {moment: target_context(state.inventory, moment)
-                       for matches in contexts.values() for moment in matches}
-            groups = {sha(normalized(original)) for original in originals}
-            if len(groups) != 1:
-                continue
-            rows.append(candidate(domain="gossip", target_id=row["target_id"], provider="classicua",
-                revision=row["source_revision"], target_revision=target_revision,
-                original=originals[0], text=row["text"],
-                context=digest([row["context_sha256"], contexts, moments]),
-                provenance={"origin": row["source_provenance"], "overrides": row["source_overrides"],
-                            "canonical_moments": contexts, "rights_ref": RIGHTS},
-                rights=True, identity=all(contexts.values()), ai=row["ai"],
-                bindings=row["bindings"], group_sha=next(iter(groups))))
+                original=observation.original, text=row["text"],
+                context=digest([row["target_context_sha256"], row["source_context_sha256"],
+                                row["source_id"], row["grammar_sha256"], joins[target]]),
+                provenance={**provenance, "rights_ref": RIGHTS, "mapping_evidence": joins[target],
+                            "target_file_sha256": state.inventory.targets[target].evidence_sha256},
+                identity=quest_moment(target) not in ambiguous_quests,
+                rights=row["rights_status"] == "reviewed"))
+    if "classicua" in state.policy.sources and state.policy.stores("classicua"):
+        if domain != "gossip":
+            # Quest 1:1 hints are reviewable, but require a Stage 3 join for import.
+            if quest_machine is None:
+                quest_machine = machine_candidates(state.dataset, state.source, state.inventory,
+                    state.original_index, state._hints,
+                    allow_ai_transations=state.policy.allows_ai_transations("classicua"))
+            for row in quest_machine:
+                if row["target_id"] in mapped:
+                    continue
+                rows.append(candidate(domain="quest", target_id=row["target_id"], provider="classicua",
+                    revision=state.source.revision, target_revision=target_revision,
+                    original=state.original_index.original_english[row["target_id"]],
+                    text=row["text"], context=digest([row["target_context_sha256"],
+                                                    row["source_context_sha256"]]),
+                    provenance={k: row[k] for k in ("source_id", "source_file", "source_file_sha256",
+                                "source_layer", "field_sha256")} |
+                               {"rights_ref": RIGHTS} |
+                               ({"shared_bindings": row["shared_bindings"]} if "shared_bindings" in row else {}), rights=True,
+                    ai=state.source.units[row["source_id"]].ai))
+        if domain != "quest":
+            if gossip_machine is None:
+                gossip_machine, _, _ = gossip_candidates(state, lines, local_gossip_texts(state))
+            canonical = defaultdict(set)
+            for line in lines:
+                moment = line.get("lineId")
+                original = line.get("originalText")
+                npc = line.get("npcId")
+                if line.get("source") != "gossip" or not isinstance(original, str):
+                    continue
+                target = state.inventory.targets.get(moment)
+                if (target and target.family == "gossip" and any(
+                        context["npc_id"] == npc and context["npc_type"] == line.get("npcType")
+                        and context["wording_sha256"] == spoken_digest(original)
+                        for context in state.inventory.contexts.get(moment, ()))):
+                    canonical[npc, classicua_hash(original)].add(moment)
+            for row in gossip_machine:
+                hashed = row["target_id"].rsplit(":", 1)[1]
+                originals = [trusted["gossip", f"gossip:{npc}:{hashed}"]["english_original"]
+                             for npc in row["bindings"]]
+                contexts = {str(npc): sorted(canonical[npc, int(hashed)]) for npc in row["bindings"]}
+                moments = {moment: target_context(state.inventory, moment)
+                           for matches in contexts.values() for moment in matches}
+                groups = {sha(normalized(original)) for original in originals}
+                if len(groups) != 1:
+                    continue
+                rows.append(candidate(domain="gossip", target_id=row["target_id"], provider="classicua",
+                    revision=row["source_revision"], target_revision=target_revision,
+                    original=originals[0], text=row["text"],
+                    context=digest([row["context_sha256"], contexts, moments]),
+                    provenance={"origin": row["source_provenance"], "overrides": row["source_overrides"],
+                                "canonical_moments": contexts, "rights_ref": RIGHTS},
+                    rights=True, identity=all(contexts.values()), ai=row["ai"],
+                    bindings=row["bindings"], group_sha=next(iter(groups))))
     # Captured external versions can be assessed against Spoken, but an uploaded
     # source_ref is neither independently audited provenance nor rights evidence.
     store = SourceReviewStore(db_path)

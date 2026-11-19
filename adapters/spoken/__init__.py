@@ -86,7 +86,7 @@ class Inventory:
     files: dict
 
 
-def build_index(reader):
+def build_index(reader, *, corpus=None):
     targets, contexts = {}, {}
 
     def add(identity, family, path, context):
@@ -95,7 +95,8 @@ def build_index(reader):
         contexts.setdefault(identity, []).append(context)
 
     corpus_path = 'pipelines/quests/corpus/corpus.json.gz'
-    corpus = json.loads(gzip.decompress(reader.read(corpus_path)))
+    if corpus is None:
+        corpus = json.loads(gzip.decompress(reader.read(corpus_path)))
     factions = json.loads(reader.read('pipelines/quests/corpus/factions.json'))['sides']
     for row in corpus['lines']:
         if row['source'] not in ('accept', 'progress', 'complete', 'gossip'):

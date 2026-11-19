@@ -2,6 +2,7 @@
 from dataclasses import replace
 from hashlib import sha256
 from http.server import ThreadingHTTPServer
+import gzip
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -55,7 +56,8 @@ class ReviewUITests(unittest.TestCase):
         with (
             patch.object(Path, "read_text", side_effect=[json.dumps(lock),
                                                          json.dumps({"revision": spoken.revision})]),
-            patch.object(review_ui_server, "PublicSource"),
+            patch.object(review_ui_server, "PublicSource",
+                         return_value=Mock(read=Mock(return_value=gzip.compress(b'{"lines": []}')))),
             patch.object(review_ui_server, "build_index", return_value=spoken),
             patch.object(review_ui_server, "index_verified_originals"),
             patch.object(review_ui_server, "audit_checkout", return_value=(None, None)),
