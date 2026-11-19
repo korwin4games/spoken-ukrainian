@@ -731,3 +731,29 @@ sleep(60)
             manager._promote_worker_result(self.root, MODULE, "import_ready", False, {"sha256": "fixture"})
             browse()
             self.assertEqual(load.call_count, 3)
+
+    def test_commit_during_final_pin_check_invalidates_completed_catalog(self):
+        manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
+        with connection(self.db) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("CREATE TABLE generation_fixture (value INTEGER)")
+            db.execute("INSERT INTO generation_fixture VALUES (1)")
+
+        def load(*args, module, **kwargs):
+            with connection(self.db) as db:
+                value = db.execute("SELECT value FROM generation_fixture").fetchone()[0]
+            return ModuleInventory([], {"value": value}, {}, module)
+
+        def validate():
+            if inventory.call_count == 1:
+                with connection(self.db) as db:
+                    db.execute("UPDATE generation_fixture SET value = 2")
+            return ("pins",)
+
+        with patch("tools.manager_inventory.load_inventory", side_effect=load) as inventory, patch.object(
+                manager, "validate_checkouts", side_effect=validate):
+            self.assertEqual(manager.action("list", {"module": MODULE})["build"], {"value": 2})
+            self.assertEqual(inventory.call_count, 2)
+            self.assertEqual(manager.action("list", {"module": MODULE})["build"], {"value": 2})
+            self.assertEqual(inventory.call_count, 2)

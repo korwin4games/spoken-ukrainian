@@ -1,6 +1,6 @@
 """SQLite persistence, legacy import, review-memory reuse and transactional safety."""
 import json
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import closing, redirect_stderr, redirect_stdout
 import io
 import os
 from pathlib import Path
@@ -23,6 +23,20 @@ B = "b" * 40
 
 
 class SQLiteStorageTests(unittest.TestCase):
+    def test_opening_current_wal_database_preserves_filesystem_and_sqlite_generation(self):
+        with connection(self.db) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+        with closing(sqlite3.connect(self.db.as_uri() + "?mode=ro", uri=True)) as observer:
+            version = observer.execute("PRAGMA data_version").fetchone()[0]
+            stamp = self.db.stat()
+            with patch("adapters.sqlite_translation_store._initialize_schema") as initialize:
+                with connection(self.db) as db:
+                    self.assertEqual(db.execute("PRAGMA journal_mode").fetchone()[0], "wal")
+                initialize.assert_not_called()
+            self.assertEqual(observer.execute("PRAGMA data_version").fetchone()[0], version)
+            self.assertEqual(self.db.stat().st_ctime_ns, stamp.st_ctime_ns)
+            self.assertEqual(self.db.stat().st_mtime_ns, stamp.st_mtime_ns)
+
     def setUp(self):
         self.tmp = TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

@@ -542,17 +542,17 @@ class ManagerUI:
                     for _ in range(2):
                         view = load_inventory(self.classicua, self.spoken, self.db_path, ARCHIVES[module],
                                               module=module, input_loader=self._load_inputs)
+                        with timing("pinned_validation", module):
+                            if self.validate_checkouts() != pins:
+                                self._cached.clear()
+                                self._inputs = None
+                                raise ValueError("manager_source_configuration_changed")
                         after = stamp()
                         if before == after:
                             break
                         before = after
                     else:
                         raise ValueError("manager_state_changed_retry_reimport")
-                with timing("pinned_validation", module):
-                    if self.validate_checkouts() != pins:
-                        self._cached.clear()
-                        self._inputs = None
-                        raise ValueError("manager_source_configuration_changed")
                 self._cached[module] = (after, view)
         if action == "stats":
             return {"module": module, "summary": view.summary(), "build": view.build}
