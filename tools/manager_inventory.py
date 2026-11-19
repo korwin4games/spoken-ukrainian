@@ -71,7 +71,8 @@ class ModuleInventory:
                             "multiple_originals": sum(len(r.get("originals", ())) > 1 for r in rows
                                                       if r["type"] == "quest"),
                             "conflicting_candidates": conflicts, "missing": counts["missing"],
-                            "ready": sum(r["status"] == "ready" and not r["built"] for r in rows),
+                            "ready": sum(bool(r.get("ready_to_import")) if kind == "quest"
+                                         else r["status"] == "ready" and not r["built"] for r in rows),
                             "pending_review": pending["review"] + pending["stale"],
                             "mapping_states": dict(Counter(r.get("mapping_state", r["status"]) for r in rows)),
                             "translation_states": dict(Counter(r.get("translation_state", r["status"]) for r in rows)),
@@ -116,7 +117,8 @@ class ModuleInventory:
                     continue
             matches.append({k: row[k] for k in ("id", "type", "label", "status", "built", "recorded",
                 "mapping_state", "translation_state", "import_state", "review_queue",
-                "agent_warning", "unverified_alternatives", "candidate_conflict") if k in row})
+                "agent_warning", "unverified_alternatives", "candidate_conflict",
+                "ready_to_import", "needs_choice") if k in row})
         return {"module": module, "summary": self.summary(), "build": self.build,
                 "total": len(matches), "items": matches[offset:offset + limit]}
 
@@ -417,8 +419,9 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
     rows = []
     runtime_history = defaultdict(list)
     runtime_approved = {}
-    from tools.quest_simple import selections as simple_selections
+    from tools.quest_simple import resolved as simple_resolved, selections as simple_selections
     local_choices = simple_selections(db_path) if MODULE_DOMAINS[module] == "quest" else {}
+    quick_resolved = simple_resolved(state, db_path) if MODULE_DOMAINS[module] == "quest" else {}
     if MODULE_DOMAINS[module] == "quest":
         for review in quest_runtime_review.history(db_path):
             runtime_history[review["moment"]].append(review)
@@ -485,6 +488,10 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                         "mapping_required" if target not in reviewed_targets else "source_review"})
         built = units.get(("quests", f"{quest_id}:{event}"))
         binding, _ = quest_runtime_review.binding(state, moment, targets)
+        current_quick = quick_resolved.get(moment)
+        quick_ready = bool(current_quick and current_quick.get("text") and
+                           (not built or built["text_sha256"] != sha(current_quick["text"])))
+        quick_conflict = bool(current_quick and current_quick.get("conflict"))
         quick = local_choices.get(moment)
         if quick and binding and quick[0] == digest(binding):
             if not any(c["sha256"] == quick[2] for c in choices):
@@ -531,6 +538,7 @@ def load_inventory(classicua, spoken, db_path, archive, *, module=MODULE, skippe
                     targets + [moment], built, choices, recorded, status, mapping=mapping, reason=reason,
                     review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
                     draft_available=bool(binding) and moment not in rejected_moments,
+                    ready_to_import=quick_ready, needs_choice=quick_conflict,
                     review_binding=digest(binding) if binding else None,
                     approved_variant_count=len(english) if approved and multiple else 0,
                     quest_id=quest_id, event=event, contexts=[c for t in targets for c in state.inventory.contexts[t]]))

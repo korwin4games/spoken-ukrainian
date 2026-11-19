@@ -139,13 +139,16 @@ function renderList(data) {
     const id = (item.type === "quest" || parts[0] === "gossip") ? parts[1] : item.id;
     tr.append(make("td", item.type === "quest" ? "Quest" : "Gossip"), make("td", id));
     tr.appendChild(make("td")).append(name);
-    tr.appendChild(make("td")).append(
-      badge(item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано", item.built ? "built" : ""));
+    tr.appendChild(make("td")).append(badge(item.type === "quest" ?
+      item.ready_to_import ? "Готовий до імпорту" : item.built ? "У ZIP" :
+      item.needs_choice ? "Оберіть переклад" : "Немає перекладу" :
+      item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано",
+      item.built && !item.ready_to_import ? "built" : ""));
     const statuses = tr.appendChild(make("td"));
     if (item.type === "quest") {
-      statuses.append(badge(item.built ? "У ZIP" : item.candidate_conflict ?
-        "Оберіть переклад" : item.status === "missing" ? "Додайте переклад" :
-        "Готовий до імпорту", item.built ? "built" : ""));
+      statuses.append(badge(item.ready_to_import ? "Готовий до імпорту" :
+        item.built ? "Імпортовано" : item.needs_choice ? "Потрібен вибір" :
+        "Додайте переклад", item.built && !item.ready_to_import ? "built" : ""));
     } else {
       statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
     }
@@ -160,6 +163,11 @@ function renderList(data) {
     return tr;
   });
   el("rows").replaceChildren(...rows);
+  if (domain() === "quest") {
+    const count = data.summary.quest.ready;
+    el("reimport").textContent = "Імпортувати все (" + number.format(count) + ")";
+    el("reimport").disabled = busy || count === 0;
+  }
   el("list-message").hidden = rows.length > 0;
   el("list-message").textContent = rows.length ? "" : "За цими фільтрами записів немає.";
   el("match-count").textContent = number.format(data.total) + " записів";
@@ -208,13 +216,14 @@ function simpleQuestControls(row) {
   const run = async (action, data) => {
     if (busy) return;
     busy = true;
-    message.textContent = "Збираємо Quest ZIP…";
+    message.textContent = "Зберігаємо переклад…";
     for (const id of ["preview", "reimport", "module"]) el(id).disabled = true;
     try {
       const result = await call(action, {...data, identity: row.id,
         binding: row.review_binding, confirm: true});
       el("run-summary").hidden = true;
-      el("operation-status").textContent = "Переклад застосовано та перевірено у ZIP.";
+      if (result.build !== "review_saved") throw new Error("manager_reimport_worker_invalid_response");
+      el("operation-status").textContent = "Збережено. Готовий до імпорту — натисніть «Імпортувати все».";
       await list();
       if (selected === row.id) await detail(row.id);
     } catch (error) {
@@ -240,7 +249,7 @@ function simpleQuestControls(row) {
     const update = () => { preview.textContent = options.get(select.value || first)?.text || ""; };
     select.addEventListener("change", update);
     update();
-    const apply = make("button", "Використати переклад");
+    const apply = make("button", "Зберегти вибір");
     apply.type = "button";
     apply.disabled = !editable;
     apply.addEventListener("click", () => {
@@ -253,7 +262,7 @@ function simpleQuestControls(row) {
   field.maxLength = 60000;
   field.setAttribute("aria-label", "Власний український переклад");
   field.placeholder = "Введіть свій український переклад…";
-  const save = make("button", "Зберегти й застосувати");
+  const save = make("button", "Зберегти переклад");
   save.type = "button";
   save.disabled = !editable;
   save.addEventListener("click", () => {
@@ -482,10 +491,11 @@ function renderDetail(row) {
     const english = make("section");
     english.append(make("h3", "Англійський оригінал"));
     for (const text of row.originals) english.append(make("p", text, "original"));
-    const status = row.built ? "У ZIP" : row.candidates.length > 1 ?
-      "Оберіть переклад" : row.candidates.length ? "Переклад знайдено" : "Немає перекладу";
+    const status = row.ready_to_import ? "Готовий до імпорту" :
+      row.built ? "У ZIP" : row.needs_choice ? "Оберіть переклад" :
+      row.candidates.length ? "Переклад знайдено" : "Немає перекладу";
     el("selected").replaceChildren(make("h3", row.label), make("p", row.id, "muted"),
-      badge(status, row.built ? "built" : ""), english, simpleQuestControls(row));
+      badge(status, row.built && !row.ready_to_import ? "built" : ""), english, simpleQuestControls(row));
     return;
   }
   const title = make("h3", row.label);
@@ -607,7 +617,8 @@ async function reimport(dryRun) {
   el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" : "Переімпорт і збірка тривають…";
   try {
     const result = await call("reimport", {reset: el("reset").checked, dry_run: dryRun, confirm: !dryRun});
-    el("operation-status").textContent = dryRun ? "Попередня збірка готова. Поточні записи й ZIP збережено." : "Нову локальну збірку створено.";
+    el("operation-status").textContent = dryRun ? "Попередня збірка готова. Поточні записи й ZIP збережено." :
+      domain() === "quest" ? "Усі готові переклади імпортовано в Quest ZIP." : "Нову локальну збірку створено.";
     renderResult(result);
     if (!dryRun) {
       offset = 0;
@@ -630,7 +641,7 @@ el("query").addEventListener("input", () => {
 el("filters").addEventListener("submit", event => { event.preventDefault(); resetList(); });
 for (const id of ["filter", "translation-status"]) el(id).addEventListener("change", resetList);
 function refreshModuleControls() {
-  el("reimport").textContent = "Оновити " + domainName();
+  el("reimport").textContent = domain() === "quest" ? "Імпортувати все" : "Оновити " + domainName();
   const simple = domain() === "quest";
   for (const id of ["metrics", "build-state", "reset-control", "filter-control",
                     "translation-status-control", "preview"]) el(id).hidden = simple;
@@ -657,6 +668,10 @@ el("prev").addEventListener("click", () => { offset = Math.max(0, offset - pageS
 el("next").addEventListener("click", () => { offset += pageSize; list(); });
 el("preview").addEventListener("click", () => reimport(true));
 el("reimport").addEventListener("click", () => {
+  if (domain() === "quest") {
+    reimport(false);
+    return;
+  }
   el("confirm").returnValue = "";
   el("confirm-text").textContent = el("reset").checked ?
     "Після успішної збірки тестові рішення та імпорти вибраного модуля буде замінено свіжим набором. Знімки джерел збережуться." :

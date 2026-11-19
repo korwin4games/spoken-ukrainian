@@ -26,7 +26,8 @@ from tools.build_ukrainian import ARCHIVES, MODULE_DOMAINS, QUEST_MODULE
 MODULE = QUEST_MODULE
 MANAGER_WORKER_TIMEOUT_SECONDS = 600
 SOURCE_INPUTS = ("sources.lock.json", "config/translation_sources.json", "tests/stage3_sources.json")
-REVIEW_ONLY = ("save_translation", "register_candidate", "review_mapping", "withdraw_quest_approval")
+REVIEW_ONLY = ("save_translation", "register_candidate", "review_mapping",
+               "withdraw_quest_approval", "save_quest", "choose_quest")
 WORKER_ERRORS = frozenset({
     "manager_confirmation_required", "manager_invalid_options", "manager_unknown_module",
     "manager_reimport_already_running", "manager_state_changed_retry_reimport",
@@ -326,7 +327,7 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
             return {"module": module, "build": "review_saved"}
         if not dry_run and stage_in is None:
             promote(db_path, staged, baseline, archive, incoming, archive_baseline, workspace,
-                    reset or (review is not None and review[0] in ("confirm_candidate", "choose_quest", "save_quest")), module,
+                    reset or (review is not None and review[0] == "confirm_candidate"), module,
                     expected_sha=result["sha256"])
         return {"module": module, "dry_run": dry_run, "reset_test_data": reset,
                 "build": "preview" if dry_run else "success", "artifact": None if dry_run else str(archive),
@@ -437,7 +438,7 @@ class ManagerUI:
         try:
             promote(self.db_path, workspace / "translations.sqlite3", baseline, ARCHIVES[module],
                     None if review_only else staged_zip(workspace), archive_baseline, workspace,
-                    reset or action in ("confirm_candidate", "choose_quest", "save_quest"), module,
+                    reset or action == "confirm_candidate", module,
                     expected_sha=None if review_only else result["sha256"])
         except (ValueError, OSError, RuntimeError, sqlite3.Error) as error:
             reason = str(error)

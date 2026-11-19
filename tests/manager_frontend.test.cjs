@@ -136,9 +136,8 @@ test("Quest selection shows all candidates without reviewer forms or checkboxes"
     assert.equal(action, "choose_quest");
     assert.equal(body.candidate, "choice-b");
     assert.equal(body.binding, "pinned-binding");
-    current = {...row, built:{text_sha256:"choice-b", route:"user_selected", source:"classicua"}};
-    return {module:quest, build:"success", summary:{quest:{total:1}}, agent:{eligible:0, skipped:0, reasons:[]},
-      skipped:[], sha256:"fixture"};
+    current = {...row, ready_to_import:true};
+    return {module:quest, build:"review_saved"};
   });
   await flush();
   await b.run('detail("q:42:accept")');
@@ -150,10 +149,11 @@ test("Quest selection shows all candidates without reviewer forms or checkboxes"
   assert.ok(select.children.some(x => x.textContent.includes("Доброго дня.")));
   select.value = "choice-b";
   select.events.change();
-  nodes.find(x => x.textContent === "Використати переклад").events.click();
+  nodes.find(x => x.textContent === "Зберегти вибір").events.click();
   await flush();
   assert.equal(b.requests.find(x => x.action === "choose_quest").candidate, "choice-b");
-  assert.ok(b.el("selected").all().some(x => x.textContent === "У ZIP"));
+  assert.ok(b.el("selected").all().some(x => x.textContent === "Готовий до імпорту"));
+  assert.equal(b.requests.some(x => x.action === "reimport"), false);
 });
 
 test("Quest missing translation can be entered without reviewer identity", async () => {
@@ -165,8 +165,7 @@ test("Quest missing translation can be entered without reviewer identity", async
     assert.equal(body.text, "Мій переклад.");
     assert.equal(body.binding, "pinned-binding");
     assert.equal(body.reviewer, undefined);
-    return {module:quest, build:"success", summary:{quest:{total:1}}, agent:{eligible:0, skipped:0, reasons:[]},
-      skipped:[], sha256:"fixture"};
+    return {module:quest, build:"review_saved"};
   });
   await flush();
   b.run("renderDetail(" + JSON.stringify(row) + ")");
@@ -174,7 +173,7 @@ test("Quest missing translation can be entered without reviewer identity", async
   const field = nodes.find(x => x.tag === "textarea");
   assert.ok(field);
   field.value = "Мій переклад.";
-  nodes.find(x => x.textContent === "Зберегти й застосувати").events.click();
+  nodes.find(x => x.textContent === "Зберегти переклад").events.click();
   await flush();
   assert.equal(b.requests.find(x => x.action === "save_quest").text, "Мій переклад.");
   nodes.find(x => x.textContent === "Скопіювати запит для Codex").events.click();
