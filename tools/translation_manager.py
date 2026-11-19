@@ -426,7 +426,10 @@ class ManagerUI:
         mutations = ("confirm_candidate", "choose_quest", "save_quest", *REVIEW_ONLY)
         if action in ("choose_quest", "save_quest"):
             with timing("api", module, action):
-                return self._save_quest(action, module, payload)
+                try:
+                    return self._save_quest(action, module, payload)
+                except sqlite3.Error:
+                    raise ValueError("manager_reimport_failed") from None
         if action in ("reimport", "import_ready") or action in mutations:
             review = None if action in ("reimport", "import_ready") else (action, {k: v for k, v in payload.items() if k != "module"})
             options = payload if review is None else {"module": module, "confirm": True}
