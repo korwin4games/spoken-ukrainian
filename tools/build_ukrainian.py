@@ -649,13 +649,30 @@ def local_test_state(classicua, spoken):
         ROOT / "config/translation_sources.json")
 
 
-def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None, destination=None, skipped=None):
+def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None,
+          destination=None, skipped=None, incremental=False):
     """Auto-import is mandatory; there is no build-without-import switch."""
     if module not in MODULE_DOMAINS:
         raise ValueError("manager_unknown_module")
     is_quest = module == QUEST_MODULE
+    if incremental and not is_quest:
+        raise ValueError("manager_incremental_quest_only")
     classicua, spoken = Path(classicua), Path(spoken)
     state = local_test_state(classicua, spoken)
+    previous, ready = {}, set()
+    if incremental:
+        from adapters.sqlite_translation_store import DB_ENV
+        from tools.manager_inventory import load_inventory
+        from tools.quest_incremental import previous_snapshot
+        db_path = os.environ.get(DB_ENV)
+        if not db_path:
+            raise ValueError("manager_incremental_database_required")
+        previous, _ = previous_snapshot(db_path, ARCHIVES[module],
+                                        state.inventory.revision, state.source.revision)
+        catalog = load_inventory(classicua, spoken, db_path, ARCHIVES[module],
+                                 module=module, state=state)
+        ready = {identity for identity, row in catalog.rows.items()
+                 if row.get("ready_to_import")}
     if before_import is not None:
         before_import(state)
     # Explicitly call the *same* guarded UI/CLI action. Re-check current
@@ -683,6 +700,9 @@ def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare
             state, selected_quest, agent_rows, skipped=skipped)
     else:
         preview, imported, ambiguous = current_quest_texts(state, selected_quest)
+    if incremental:
+        from tools.quest_incremental import merge_ready
+        preview = merge_ready(previous, preview, ready)
     preview_count = sum(event in ("accept", "progress", "complete")
                         for events in preview.values() for event in events)
     if is_quest and not preview_count:
