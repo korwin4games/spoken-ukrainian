@@ -678,7 +678,7 @@ def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare
     # Explicitly call the *same* guarded UI/CLI action. Re-check current
     # canonical mappings, source bytes, rights policy and source versions.
     report = {}
-    if is_quest:
+    if is_quest and not incremental:
         report = state.translation_action(
             "auto_import_one_to_one", {"source": "classicua"},
             **({} if skipped is None else {"skipped": skipped}))["report"]
