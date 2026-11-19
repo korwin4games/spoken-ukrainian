@@ -632,7 +632,9 @@ el("query").addEventListener("input", () => {
 el("filters").addEventListener("submit", event => { event.preventDefault(); resetList(); });
 for (const id of ["filter", "translation-status"]) el(id).addEventListener("change", resetList);
 function refreshModuleControls() {
-  el("reimport").textContent = "Переімпортувати " + domainName();
+  el("reimport").textContent = "Оновити " + domainName();
+  el("metrics").hidden = domain() === "quest";
+  el("build-state").hidden = domain() === "quest";
   el("inventory-heading").textContent = "Переклади " + domainName();
   for (const option of document.querySelectorAll('option[value="multiple_originals"]')) {
     option.hidden = domain() !== "quest";

@@ -16,7 +16,8 @@ CATEGORIES = ("quests", "gossip", "gossip_common", "gossip_titles", "places", "r
               "bosses", "compendium")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 QUEST_ID = re.compile(r"q:([1-9][0-9]*):(?:accept|progress|complete)(?::.*)?\Z")
-ROUTES = frozenset({"machine_1to1", "reviewed", "source_selected", "pinned_source", "agent_verified"})
+ROUTES = frozenset({"machine_1to1", "reviewed", "source_selected", "pinned_source",
+                   "agent_verified", "user_selected", "pinned_unique"})
 MAX_ROWS = 200000
 
 
