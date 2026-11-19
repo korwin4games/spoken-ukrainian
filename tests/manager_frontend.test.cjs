@@ -156,6 +156,28 @@ test("Quest selection shows all candidates without reviewer forms or checkboxes"
   assert.equal(b.requests.some(x => x.action === "reimport"), false);
 });
 
+test("Quest bulk button imports all ready records and skips confirmation modal", async () => {
+  const b = browser((action, body) => {
+    if (action === "reimport") return {
+      module: quest, build: "success", sha256: "example",
+      summary: {quest: {total: 20, ready: 0, included: 9, missing: 11,
+        conflicts: 0, multiple_originals: 0, pending_review: 0}},
+      agent: {eligible: 0, skipped: 0, reasons: []}, skipped: [],
+    };
+    return {...listing(body.module), summary: {quest: {total: 20, ready: 3}}};
+  });
+  await flush();
+  assert.equal(b.el("reimport").textContent, "Імпортувати все (3)");
+  assert.equal(b.el("reimport").disabled, false);
+  b.el("reimport").events.click();
+  await flush();
+  const imports = b.requests.filter(req => req.action === "reimport");
+  assert.equal(imports.length, 1);
+  assert.equal(imports[0].module, quest);
+  assert.equal(imports[0].confirm, true);
+  assert.equal(b.el("operation-status").textContent, "Усі готові переклади імпортовано в Quest ZIP.");
+});
+
 test("Quest missing translation can be entered without reviewer identity", async () => {
   const row = {...fixture, status:"missing", review_binding:"pinned-binding", candidates:[]};
   const b = browser((action, body) => {
@@ -176,6 +198,8 @@ test("Quest missing translation can be entered without reviewer identity", async
   nodes.find(x => x.textContent === "Зберегти переклад").events.click();
   await flush();
   assert.equal(b.requests.find(x => x.action === "save_quest").text, "Мій переклад.");
+  assert.equal(b.requests.some(x => x.action === "reimport"), false);
+  assert.match(b.el("operation-status").textContent, /Готовий до імпорту/);
   nodes.find(x => x.textContent === "Скопіювати запит для Codex").events.click();
   await flush();
   assert.match(b.el("copied").textContent, /Hello/);
