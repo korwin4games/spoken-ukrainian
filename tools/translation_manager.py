@@ -247,14 +247,16 @@ def prepare_import(state, spoken, db_path, skipped, module):
 
 
 def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=False, confirm=False,
-             review=None, stage_in=None):
+             review=None, stage_in=None, import_ready=False):
     """The CLI and localhost UI run the same staged operation."""
     from tools.build_ukrainian import DIST, build, local_test_state
     from tools.manager_inventory import load_inventory
 
     if type(module) is not str or module not in MODULE_DOMAINS:
         raise ValueError("manager_unknown_module")
-    if any(type(v) is not bool for v in (reset, dry_run, confirm)):
+    if any(type(v) is not bool for v in (reset, dry_run, confirm, import_ready)):
+        raise ValueError("manager_invalid_options")
+    if import_ready and (module != QUEST_MODULE or reset or dry_run or review is not None):
         raise ValueError("manager_invalid_options")
     if review is not None and (reset or dry_run):
         raise ValueError("manager_invalid_review_request")
@@ -308,7 +310,7 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
             if review_only:
                 before_import(local_test_state(classicua, spoken))
             else:
-                extra = {"incremental": True} if module == QUEST_MODULE and review is None and not reset else {}
+                extra = {"incremental": True} if import_ready else {}
                 result = build(classicua, spoken, module=module, before_import=before_import if review else None,
                            prepare=prepare, destination=incoming, skipped=skipped, **extra)
                 view = load_inventory(classicua, spoken, staged, incoming, skipped=skipped,
@@ -373,11 +375,13 @@ class ManagerUI:
         if type(module) is not str or module not in MODULE_DOMAINS:
             raise ValueError("manager_unknown_module")
         mutations = ("confirm_candidate", "choose_quest", "save_quest", *REVIEW_ONLY)
-        if action == "reimport" or action in mutations:
-            review = None if action == "reimport" else (action, {k: v for k, v in payload.items() if k != "module"})
+        if action in ("reimport", "import_ready") or action in mutations:
+            review = None if action in ("reimport", "import_ready") else (action, {k: v for k, v in payload.items() if k != "module"})
             options = payload if review is None else {"module": module, "confirm": True}
             allowed = {"module", "reset", "dry_run", "confirm"}
-            if set(options) - allowed or any(type(options[k]) is not bool for k in set(options) - {"module"}):
+            if (set(options) - allowed or any(type(options[k]) is not bool for k in set(options) - {"module"})
+                    or action == "import_ready" and (module != QUEST_MODULE or
+                       options.get("reset") or options.get("dry_run") or not options.get("confirm"))):
                 raise ValueError("manager_invalid_options")
             return self._run_worker(action, module, options, review)
         return self._browse(action, module, payload)
@@ -393,6 +397,7 @@ class ManagerUI:
                     [sys.executable, str(ROOT / "tools/translation_manager.py"), "reimport", "--json",
                      "--module", module, "--classicua", str(self.classicua), "--spoken",
                      str(self.spoken), "--db", str(self.db_path), "--stage-in", str(workspace.resolve()),
+                     *(("--import-ready",) if action == "import_ready" else ()),
                      *(flag for key, flag in flags.items() if options.get(key)), *(("--review-stdin",) if review else ())],
                     cwd=ROOT, capture_output=True, check=False, timeout=MANAGER_WORKER_TIMEOUT_SECONDS,
                     input=json.dumps(review).encode("utf-8") if review else None)
@@ -505,6 +510,7 @@ def main(argv=None):
     parser.add_argument("--confirm", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--review-stdin", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--import-ready", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stage-in", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
@@ -517,7 +523,7 @@ def main(argv=None):
                 raise ValueError("manager_invalid_review_request")
         result = reimport(args.classicua, args.spoken, args.db, module=args.module,
                           reset=args.reset_test_data, dry_run=args.dry_run, confirm=args.confirm, review=review,
-                          stage_in=args.stage_in)
+                          stage_in=args.stage_in, import_ready=args.import_ready)
     except (ValueError, OSError, RuntimeError, TypeError, KeyError, sqlite3.Error,
             subprocess.SubprocessError) as error:
         reason = _reason(error)

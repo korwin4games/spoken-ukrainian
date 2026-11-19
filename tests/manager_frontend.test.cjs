@@ -158,7 +158,7 @@ test("Quest selection shows all candidates without reviewer forms or checkboxes"
 
 test("Quest bulk button imports all ready records and skips confirmation modal", async () => {
   const b = browser((action, body) => {
-    if (action === "reimport") return {
+    if (action === "import_ready") return {
       module: quest, build: "success", sha256: "example",
       summary: {quest: {total: 20, ready: 0, included: 9, missing: 11,
         conflicts: 0, multiple_originals: 0, pending_review: 0}},
@@ -171,7 +171,7 @@ test("Quest bulk button imports all ready records and skips confirmation modal",
   assert.equal(b.el("reimport").disabled, false);
   b.el("reimport").events.click();
   await flush();
-  const imports = b.requests.filter(req => req.action === "reimport");
+  const imports = b.requests.filter(req => req.action === "import_ready");
   assert.equal(imports.length, 1);
   assert.equal(imports[0].module, quest);
   assert.equal(imports[0].confirm, true);

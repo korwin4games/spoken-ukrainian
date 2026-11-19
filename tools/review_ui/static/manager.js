@@ -638,7 +638,9 @@ async function reimport(dryRun) {
   el("run-summary").hidden = true;
   el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" : "Переімпорт і збірка тривають…";
   try {
-    const result = await call("reimport", {reset: el("reset").checked, dry_run: dryRun, confirm: !dryRun});
+    const result = await call(domain() === "quest" && !dryRun ? "import_ready" : "reimport",
+      {reset: domain() === "quest" ? false : el("reset").checked,
+        dry_run: dryRun, confirm: !dryRun});
     el("operation-status").textContent = dryRun ? "Попередня збірка готова. Поточні записи й ZIP збережено." :
       domain() === "quest" ? "Усі готові переклади імпортовано в Quest ZIP." : "Нову локальну збірку створено.";
     renderResult(result);
