@@ -15,16 +15,27 @@ from adapters.local_review_store import LocalFile
 from adapters.sqlite_translation_store import DB_ENV, connection, enable_sqlite
 
 
+def source_review_targets(db_path):
+    if not db_path:
+        return set()
+    with connection(db_path) as db:
+        return {r[0] for r in db.execute("""SELECT DISTINCT c.target_id
+            FROM source_candidates c WHERE c.domain = 'gossip' AND
+            (EXISTS (SELECT 1 FROM source_candidate_decisions d WHERE d.candidate_id=c.id)
+            OR EXISTS (SELECT 1 FROM source_active_selections a WHERE a.candidate_id=c.id))""")}
+
+
 class GossipMachineImport:
     def __init__(self, state, spoken, allowed=None):
         self.state, self.spoken = state, spoken
         self.allowed = Path(allowed or state.allowed_directory)
 
-    def inspect(self):
+    def inspect(self, *, revalidate=True):
         from tools.build_ukrainian import local_gossip_texts
         from tools.gossip_coverage import read_pinned_corpus
         from tools.gossip_translation_review import EMPTY, validate_ledger
-        self.state.revalidate_inputs()
+        if revalidate:
+            self.state.revalidate_inputs()
         lines = read_pinned_corpus(self.spoken, self.state.inventory.revision)
         enabled = "classicua" in self.state.policy.sources and self.state.policy.stores("classicua")
         lookup = local_gossip_texts(self.state) if enabled else {"byNpc": {}, "common": {}}
@@ -36,23 +47,23 @@ class GossipMachineImport:
             status = row["decisions"][-1]["decision"] if row["decisions"] else "pending"
             # All historical manual versions block automation, including stale ones.
             statuses.setdefault(row["english_sha256"], set()).add(status)
-        source_targets = set()
-        db_path = os.environ.get(DB_ENV)
-        if db_path:
-            with connection(db_path) as db:
-                source_targets = {r[0] for r in db.execute("""SELECT DISTINCT c.target_id
-                    FROM source_candidates c WHERE c.domain = 'gossip' AND
-                    (EXISTS (SELECT 1 FROM source_candidate_decisions d WHERE d.candidate_id=c.id)
-                    OR EXISTS (SELECT 1 FROM source_active_selections a WHERE a.candidate_id=c.id))""")}
+        source_targets = source_review_targets(os.environ.get(DB_ENV))
         blocked = set()
         for item in items:
             decisions = statuses.get(item["english_sha256"], set())
-            if decisions or f"gossip:{item['npc_id']}:{item['english_hash']}" in source_targets:
-                blocked.add(item["target_id"])
-                # A generic fallback must not bypass a reviewed/rejected NPC row.
-                blocked.add(f"gossip:common:{item['english_hash']}")
-                item["status"] = ("conflict" if len(decisions) > 1 else
-                                  next(iter(decisions)) if decisions else "source_selected")
+            npc_target = f"gossip:{item['npc_id']}:{item['english_hash']}"
+            if decisions or npc_target in source_targets:
+                if decisions:
+                    # A manual Gossip decision governs the entire wording group.
+                    blocked.add(item["target_id"])
+                    blocked.add(f"gossip:common:{item['english_hash']}")
+                else:
+                    # Source review is NPC scoped. The builder masks its fallback
+                    # only for this pair when it has no explicit winning text.
+                    blocked.add(npc_target)
+                if item["status"] != "conflict":
+                    item["status"] = ("conflict" if len(decisions) > 1 else
+                                      next(iter(decisions)) if decisions else "source_selected")
         for item in items:
             if item["target_id"] in blocked and item["status"] == "eligible":
                 item["status"] = "conflict"

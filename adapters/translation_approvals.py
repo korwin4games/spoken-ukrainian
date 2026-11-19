@@ -269,7 +269,7 @@ class TranslationApprovals:
         data["imports"] = [i for i in data["imports"] if i["version_id"] != identity]
         self._save(data)
 
-    def eligible(self, observations, policy):
+    def eligible(self, observations, policy, *, skipped=None):
         eligible = {}
         rank = {p: i for i, p in enumerate(policy.sources)}
         for row in self.file.data["versions"]:
@@ -286,6 +286,9 @@ class TranslationApprovals:
             # competing manual edits require reject/defer before import.
             manual = [r for r in rows if r["kind"] == "manual"]
             if len(manual) > 1:
+                if skipped is not None:
+                    skipped.append((target, "conflicting_approved_manual_versions"))
+                    continue
                 raise ValueError("conflicting_approved_manual_versions")
             if manual:
                 chosen = manual[0]
@@ -295,15 +298,18 @@ class TranslationApprovals:
                                self.matching_observations(r, observations, policy))
                 rows.sort(key=lambda r: (priority(r), r["id"]))
                 if len(rows) > 1 and priority(rows[0]) == priority(rows[1]):
+                    if skipped is not None:
+                        skipped.append((target, "conflicting_approved_provider_versions"))
+                        continue
                     raise ValueError("conflicting_approved_provider_versions")
                 chosen = rows[0]
             result.append({"target_id": target, "version_id": chosen["id"]})
         return result
 
-    def import_approved(self, observations, policy, *, one_to_one_pairs=None):
+    def import_approved(self, observations, policy, *, one_to_one_pairs=None, skipped=None):
         data = deepcopy(self.file.data)
         self.merge_provenance(data, observations, policy)
-        selected = self.eligible(observations, policy)
+        selected = self.eligible(observations, policy, skipped=skipped)
         if one_to_one_pairs is not None:
             versions = {row["id"]: row for row in data["versions"]}
             # A previously machine-approved version may only remain imported

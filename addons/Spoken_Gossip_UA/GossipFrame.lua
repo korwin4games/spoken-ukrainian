@@ -53,6 +53,8 @@ local function TranslatedText(npcID, sourceText)
     if not npcID or type(sourceText) ~= "string" then return nil end
     local hash = EnglishHash(sourceText)
     if not hash then return nil end
+    local excluded = corpus.excluded and corpus.excluded[npcID]
+    if excluded and excluded[hash] then return nil end
     local byNpc = corpus.byNpc and corpus.byNpc[npcID]
     local translation = (byNpc and byNpc[hash])
         or (corpus.common and corpus.common[hash])

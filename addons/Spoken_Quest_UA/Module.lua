@@ -4,7 +4,7 @@ local SU = assert(SpokenUkrainian, "Spoken_Ukrainian dependency not loaded")
 local translations = assert(SU.QuestTranslations, "Spoken Ukrainian translations not generated")
 local quests = assert(VoiceOver and VoiceOver.DataModules, "Spoken_Quests not initialized")
 
-quests:Register("Spoken_Quests_UA", {
+quests:Register("Spoken_Quest_UA", {
     SoundLengthLookupByFileName = {},
 })
 

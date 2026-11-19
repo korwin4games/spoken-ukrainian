@@ -13,8 +13,6 @@
 ## X-Spoken-LanguageNative: Українська
 
 Translations.lua
-GossipTranslations.lua
 Module.lua
 NativeQuestFrame.lua
 GossipQuestTitles.lua
-GossipFrame.lua

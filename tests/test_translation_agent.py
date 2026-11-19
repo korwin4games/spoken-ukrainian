@@ -9,6 +9,7 @@ from threading import Thread
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from adapters.import_statistics import read_recorded_imports
@@ -100,7 +101,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(read_recorded_imports(self.db)["recorded_imports"]["total_text_records"], 0)
         copy = backup_database(self.db, self.db.with_name("backup.sqlite3"))
         with connection(copy) as db:
-            self.assertEqual(db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 6)
+            self.assertEqual(db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 7)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM agent_assessments").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT action FROM agent_imports ORDER BY id").fetchall(),
                              [("import",), ("invalidate",)])
@@ -203,18 +204,35 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(cli.main(["import-verified", *args]), 1)
             self.assertIn("confirm_private_bulk_import", error.getvalue())
         expected = json.loads(output.getvalue())
-        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(None, "test", 0))
+        from tools.build_ukrainian import GOSSIP_MODULE
+        from tools.translation_manager import ManagerUI
+        manager = ManagerUI("synthetic", "synthetic", self.db)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("test", 0))
         port = server.server_address[1]
-        server.RequestHandlerClass = create_handler(None, "test", port, translation_agent=self.agent)
+        server.RequestHandlerClass = create_handler("test", port, manager)
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
         origin = f"http://127.0.0.1:{port}"
+        def preview_worker(command, **options):
+            self.assertEqual(command[command.index("--module") + 1], GOSSIP_MODULE)
+            self.assertIn("--dry-run", command)
+            repeated = self.agent.run("import-verified", module="gossip", dry_run=True)
+            payload = {"build": "preview", "module": GOSSIP_MODULE, "agent": repeated,
+                       "skipped": [], "summary": {}}
+            return SimpleNamespace(returncode=0, stdout=json.dumps(payload).encode())
         try:
-            request = Request(origin + "/api/agent",
-                data=json.dumps({"action": "import-verified", "module": "gossip", "dry_run": True}).encode(),
-                headers={"Content-Type": "application/json", "X-Review-Token": "test", "Origin": origin})
-            with urlopen(request, timeout=10) as response:
-                self.assertEqual(json.load(response), expected)
+            request = Request(origin + "/api/manager/reimport",
+                data=json.dumps({"module": GOSSIP_MODULE, "dry_run": True}).encode(),
+                headers={"Content-Type": "application/json", "Origin": origin})
+            with patch("tools.translation_manager.subprocess.run", side_effect=preview_worker) as worker:
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(request, timeout=10)
+                self.assertEqual(error.exception.code, 403)
+                worker.assert_not_called()
+                request.add_header("X-Review-Token", "test")
+                with urlopen(request, timeout=10) as response:
+                    self.assertEqual(json.load(response)["agent"], expected)
+                worker.assert_called_once()
             self.assertEqual(self.agent.effective_imports(), [])
         finally:
             server.shutdown()

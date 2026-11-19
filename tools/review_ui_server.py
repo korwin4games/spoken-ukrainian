@@ -81,18 +81,17 @@ def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
     return state
 
 
-def create_handler(state, token, port, gossip_reviews=None,
-                   source_reviews=None, source_trusted=None, import_db_path=None,
-                   gossip_machine=None, translation_agent=None):
-    """Return request handler with strict host/origin and anti-CSRF policy."""
+def create_handler(token, port, manager=None):
+    """Return the localhost Translation Manager request handler."""
     allowed_host = f"127.0.0.1:{port}"
     allowed_origin = f"http://{allowed_host}"
     files = {
-        "/": (STATIC / "index.html", "text/html; charset=utf-8"),
-        "/app.js": (STATIC / "app.js", "text/javascript; charset=utf-8"),
-        "/styles.css": (STATIC / "styles.css", "text/css; charset=utf-8"),
+        "/": (STATIC / "manager.html", "text/html; charset=utf-8"),
+        "/manager.js": (STATIC / "manager.js", "text/javascript; charset=utf-8"),
+        "/manager.css": (STATIC / "manager.css", "text/css; charset=utf-8"),
     }
-
+    actions = {"list", "detail", "reimport", "confirm_candidate", "save_translation", "review_mapping",
+               "register_candidate"}
     class LocalHandler(BaseHTTPRequestHandler):
         def _event(self, event, outcome, reason=None):
             # Event and outcome are code constants, never request data.
@@ -144,127 +143,26 @@ def create_handler(state, token, port, gossip_reviews=None,
                 self._reply(200, path.read_bytes(), mime)
                 return
             if parts.path == "/api/bootstrap" and not parts.query:
-                self._json(200, {"csrf_token": token, "factions": ["horde", "alliance"],
-                                 "approved_identity_by_this_ui": False,
-                                 "text_policy": "private_ignored_local_storage",
-                                 "mapping_proof_required": True})
+                self._json(200, {"csrf_token": token})
                 return
-            if parts.path == "/api/translations" and not parts.query:
+            if parts.path == "/api/import-stats" and manager is not None:
                 try:
-                    self._json(200, state.translation_page())
-                except (ValueError, TypeError, KeyError) as exc:
-                    self._event("translation.list", "failed", _reason(exc))
-                    self._json(400, {"error": "translation_evidence_revalidation_failed"})
+                    params = parse_qs(parts.query, strict_parsing=True, max_num_fields=1)
+                    if set(params) != {"module"} or len(params["module"]) != 1:
+                        raise ValueError("manager_unknown_module")
+                    self._json(200, manager.action("stats", {"module": params["module"][0]}))
+                except (ValueError, OSError, TypeError, KeyError) as exc:
+                    self._json(400, {"error": _reason(exc)})
                 return
-            if parts.path == "/api/gossip-machine":
-                if gossip_machine is None:
-                    self._json(404, {"error": "gossip_machine_unavailable"})
-                    return
-                try:
-                    params = parse_qs(parts.query, keep_blank_values=True)
-                    if set(params) - {"status", "offset", "limit"} or any(len(v) != 1 for v in params.values()):
-                        raise ValueError("invalid_gossip_machine_filter")
-                    offset, limit = params.get("offset", ["0"])[0], params.get("limit", ["40"])[0]
-                    if not offset.isascii() or not offset.isdecimal() or limit not in ("20", "40"):
-                        raise ValueError("invalid_gossip_machine_filter")
-                    self._json(200, gossip_machine.page(params.get("status", ["all"])[0], int(offset), int(limit)))
-                except (ValueError, TypeError, KeyError, OSError) as exc:
-                    self._json(400, {"error": "gossip_machine_revalidation_failed", "reason": _reason(exc)})
-                return
-            if parts.path == "/api/gossip":
-                if gossip_reviews is None:
-                    self._json(404, {"error": "gossip_review_unavailable"})
-                    return
-                try:
-                    params = parse_qs(parts.query, keep_blank_values=True)
-                    if (set(params) - {"offset", "limit"}
-                            or any(len(values) != 1 for values in params.values())):
-                        raise ValueError("invalid_gossip_review_query")
-                    offset_str = params.get("offset", ["0"])[0]
-                    limit_str = params.get("limit", ["12"])[0]
-                    if (not offset_str.isascii() or not offset_str.isdecimal()
-                            or not limit_str.isascii() or not limit_str.isdecimal()):
-                        raise ValueError("invalid_gossip_review_query")
-                    self._json(200, gossip_reviews.page(int(offset_str), int(limit_str)))
-                except (ValueError, TypeError, KeyError) as exc:
-                    self._event("gossip.list", "failed", _reason(exc))
-                    self._json(400, {"error": "invalid_gossip_review_query"})
-                return
-            if parts.path == "/api/source-reviews":
-                if source_reviews is None:
-                    self._json(404, {"error": "source_review_unavailable"})
-                    return
-                try:
-                    params = parse_qs(parts.query, keep_blank_values=True)
-                    if (set(params) - {"offset", "limit"}
-                            or any(len(values) != 1 for values in params.values())):
-                        raise ValueError("invalid_source_review_query")
-                    raw_offset = params.get("offset", ["0"])[0]
-                    raw_limit = params.get("limit", ["20"])[0]
-                    if (not raw_offset.isascii() or not raw_offset.isdecimal()
-                            or raw_limit not in ("20", "40")):
-                        raise ValueError("invalid_source_review_query")
-                    offset, limit = int(raw_offset), int(raw_limit)
-                    if offset > 100000:
-                        raise ValueError("invalid_source_review_query")
-                    from adapters.source_revision_store import SOURCES
-                    priority = [p for p in state.policy.sources if p in SOURCES]
-                    report = source_reviews.conflicts(priority=priority)
-                    self._json(200, {"total": len(report["items"]),
-                        "conflicts": report["conflicts"],
-                        "revisions": source_reviews.revisions(),
-                        "offset": offset, "limit": limit,
-                        "items": report["items"][offset:offset + limit]})
-                except (ValueError, TypeError, KeyError) as exc:
-                    self._event("source_review.list", "failed", _reason(exc))
-                    self._json(400, {"error": "invalid_source_review_query"})
-                return
-            if parts.path == "/api/import-stats" and not parts.query:
-                if import_db_path is None:
-                    self._json(404, {"error": "import_statistics_unavailable"})
-                    return
-                try:
-                    from adapters.import_statistics import report
-                    self._json(200, report(import_db_path))
-                except (ValueError, TypeError, KeyError, OSError) as exc:
-                    self._event("imports.stats", "failed", _reason(exc))
-                    self._json(400, {"error": "import_statistics_evidence_invalid"})
-                return
-            if parts.path != "/api/queue":
-                self._json(404, {"error": "not_found"})
-                return
-            try:
-                params = parse_qs(parts.query, keep_blank_values=True)
-                if (set(params) - {"faction", "offset", "limit"}
-                        or any(len(values) != 1 for values in params.values())):
-                    raise ValueError("invalid_query")
-                faction = params.get("faction", ["horde"])[0]
-                offset_value = params.get("offset", ["0"])[0]
-                limit_value = params.get("limit", ["12"])[0]
-                if not (offset_value.isascii() and offset_value.isdecimal()
-                        and limit_value.isascii() and limit_value.isdecimal()):
-                    raise ValueError("invalid_query")
-                offset, limit = int(offset_value), int(limit_value)
-                if offset > 100000:
-                    raise ValueError("invalid_query")
-                report = state.page(faction=faction, offset=offset, limit=limit)
-                self._json(200, report)
-            except (ValueError, TypeError):
-                self._json(400, {"error": "invalid_review_queue_request"})
+            self._json(404, {"error": "not_found"})
 
         def do_POST(self):
             if not self._trusted_host() or self.headers.get("Origin") != allowed_origin:
                 self._json(403, {"error": "local_origin_required"})
                 return
             route = urlsplit(self.path).path
-            routes = {"/api/decisions", "/api/mapping/approve", "/api/translations/refresh",
-                      "/api/translations/edit", "/api/translations/decide", "/api/translations/import",
-                      "/api/translations/auto_import_one_to_one",
-                      "/api/gossip-machine/import",
-                      "/api/gossip/propose", "/api/gossip/decide", "/api/gossip/import",
-                      "/api/source-reviews/decide", "/api/source-reviews/activate",
-                      "/api/source-reviews/clear", "/api/source-comparison", "/api/agent"}
-            if route not in routes or "?" in self.path:
+            action = route.removeprefix("/api/manager/")
+            if action not in actions or route != "/api/manager/" + action or "?" in self.path:
                 self._json(404, {"error": "not_found"})
                 return
             supplied_token = self.headers.get("X-Review-Token", "")
@@ -288,110 +186,15 @@ def create_handler(state, token, port, gossip_reviews=None,
             if length <= 0 or length > MAX_REQUEST_BYTES:
                 self._json(413, {"error": "review_request_too_large"})
                 return
-            event = {"/api/decisions": "mapping.decision",
-                     "/api/mapping/approve": "mapping.approve",
-                     "/api/translations/refresh": "translation.refresh",
-                     "/api/translations/edit": "translation.edit",
-                     "/api/translations/decide": "translation.decision",
-                     "/api/translations/import": "translation.import",
-                     "/api/translations/auto_import_one_to_one": "translation.auto_import_one_to_one",
-                     "/api/gossip-machine/import": "gossip_machine.import",
-                     "/api/gossip/propose": "gossip.propose",
-                     "/api/gossip/decide": "gossip.decision",
-                     "/api/gossip/import": "gossip.import",
-                     "/api/source-reviews/decide": "source_review.decision",
-                     "/api/source-reviews/activate": "source_review.activate",
-                     "/api/source-reviews/clear": "source_review.clear",
-                     "/api/source-comparison": "source_review.compare",
-                     "/api/agent": "translation_agent"}[route]
+            event = 'manager.' + action
             self._event(event, "requested")
             try:
                 payload = strict_json(self.rfile.read(length))
                 if type(payload) is not dict:
                     raise ValueError("invalid_review_request")
-                if route == "/api/agent":
-                    keys = {"action", "module", "candidate_ids", "limit", "offset",
-                            "status", "dry_run", "confirm", "model"}
-                    if translation_agent is None or "action" not in payload or set(payload) - keys:
-                        raise ValueError("invalid_agent_request")
-                    result = translation_agent.run(**payload)
-                elif route == "/api/source-comparison":
-                    if source_reviews is None:
-                        raise ValueError("source_review_unavailable")
-                    if not payload:
-                        result = {"revisions": source_reviews.revisions()}
-                    else:
-                        keys = {"left_provider", "before", "right_provider", "after", "mode",
-                                "change_filter", "offset", "limit"}
-                        required = keys - {"change_filter", "offset", "limit"}
-                        if not required <= set(payload) <= keys:
-                            raise ValueError("invalid_source_comparison")
-                        options = {"limit": 10} | payload
-                        if type(options["limit"]) is not int:
-                            raise ValueError("source_comparison_requires_bounded_page")
-                        result = source_reviews.compare_snapshots(**options)
-                elif route == "/api/gossip-machine/import":
-                    if payload or gossip_machine is None:
-                        raise ValueError("invalid_gossip_machine_import_request")
-                    result = gossip_machine.run()
-                elif route == "/api/decisions":
-                    if set(payload) != {"source_id", "target_id", "decision", "reason", "reviewer"}:
-                        raise ValueError("invalid_decision_request")
-                    result = state.decide(**payload)
-                elif route == "/api/mapping/approve":
-                    result = state.approve_mapping(payload)
-                elif route.startswith("/api/source-reviews/"):
-                    if source_reviews is None or source_trusted is None:
-                        raise ValueError("source_review_unavailable")
-                    # The same pinned-source revalidation gate as Quest/Gossip.
-                    state.revalidate_inputs()
-                    if route == "/api/source-reviews/decide":
-                        if set(payload) != {"candidate_id", "decision", "reviewer", "checks"}:
-                            raise ValueError("invalid_source_review_request")
-                        result = source_reviews.decide(payload["candidate_id"],
-                            payload["decision"], payload["reviewer"],
-                            payload["checks"], source_trusted)
-                    elif route == "/api/source-reviews/activate":
-                        if set(payload) != {"candidate_id", "reviewer"}:
-                            raise ValueError("invalid_source_selection_request")
-                        result = source_reviews.activate(payload["candidate_id"],
-                            payload["reviewer"], source_trusted)
-                    else:
-                        if set(payload) != {"domain", "target_id", "reviewer"}:
-                            raise ValueError("invalid_source_selection_clear_request")
-                        result = source_reviews.clear_selection(payload["domain"],
-                            payload["target_id"], payload["reviewer"], source_trusted)
-                elif route.startswith("/api/gossip/"):
-                    if gossip_reviews is None:
-                        raise ValueError("gossip_review_unavailable")
-                    # Re-audit current pinned inputs before every mutating action.
-                    state.revalidate_inputs()
-                    if route == "/api/gossip/propose":
-                        if set(payload) != {"group_id", "english_sha256",
-                                            "context_sha256", "ukrainian_text", "provider"}:
-                            raise ValueError("invalid_gossip_proposal_request")
-                        from tools.gossip_translation_review import GossipReviews
-                        proposal = {key: payload[key] for key in
-                                    ("group_id", "english_sha256",
-                                     "context_sha256", "ukrainian_text")}
-                        added = gossip_reviews.propose([proposal], payload["provider"])
-                        result = {"added": added,
-                                  "version_id": gossip_reviews.file.data["versions"][-1]["id"],
-                                  "activated": False}
-                    elif route == "/api/gossip/decide":
-                        if set(payload) != {"version_id", "decision", "reviewer", "checks"}:
-                            raise ValueError("invalid_gossip_decision_request")
-                        result = {"status": gossip_reviews.decide(
-                            payload["version_id"], payload["decision"],
-                            payload["reviewer"], payload["checks"]),
-                            "activated": False}
-                    else:
-                        if payload:
-                            raise ValueError("invalid_gossip_import_request")
-                        result = {"imported": gossip_reviews.import_approved(),
-                                  "activated": False}
-                else:
-                    result = state.translation_action(route.rsplit("/", 1)[1], payload)
+                if manager is None:
+                    raise ValueError("manager_unavailable")
+                result = manager.action(action, payload)
                 self._event(event, "succeeded")
                 self._json(200, result)
             except (ValueError, TypeError, KeyError, UnicodeError, OSError) as exc:
@@ -486,8 +289,9 @@ def main(argv=None):
                        for path in (args.classicua, args.spoken))
                 or any(out == path.resolve() for out in outputs for path in inputs)):
             raise ValueError("review_storage_conflicts_with_input")
-        state = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
-                            outputs[1], outputs[2], args.policy)
+        if args.auto_import_one_to_one or args.import_approved:
+            state = build_state(args.classicua, args.spoken, outputs[0], args.reviews,
+                                outputs[1], outputs[2], args.policy)
         if args.auto_import_one_to_one:
             LOGGER.info("translation.auto_import_one_to_one requested (CLI)")
             result = state.translation_action(
@@ -504,35 +308,14 @@ def main(argv=None):
             print(format_import_table(result["report"]))
             print(json.dumps(result, sort_keys=True))
             return 0
-        # Gossip has its own exact-hash identity, review ledger and opt-in import
-        # gate; it must never be treated as Quest Stage 3 mapping approval.
-        from tools.gossip_coverage import read_pinned_corpus
-        from tools.build_ukrainian import local_gossip_texts
-        from tools.gossip_translation_review import discover_groups, GossipReviews
-        spoken_lines = read_pinned_corpus(args.spoken, state.inventory.revision)
-        gossip_groups, _ = discover_groups(
-            spoken_lines, local_gossip_texts(state),
-            state.inventory.revision, state.source.revision)
-        gossip_reviews = GossipReviews(
-            gossip_groups, state.inventory.revision, state.source.revision)
-        from adapters.source_revision_store import SourceReviewStore
         from adapters.sqlite_translation_store import DB_ENV, default_db_path
-        from tools.source_revision_review import trusted_inventory
+        from tools.translation_manager import ManagerUI
         import os
-        source_trusted = trusted_inventory(state, spoken_lines)
-        source_reviews = SourceReviewStore(os.environ.get(DB_ENV) or default_db_path())
-        # Not 0.0.0.0 or a hostname resolving to all interfaces.
-        from tools.gossip_machine_import import GossipMachineImport
-        from adapters.translation_agent import TranslationAgent
-        from tools.translation_agent import evidence
         db_path = os.environ.get(DB_ENV) or default_db_path()
+        manager = ManagerUI(args.classicua, args.spoken, db_path)
         server = ThreadingHTTPServer(
             ("127.0.0.1", args.port),
-            create_handler(state, secrets.token_urlsafe(32), args.port,
-                           gossip_reviews, source_reviews, source_trusted,
-                           db_path, gossip_machine=GossipMachineImport(state, args.spoken),
-                           translation_agent=TranslationAgent(
-                               db_path, lambda: evidence(state, args.spoken, db_path))))
+            create_handler(secrets.token_urlsafe(32), args.port, manager))
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         reason = _reason(exc)
         LOGGER.error("startup failed reason=%s", reason)
@@ -543,8 +326,8 @@ def main(argv=None):
         print("review_ui_pinned_sources_or_local_bind_failed", file=sys.stderr)
         return 1
     LOGGER.info("startup succeeded; listening on localhost port %d", args.port)
-    print(f"Spoken_Quests offline translation review/import UI: http://127.0.0.1:{args.port}/", flush=True)
-    print("Offline-only (not a WoW AddOn): Quest and Gossip review; Gossip requires explicit human approval and import. No game installation.", flush=True)
+    print(f"Quest + Gossip Translation Manager: http://127.0.0.1:{args.port}/", flush=True)
+    print("Private local builds and review.", flush=True)
     try:
         with server:
             server.serve_forever()

@@ -199,9 +199,18 @@ def connection(path):
                 singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                 snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
             db.execute("""INSERT OR IGNORE INTO build_import_head(singleton, snapshot_id)
-                SELECT 1, MAX(id) FROM build_import_snapshots HAVING COUNT(*) > 0""")
+                SELECT 1, MAX(id) FROM build_import_snapshots
+                WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version=5)
+                HAVING COUNT(*) > 0""")
             db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (5)")
             db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (6)")
+            columns = {r[1] for r in db.execute("PRAGMA table_info(build_import_snapshots)")}
+            if "module" not in columns:
+                db.execute("ALTER TABLE build_import_snapshots ADD COLUMN module TEXT")
+            db.execute("""CREATE TABLE IF NOT EXISTS module_build_heads (
+                module TEXT PRIMARY KEY CHECK(module IN ('Spoken_Quest_UA', 'Spoken_Gossip_UA')),
+                snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
+            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (7)")
             db.commit()
         except BaseException:
             db.rollback()
@@ -259,7 +268,7 @@ class SQLiteDocument:
         with connection(self.db_path) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                row = db.execute("SELECT payload FROM ledger_documents WHERE ledger_name = ?",
+                row = db.execute("SELECT payload, revision FROM ledger_documents WHERE ledger_name = ?",
                                  (self.name,)).fetchone()
                 if row is None:
                     # First run: import existing ignored JSON, do not delete it.
@@ -274,21 +283,22 @@ class SQLiteDocument:
                         """INSERT INTO ledger_documents(ledger_name, payload, revision)
                            VALUES(?, ?, 1)""", (self.name, payload))
                     _memory_versions(db, self.name, data)
+                    revision = 1
                 else:
-                    payload = row[0]
+                    payload, revision = row
                     from adapters.local_review_store import strict_json
                     data = self.validate(strict_json(payload))
                 db.commit()
             except BaseException:
                 db.rollback()
                 raise
-        self.baseline, self.data = payload, data
+        self.baseline, self.revision, self.data = payload, revision, data
 
     def check_unchanged(self):
         with connection(self.db_path) as db:
-            row = db.execute("SELECT payload FROM ledger_documents WHERE ledger_name = ?",
+            row = db.execute("SELECT payload, revision FROM ledger_documents WHERE ledger_name = ?",
                              (self.name,)).fetchone()
-        if row is None or row[0] != self.baseline:
+        if row != (self.baseline, self.revision):
             raise ValueError("local_review_conflict_restart_and_reload")
 
     def save(self, data):
@@ -297,9 +307,9 @@ class SQLiteDocument:
         with connection(self.db_path) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
-                row = db.execute("SELECT payload FROM ledger_documents WHERE ledger_name = ?",
+                row = db.execute("SELECT payload, revision FROM ledger_documents WHERE ledger_name = ?",
                                  (self.name,)).fetchone()
-                if row is None or row[0] != self.baseline:
+                if row != (self.baseline, self.revision):
                     raise ValueError("local_review_conflict_restart_and_reload")
                 if payload != self.baseline:
                     db.execute(
@@ -312,6 +322,8 @@ class SQLiteDocument:
             except BaseException:
                 db.rollback()
                 raise
+        if payload != self.baseline:
+            self.revision += 1
         self.baseline, self.data = payload, checked
         return checked
 
@@ -329,7 +341,7 @@ def backup_database(db_path, destination):
     # O_EXCL prevents an existing or concurrently created backup being
     # overwritten. O_NOFOLLOW blocks symlink swaps at the destination.
     try:
-        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     except FileExistsError:
         raise ValueError("sqlite_backup_target_already_exists") from None
     except OSError:

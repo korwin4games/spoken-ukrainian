@@ -55,3 +55,16 @@ These are constraints to reproduce and keep covered by tests. Offline characteri
 ## Release and change controls
 
 `AGENTS.md` and `.agents/skills/spoken-runtime-contracts/SKILL.md` must enforce this decision. Any exception that would modify Spoken Player is **out of scope under the current architecture** and needs a new explicit user decision; no agent should reinterpret a research task as authorization to patch it. Do not create player forks, submit upstream code PRs, bump `VERSION`, publish community packs, or perform paid TTS operations in this policy-documentation change.
+
+The [local Translation Manager](TRANSLATION_MANAGER.md) unifies Quest and Gossip
+browsing and private test builds. Its read model joins pinned originals with
+review state and the latest digest-matching ZIP inventory. Its write path
+orchestrates the existing guarded imports on a staged SQLite copy. These local
+tools do not establish runtime support for other modules.
+
+## Independent local Quest and Gossip addons
+
+`Spoken_Quest_UA` retains public v1 Quest registration and native quest hooks.
+`Spoken_Gossip_UA` uses native Gossip widgets and depends on shared
+`Spoken_Ukrainian`. The official `Spoken_Quests` remains a single upstream
+target. See the [installation and migration guide](QUEST_LOCAL_TEST_BUILD.md).

@@ -20,7 +20,7 @@ from adapters.mapping import target_context
 from adapters.local_review_store import strict_json
 from adapters.sqlite_translation_store import DB_ENV, default_db_path, enable_sqlite
 from adapters.source_revision_store import SourceReviewStore, CHECKS, FIELDS, SOURCES, sha
-from tools.gossip_coverage import read_pinned_corpus, classicua_hash
+from tools.gossip_coverage import gossip_evidence, read_pinned_corpus
 from tools.gossip_translation_review import normalized
 
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
@@ -29,31 +29,20 @@ HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 def gossip_contexts(lines):
     """Independent exact NPC/English-hash proof from a pinned Spoken corpus."""
     trusted = {}
-    for row in lines:
-        if type(row) is not dict:
-            raise ValueError("invalid_source_review_spoken_row")
-        if row.get("source") != "gossip":
+    evidence, _, unsafe, ambiguous_common, _ = gossip_evidence(lines)
+    for row, npc, hash_num in evidence:
+        if (npc, hash_num) in unsafe:
             continue
-        npc = row.get("npcId")
-        if (row.get("npcType") not in ("creature", "vehicle")
-                or type(npc) is not int or npc <= 0):
-            continue
-        english = row.get("originalText")
-        if type(english) is not str or not english.strip():
-            english = row.get("text")
-        if type(english) is not str or not english.strip():
-            continue
+        english = row["originalText"]
         text = normalized(english)
-        hash_num = classicua_hash(english)
-        if hash_num is None:
-            continue
         target = f"gossip:{npc}:{hash_num}"
         english_sha = sha(text)
         context_sha = digest({"npc_id": npc, "english_hash": hash_num,
                               "english_sha256": english_sha})
         key = "gossip", target
         proof = {"english_sha256": english_sha, "context_sha256": context_sha,
-                 "english_original": english, "npc_id": npc, "english_hash": hash_num}
+                 "english_original": english, "npc_id": npc, "english_hash": hash_num,
+                 "common_safe": hash_num not in ambiguous_common}
         previous = trusted.get(key)
         if previous and (previous["english_sha256"] != english_sha
                          or previous["context_sha256"] != context_sha):
@@ -90,7 +79,7 @@ def classicua_snapshot(state, trusted, gossip):
         explicit = gossip["byNpc"].get(npc, {})
         if hash_num in explicit:
             value, provenance = explicit[hash_num], f"classicua:npc:{npc}:{hash_num}"
-        elif hash_num in gossip["common"]:
+        elif hash_num in gossip["common"] and proof.get("common_safe", True):
             value, provenance = gossip["common"][hash_num], f"classicua:common:{hash_num}"
         else:
             continue

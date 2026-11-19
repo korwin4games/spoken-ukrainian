@@ -102,13 +102,15 @@ def record_decision(data, hints, source, inventory, *, source_id, target_id,
 
 
 def build_workbench(source: SourceInventory, inventory, *,
-                    decisions=None, reviews=(), limit=50, offset=0, faction=None):
+                    decisions=None, reviews=(), limit=50, offset=0, faction=None, target_filter=None):
     """Build deterministic queue with complete target-context metadata, not text."""
     if not isinstance(source, SourceInventory):
         raise ValueError("audited_source_inventory_required")
     if (type(limit) is not int or not 1 <= limit <= 100
             or type(offset) is not int or offset < 0
-            or faction not in (None, "alliance", "horde")):
+            or faction not in (None, "alliance", "horde")
+            or (target_filter is not None and
+                (target_filter not in inventory.targets or inventory.targets[target_filter].family != "quest"))):
         raise ValueError("invalid_workbench_pagination_or_faction")
     hints = candidates(source.units, inventory)
     saved = validate_decisions(decisions if decisions is not None else empty_decisions(),
@@ -139,6 +141,8 @@ def build_workbench(source: SourceInventory, inventory, *,
             continue
         if faction and not unit.source_id.startswith("quest:" + faction + ":"):
             continue
+        if target_filter is not None and target_filter not in hint["candidates"]:
+            continue
         counts["quest_source_units"] += 1
         if hint["source_id"] in approved_ids:
             counts["approved_identities_excluded_from_queue"] += 1
@@ -155,6 +159,8 @@ def build_workbench(source: SourceInventory, inventory, *,
 
         options = []
         for target_id in hint["candidates"]:
+            if target_filter is not None and target_id != target_filter:
+                continue
             decision = decision_by_pair.get((unit.source_id, target_id))
             if decision and decision["decision"] == "rejected":
                 counts["rejected_candidate_pairs"] += 1

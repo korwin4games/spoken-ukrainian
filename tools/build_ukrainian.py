@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a *local-test-only* Spoken Ukrainian + Spoken_Quests_UA ZIP.
+"""Build a private local-test ZIP for one Ukrainian localization addon.
 
 ALWAYS re-audits pinned ClassicUA/Spoken and runs the explicit ClassicUA 1:1
 import action before packaging. Generated Ukrainian translations are in ignored
@@ -25,14 +25,18 @@ from adapters.spoken import PublicSource
 from adapters.classicua.source import GitSource
 from adapters.classicua.lua import Parser, Table
 from tools.review_ui_server import build_state, validate_source_paths, _reason
-from adapters.import_summary import format_import_table, unique_one_to_one_hint_pairs
+from adapters.import_summary import unique_one_to_one_hint_pairs
 
 DIST = ROOT / "dist"
-ARCHIVE = DIST / "Spoken_Ukrainian_Quest_Local_Test.zip"
-ADDON_FOLDERS = ("Spoken_Ukrainian", "Spoken_Quests_UA")
+QUEST_MODULE = "Spoken_Quest_UA"
+GOSSIP_MODULE = "Spoken_Gossip_UA"
+MODULE_DOMAINS = {QUEST_MODULE: "quest", GOSSIP_MODULE: "gossip"}
+ARCHIVES = {module: DIST / f"{module}_Local_Test.zip" for module in MODULE_DOMAINS}
+ARCHIVE = ARCHIVES[QUEST_MODULE]
 TEMPLATE_FILES = {
     "Spoken_Ukrainian": ("Spoken_Ukrainian.toc", "Core.lua"),
-    "Spoken_Quests_UA": ("Spoken_Quests_UA.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua", "GossipFrame.lua"),
+    QUEST_MODULE: (f"{QUEST_MODULE}.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"),
+    GOSSIP_MODULE: (f"{GOSSIP_MODULE}.toc", "GossipFrame.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
 QUEST_SOURCE = re.compile(r"quest:(horde|alliance):([1-9][0-9]*):(accept|progress|complete)\Z")
@@ -65,13 +69,27 @@ def lua_quote(value):
     return "".join(out)
 
 
-def current_quest_texts(state, selected_out=None, agent_rows=()):
+def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None):
     """Only currently imported references after real full-source revalidation."""
     machine = validate_machine_ledger(state.machine_imports.file.data)
     reviewed = _validate_ledger(state.translations.file.data)
     version_by_id = {v["id"]: v for v in reviewed["versions"]}
     machine_by_id = {v["id"]: v for v in machine["versions"]}
     texts = {}
+    from adapters.crosswalk import quest_moment
+    from adapters.spoken.text_index import ambiguous_quest_moments
+    blocked = (state.blocked_quest_moments() if hasattr(state, "blocked_quest_moments") else set())
+    ambiguous = ambiguous_quest_moments(getattr(state, "original_index", None))
+
+    def excluded(target):
+        moment = quest_moment(target)
+        reason = ("quest_mapping_rejected_or_deferred" if moment in blocked else
+                  "quest_multiple_verified_originals" if moment in ambiguous else None)
+        if reason and skipped is not None and (target, reason) not in skipped:
+            skipped.append((target, reason))
+        return reason is not None
+
+    conflicted_moments = set()
     supporting_fields = defaultdict(lambda: {"title": set(), "objective": set()})
     source_views = None
     for imports, versions, human in (
@@ -87,6 +105,8 @@ def current_quest_texts(state, selected_out=None, agent_rows=()):
                 raise ValueError("unexpected_nonquest_import")
             if not QUEST_TARGET.fullmatch(target_id):
                 raise ValueError("invalid_canonical_quest_id")
+            if excluded(target_id):
+                continue
             row = versions[ref["version_id"]]
             if row["target_id"] != target_id:
                 raise ValueError("quest_import_target_mismatch")
@@ -119,7 +139,7 @@ def current_quest_texts(state, selected_out=None, agent_rows=()):
     for row in agent_rows:
         if row["domain"] == "quest":
             target = row["target_id"]
-            if not texts.get(target, {}).get("reviewed"):
+            if not excluded(target) and not texts.get(target, {}).get("reviewed"):
                 texts[target] = {"text": row["text"], "reviewed": False}
 
     # A source-review Quest override is valid only on top of a separately
@@ -131,33 +151,47 @@ def current_quest_texts(state, selected_out=None, agent_rows=()):
     if db_path:
         from adapters.source_revision_store import SourceReviewStore
         from tools.source_revision_review import quest_contexts
-        selected_quest = SourceReviewStore(db_path).active(quest_contexts(state), domain="quest")
-        if selected_out is not None:
-            selected_out.extend(selected_quest)
+        selected_quest = SourceReviewStore(db_path).active(
+            quest_contexts(state), domain="quest", skipped=skipped)
         if selected_quest:
             mapped = {o.target_id for o in state.translation_observations()}
             for selection in selected_quest:
                 target = selection["target_id"]
+                if excluded(target):
+                    continue
                 if target not in mapped:
+                    if skipped is not None:
+                        skipped.append((target, "source_quest_selection_requires_approved_stage3_mapping"))
+                        continue
                     raise ValueError("source_quest_selection_requires_approved_stage3_mapping")
                 already = texts.get(target)
                 if (already and already["reviewed"]
                         and already["text"] != selection["ukrainian_text"]):
+                    if skipped is not None:
+                        skipped.append((target, "conflicting_human_reviewed_quest_selection"))
+                        conflicted_moments.add(QUEST_TARGET.fullmatch(target).groups())
+                        continue
                     raise ValueError("conflicting_human_reviewed_quest_selection")
                 texts[target] = {"text": selection["ukrainian_text"], "reviewed": True}
+                if selected_out is not None:
+                    selected_out.append(selection)
     # The preview only has QuestID and event from public WoW functions.
     # It cannot choose between different NPC voice / wording variants;
     # skip the whole moment when their texts conflict.
     moments = defaultdict(list)
     for target, data in texts.items():
         quest, event = QUEST_TARGET.fullmatch(target).groups()
+        if (quest, event) in conflicted_moments:
+            continue
         moments[(int(quest), event)].append(data)
     result = {}
-    skipped = 0
+    skipped_count = 0
     for (quest, event), rows in sorted(moments.items()):
         unique_texts = {row["text"] for row in rows}
         if len(unique_texts) != 1:
-            skipped += len(rows)
+            if skipped is not None:
+                skipped.append((f"q:{quest}:{event}", "conflicting_quest_runtime_variants"))
+            skipped_count += len(rows)
             continue
         result.setdefault(quest, {})[event] = {
             "text": rows[0]["text"],
@@ -169,7 +203,7 @@ def current_quest_texts(state, selected_out=None, agent_rows=()):
             for key, candidates in fields.items():
                 if len(candidates) == 1:
                     result[quest][key] = next(iter(candidates))
-    return result, len(texts), skipped
+    return result, len(texts), skipped_count
 
 
 def read_classicua_inflections(classicua_path, source_files):
@@ -354,7 +388,7 @@ def local_gossip_texts(state):
     return result
 
 
-def render_gossip_lua(gossip):
+def render_gossip_lua(gossip, *, excluded=(), inflections=None):
     """UTF-8 Lua data table, packed into private ignored ZIP only."""
     if type(gossip) is not dict or set(gossip) != {"byNpc", "common"}:
         raise ValueError("invalid_gossip_lookup")
@@ -362,6 +396,7 @@ def render_gossip_lua(gossip):
         "-- GENERATED local test from audited source and human-reviewed Gossip hashes.",
         "-- Not an approved Spoken Gossip text mapping; no audio files included.",
         "SpokenUkrainian = SpokenUkrainian or {}",
+        *inflection_lines(inflections),
         "SpokenUkrainian.GossipTexts = {",
         "    byNpc = {",
     ]
@@ -381,6 +416,17 @@ def render_gossip_lua(gossip):
             raise ValueError("invalid_gossip_common_hash")
         lines.append("        [%d] = %s," % (digest, lua_quote(value)))
     lines.append("    },")
+    if excluded:
+        by_npc = defaultdict(list)
+        for npc, hashed in excluded:
+            if type(npc) is not int or npc <= 0 or type(hashed) is not int or not 0 < hashed < 4294967291:
+                raise ValueError("invalid_gossip_exclusion")
+            by_npc[npc].append(hashed)
+        lines.append("    excluded = {")
+        for npc, hashes in sorted(by_npc.items()):
+            lines.append("        [%d] = {%s}," % (
+                npc, ", ".join("[%d] = true" % hashed for hashed in sorted(hashes))))
+        lines.append("    },")
     lines.append("}")
     return ("\n".join(lines) + "\n").encode("utf-8")
 
@@ -394,8 +440,13 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles
         "-- No recordings, synthetic sound lengths or playback metadata.",
         "SpokenUkrainian = SpokenUkrainian or {}",
     ]
-    # Private test build: embed ClassicUA declined race/class names.
-    lines.append("SpokenUkrainian.Inflections = {")
+    lines.extend(inflection_lines(inflections))
+    lines.extend(quest_lines(preview, gossip_titles))
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def inflection_lines(inflections):
+    lines = ["SpokenUkrainian.Inflections = {"]
     for kind, groups in sorted((inflections or {}).items()):
         if kind not in ("class", "race") or type(groups) is not dict:
             raise ValueError("invalid_build_inflection_group")
@@ -410,6 +461,11 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles
             lines.append("        },")
         lines.append("    },")
     lines.append("}")
+    return lines
+
+
+def quest_lines(preview, gossip_titles):
+    lines = []
     # Gossip has reliable per-row questID on WoW Forever. Titles are
     # independently sourced, provisional, and NEVER counted as narration.
     lines.append("SpokenUkrainian.GossipQuestTitles = {")
@@ -441,12 +497,14 @@ def render_quest_lua(preview, pinned_spoken_sha, inflections=None, gossip_titles
                     "true" if row["reviewed"] else "false"))
         lines.append("    },")
     lines.append("}")
-    return ("\n".join(lines) + "\n").encode("utf-8")
+    return lines
 
 
-def template_entries(preview_lua, gossip_lua=None):
+def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE):
+    if module not in MODULE_DOMAINS:
+        raise ValueError("manager_unknown_module")
     entries = {}
-    for folder in ADDON_FOLDERS:
+    for folder in ("Spoken_Ukrainian", module):
         directory = ROOT / "addons" / folder
         expected = set(TEMPLATE_FILES[folder])
         if directory.is_symlink() or not directory.is_dir() or {
@@ -456,47 +514,47 @@ def template_entries(preview_lua, gossip_lua=None):
             path = directory / name
             if path.is_symlink() or not path.is_file():
                 raise ValueError("unsafe_ukrainian_addon_template")
-            entries[folder + "/" + name] = path.read_bytes()
-    base_toc = entries["Spoken_Ukrainian/Spoken_Ukrainian.toc"].decode("utf-8")
-    quest_toc = entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"].decode("utf-8")
+            entries[folder + "/" + name] = path.read_bytes().replace(b"\r\n", b"\n")
+    base_toc = entries["Spoken_Ukrainian/Spoken_Ukrainian.toc"].decode("utf-8").replace("\r\n", "\n")
+    toc = entries[f"{module}/{module}.toc"].decode("utf-8").replace("\r\n", "\n")
     for required in (
             "## Title: Spoken Ukrainian\n",
             "## Dependencies: Spoken\n",
             "Core.lua\n"):
         if required not in base_toc:
             raise ValueError("missing_base_ukrainian_toc_contract")
+    if module == GOSSIP_MODULE:
+        if ("## Dependencies: Spoken_Ukrainian\n" not in toc
+                or "GossipTranslations.lua\nGossipFrame.lua\n" not in toc):
+            raise ValueError("missing_gossip_ukrainian_toc_contract")
+        entries[f"{module}/GossipTranslations.lua"] = gossip_lua
+        return entries
     for required in (
             "## Title: Spoken Ukrainian: Quests\n",
             "## Dependencies: Spoken, Spoken_Quests, Spoken_Ukrainian\n",
             "## LoadOnDemand: 1\n",
             "## X-SpokenQuests-DataModule-Version: 1\n",
             "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nGossipTranslations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\nGossipFrame.lua\n"):
-        if required not in quest_toc:
+            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\n"):
+        if required not in toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
-    if not all(symbol in entries["Spoken_Quests_UA/GossipFrame.lua"].decode("utf-8")
-               for symbol in ("GossipGreetingTextMixin", "GossipOptionButtonMixin",
-                              "QuestFrameGreetingPanel_OnShow", "IsShiftKeyDown", "EnglishHash")):
-        raise ValueError("missing_gossip_native_translation_contract")
     # Module must never invent sound files or call AddOn playback.
-    module = entries["Spoken_Quests_UA/Module.lua"].decode("utf-8")
-    frame_code = entries["Spoken_Quests_UA/NativeQuestFrame.lua"].decode("utf-8")
+    module = entries["Spoken_Quest_UA/Module.lua"].decode("utf-8")
+    frame_code = entries["Spoken_Quest_UA/NativeQuestFrame.lua"].decode("utf-8")
     if not all(symbol in frame_code for symbol in (
             "MODIFIER_STATE_CHANGED", "hooksecurefunc", "GetQuestID",
             "IsShiftKeyDown", "QuestProgressText")):
         raise ValueError("missing_native_questframe_translation_contract")
-    gossip_code = entries["Spoken_Quests_UA/GossipQuestTitles.lua"].decode("utf-8")
+    gossip_code = entries["Spoken_Quest_UA/GossipQuestTitles.lua"].decode("utf-8")
     if not all(symbol in gossip_code for symbol in (
             "GossipAvailableQuestButtonMixin", "QuestFrameGreetingPanel",
             "GetAvailableQuestInfo", "UnitFactionGroup", "IsShiftKeyDown")):
         raise ValueError("missing_gossip_quest_title_contract")
-    if not ('quests:Register("Spoken_Quests_UA"' in module
+    if not ('quests:Register("Spoken_Quest_UA"' in module
             and "SoundLengthLookupByFileName = {}" in module
             and "QUEST_DETAIL" in module):
         raise ValueError("missing_quest_pack_registration")
-    entries["Spoken_Quests_UA/Translations.lua"] = preview_lua
-    entries["Spoken_Quests_UA/GossipTranslations.lua"] = (
-        render_gossip_lua({"byNpc": {}, "common": {}}) if gossip_lua is None else gossip_lua)
+    entries["Spoken_Quest_UA/Translations.lua"] = preview_lua
     return entries
 
 
@@ -517,7 +575,7 @@ def write_zip(entries, destination=ARCHIVE):
         with ZipFile(temp, "w", compression=ZIP_STORED) as archive:
             for name, content in sorted(entries.items()):
                 if (name.startswith("/") or "\\" in name or ".." in name.split("/")
-                        or name.split("/")[0] not in ADDON_FOLDERS):
+                        or name.split("/")[0] not in TEMPLATE_FILES):
                     raise ValueError("unsafe_ukrainian_archive_name")
                 item = ZipInfo(name, (1980, 1, 1, 0, 0, 0))
                 item.create_system = 3
@@ -533,22 +591,35 @@ def write_zip(entries, destination=ARCHIVE):
     return destination, sha
 
 
-def build(classicua, spoken):
-    """Auto-import is mandatory; there is no build-without-import switch."""
-    classicua, spoken = Path(classicua), Path(spoken)
+def local_test_state(classicua, spoken):
     validate_source_paths(classicua, spoken)
-    state = build_state(
+    return build_state(
         classicua, spoken,
         ROOT / "build/stage4b-decisions.json",
         None,
         ROOT / "build/stage3-ui-reviews.json",
         ROOT / "build/translation-reviews.json",
         ROOT / "config/translation_sources.json")
+
+
+def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None, destination=None, skipped=None):
+    """Auto-import is mandatory; there is no build-without-import switch."""
+    if module not in MODULE_DOMAINS:
+        raise ValueError("manager_unknown_module")
+    is_quest = module == QUEST_MODULE
+    classicua, spoken = Path(classicua), Path(spoken)
+    state = local_test_state(classicua, spoken)
+    if before_import is not None:
+        before_import(state)
     # Explicitly call the *same* guarded UI/CLI action. Re-check current
     # canonical mappings, source bytes, rights policy and source versions.
-    report_action = state.translation_action(
-        "auto_import_one_to_one", {"source": "classicua"})
-    report = report_action["report"]
+    report = {}
+    if is_quest:
+        report = state.translation_action(
+            "auto_import_one_to_one", {"source": "classicua"},
+            **({} if skipped is None else {"skipped": skipped}))["report"]
+    if prepare is not None:
+        prepare(state)
     from adapters.sqlite_translation_store import DB_ENV
     from adapters.translation_agent import TranslationAgent, has_imports
     db_path = os.environ.get(DB_ENV)
@@ -557,17 +628,71 @@ def build(classicua, spoken):
         from tools.translation_agent import evidence
         agent_rows = TranslationAgent(db_path, lambda: evidence(state, spoken, db_path)).effective_imports()
     selected_quest = []
-    if agent_rows:
-        preview, imported, ambiguous = current_quest_texts(state, selected_quest, agent_rows)
+    agent_rows = [row for row in agent_rows if row["domain"] == MODULE_DOMAINS[module]]
+    if not is_quest:
+        preview, imported, ambiguous = {}, 0, 0
+    elif agent_rows or skipped is not None:
+        preview, imported, ambiguous = current_quest_texts(
+            state, selected_quest, agent_rows, skipped=skipped)
     else:
         preview, imported, ambiguous = current_quest_texts(state, selected_quest)
     preview_count = sum(event in ("accept", "progress", "complete")
                         for events in preview.values() for event in events)
-    if not preview_count:
+    if is_quest and not preview_count:
         raise ValueError("no_unambiguous_quest_imports_for_local_test_pack")
-    unknown_factions = unknown_faction_import_counts(state)
+    unknown_factions = unknown_faction_import_counts(state) if is_quest else {}
     forms = read_classicua_inflections(classicua, state.source.files)
-    titles = local_gossip_titles(state)
+    titles = local_gossip_titles(state) if is_quest else {}
+    gossip, reviewed_gossip, selected_gossip, excluded_gossip, source_proofs, gossip_page = (
+        gossip_build_data(state, spoken, db_path, agent_rows, skipped) if not is_quest
+        else ({"byNpc": {}, "common": {}}, {}, [], {}, {}, {}))
+    entries = template_entries(
+        render_quest_lua(preview, state.inventory.revision, forms, titles) if is_quest else None,
+        render_gossip_lua(gossip, excluded=excluded_gossip, inflections=forms) if not is_quest else None,
+        module=module)
+    import_inventory = None
+    if db_path:
+        from adapters.import_statistics import store_successful_build
+        from tools.import_build_inventory import collect_build_rows
+        inventory_rows = collect_build_rows(
+            state, preview, gossip, titles, reviewed_gossip,
+            selected_gossip, selected_quest, source_proofs, db_path, machine_gossip=gossip,
+            agent_rows=agent_rows, excluded_gossip=excluded_gossip)
+    artifact, digest = write_zip(entries, ARCHIVES[module] if destination is None else destination)
+    if db_path:
+        import_inventory = store_successful_build(
+            db_path, artifact_sha256=digest, module=module,
+            spoken_revision=state.inventory.revision,
+            classicua_revision=state.source.revision,
+            rows=inventory_rows)
+    return {
+        "artifact": artifact, "sha256": digest,
+        "import_inventory": import_inventory,
+        "reported_total_spoken": report.get("total_spoken_records", 0),
+        "imported_quest_records": imported,
+        "previewable_quest_moments": preview_count,
+        "skipped_ambiguous_preview_variants": ambiguous,
+        "machine_provisional": report.get("machine_one_to_one_imported", 0),
+        "human_reviewed": report.get("human_reviewed_imported_total", 0),
+        "title_only_gossip_records": {k: len(v) for k, v in titles.items()},
+        "gossip_text_records": {
+            "npc_ids": len(gossip["byNpc"]),
+            "npc_hashes": sum(len(v) for v in gossip["byNpc"].values()),
+            "common_hashes": len(gossip["common"]),
+        },
+        "reviewed_gossip_text_records": {
+            "npc_ids": len(reviewed_gossip),
+            "npc_hashes": sum(len(rows) for rows in reviewed_gossip.values()),
+        },
+        "explicit_source_gossip_selections": len(selected_gossip),
+        "gossip_machine_import": gossip_page,
+        "unknown_faction_imports": unknown_factions,
+        "quest_97279": import_reason_for_quest(state, 97279) if is_quest else {},
+        "report": report,
+    }
+
+
+def gossip_build_data(state, spoken, db_path, agent_rows, skipped):
     original_gossip = local_gossip_texts(state)
     from tools.gossip_machine_import import GossipMachineImport
     gossip_machine = GossipMachineImport(state, spoken)
@@ -589,14 +714,15 @@ def build(classicua, spoken):
     # They never override a second, separately imported human Gossip decision
     # without first resolving that conflict in the review ledger.
     selected_gossip = []
+    excluded_gossip = {}
     source_proofs = {}
     if db_path:
         from adapters.source_revision_store import SourceReviewStore
         from tools.source_revision_review import gossip_contexts
         from tools.gossip_coverage import read_pinned_corpus
         source_proofs = gossip_contexts(read_pinned_corpus(spoken, state.inventory.revision))
-        selected_gossip = SourceReviewStore(db_path).active(source_proofs, domain="gossip")
-        for selection in selected_gossip:
+        source_choices = SourceReviewStore(db_path).active(source_proofs, domain="gossip", skipped=skipped)
+        for selection in source_choices:
             match = re.fullmatch(r"gossip:([1-9][0-9]*):([1-9][0-9]*)",
                                  selection["target_id"])
             if match is None:
@@ -605,92 +731,46 @@ def build(classicua, spoken):
             existing_reviewed = reviewed_gossip.get(npc_id, {}).get(text_hash)
             if (existing_reviewed is not None
                     and existing_reviewed != selection["ukrainian_text"]):
-                raise ValueError("conflicting_human_reviewed_gossip_selection")
+                if skipped is not None:
+                    skipped.append((selection["target_id"], "conflicting_human_reviewed_gossip_selection"))
+                remaining = gossip["byNpc"][npc_id]
+                remaining.pop(text_hash)
+                if not remaining:
+                    del gossip["byNpc"][npc_id]
+                excluded_gossip[npc_id, text_hash] = "reviewed+source_selected"
+                continue
             gossip["byNpc"].setdefault(npc_id, {})[text_hash] = selection["ukrainian_text"]
-    entries = template_entries(render_quest_lua(
-        preview, state.inventory.revision, forms, titles),
-        render_gossip_lua(gossip))
-    # Only metadata for texts that actually entered a successful local ZIP.
-    # Never count raw proposals or claim an import was embedded beforehand.
-    import_inventory = None
-    if db_path:
-        from adapters.import_statistics import store_successful_build
-        from tools.import_build_inventory import collect_build_rows
-        inventory_rows = collect_build_rows(
-            state, preview, gossip, titles, reviewed_gossip,
-            selected_gossip, selected_quest, source_proofs, db_path, machine_gossip=gossip,
-            agent_rows=agent_rows)
-    artifact, digest = write_zip(entries)
-    if db_path:
-        import_inventory = store_successful_build(
-            db_path, artifact_sha256=digest,
-            spoken_revision=state.inventory.revision,
-            classicua_revision=state.source.revision,
-            rows=inventory_rows)
-    return {
-        "artifact": artifact, "sha256": digest,
-        "import_inventory": import_inventory,
-        "reported_total_spoken": report["total_spoken_records"],
-        "imported_quest_records": imported,
-        "previewable_quest_moments": preview_count,
-        "skipped_ambiguous_preview_variants": ambiguous,
-        "machine_provisional": report["machine_one_to_one_imported"],
-        "human_reviewed": report["human_reviewed_imported_total"],
-        "title_only_gossip_records": {k: len(v) for k, v in titles.items()},
-        "gossip_text_records": {
-            "npc_ids": len(gossip["byNpc"]),
-            "npc_hashes": sum(len(v) for v in gossip["byNpc"].values()),
-            "common_hashes": len(gossip["common"]),
-        },
-        "reviewed_gossip_text_records": {
-            "npc_ids": len(reviewed_gossip),
-            "npc_hashes": sum(len(rows) for rows in reviewed_gossip.values()),
-        },
-        "explicit_source_gossip_selections": len(selected_gossip),
-        "gossip_machine_import": gossip_machine.page(),
-        "unknown_faction_imports": unknown_factions,
-        "quest_97279": import_reason_for_quest(state, 97279),
-        "report": report,
-    }
+            selected_gossip.append(selection)
+        from tools.gossip_machine_import import source_review_targets
+        for target in source_review_targets(db_path):
+            match = re.fullmatch(r"gossip:([1-9][0-9]*):([1-9][0-9]*)", target)
+            if match:
+                npc, hashed = map(int, match.groups())
+                if hashed in gossip["common"] and hashed not in gossip["byNpc"].get(npc, {}):
+                    excluded_gossip.setdefault((npc, hashed), "source_review")
+    return gossip, reviewed_gossip, selected_gossip, excluded_gossip, source_proofs, gossip_machine.page()
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--classicua", type=Path, required=True,
                         help="Local CLEAN Git checkout at sources.lock.json pinned ClassicUA commit")
+    parser.add_argument("--module", choices=tuple(MODULE_DOMAINS), default=QUEST_MODULE)
     parser.add_argument("--spoken", type=Path, required=True,
                         help="Local CLEAN Git checkout at sources.lock.json pinned Spoken commit")
     args = parser.parse_args(argv)
     print("Spoken Ukrainian local TEST build: running mandatory ClassicUA 1:1 auto-import...",
           flush=True)
     try:
-        result = build(args.classicua, args.spoken)
+        from adapters.sqlite_translation_store import DB_ENV, default_db_path
+        from tools.translation_manager import reimport
+        result = reimport(args.classicua, args.spoken, os.environ.get(DB_ENV) or default_db_path(),
+                          module=args.module, confirm=True)
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
         print("Quest build failed reason=" + _reason(exc), file=sys.stderr)
         return 1
-    print(format_import_table(result["report"]))
-    print("Quest records imported:", result["imported_quest_records"])
-    print("Quest moments safe to preview:", result["previewable_quest_moments"])
-    print("Skipped ambiguous voice/wording variants:",
-          result["skipped_ambiguous_preview_variants"])
     print("Local test ZIP:", result["artifact"])
-    print("Title-only Gossip entries by faction:",
-          result["title_only_gossip_records"])
-    print("ClassicUA exact-hash NPC Gossip lines (local provisional lookup):",
-          result["gossip_text_records"])
-    print("Explicitly imported human-reviewed Gossip (private local ZIP only):",
-          result["reviewed_gossip_text_records"])
-    print("Explicitly selected human-reviewed source Gossip variants:",
-          result["explicit_source_gossip_selections"])
-    if result["import_inventory"] is not None:
-        print("Actual ZIP import inventory by domain/source/route:")
-        for line in result["import_inventory"]["rows"]:
-            print("  {category}: {source} ({route}) - {text_records} texts / {unique_entities} entities".format(**line))
-    print("Imported records with unverified Spoken faction (machine vs reviewed):",
-          result["unknown_faction_imports"])
-    print("Quest 97279 diagnostics (metadata only):", result["quest_97279"])
     print("SHA-256:", result["sha256"])
-    print("NOT a release: no recorded audio and NO replacement of Spoken narrator captions.")
     return 0
 
 

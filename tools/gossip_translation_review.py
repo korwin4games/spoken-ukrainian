@@ -18,7 +18,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from adapters.local_review_store import LocalFile, strict_json
-from tools.gossip_coverage import classicua_hash, read_pinned_corpus
+from tools.gossip_coverage import gossip_evidence, read_pinned_corpus
 
 CHECKS = ("text", "grammar", "ai", "rights", "all_contexts")
 EMPTY = {"schema_version": 1, "versions": [], "imports": []}
@@ -52,34 +52,20 @@ def discover_groups(lines, gossip, spoken_rev, classicua_rev):
             and set(gossip) == {"byNpc", "common"}
             and HEX40.fullmatch(spoken_rev) and HEX40.fullmatch(classicua_rev)):
         raise ValueError("invalid_gossip_review_inputs")
-    groups, by_npc_hash, collisions = {}, {}, set()
-    gossip_rows = non_npc = 0
-    for row in lines:
-        if type(row) is not dict:
-            raise ValueError("invalid_gossip_review_row")
-        if row.get("source") != "gossip":
+    evidence, _, unsafe, ambiguous_common, non_npc = gossip_evidence(lines)
+    gossip_rows = len(evidence) + non_npc
+    groups = {}
+    for row, npc, hash_value in evidence:
+        if ((npc, hash_value) in unsafe
+                or (hash_value in ambiguous_common and hash_value in gossip["common"])):
             continue
-        gossip_rows += 1
-        npc = row.get("npcId")
-        if row.get("npcType") not in ("creature", "vehicle") or type(npc) is not int or npc <= 0:
-            non_npc += 1
-            continue
-        english = row.get("originalText")
-        if type(english) is not str or not english.strip():
-            english = row.get("text")
-        clean, hash_value = normalized(english), classicua_hash(english)
-        display = re.sub(" +", " ", english.replace("\u00a0", " ")).strip(" \t\n\r\v\f") \
-            if type(english) is str else ""
-        if not clean or not hash_value:
-            continue
+        english = row["originalText"]
+        clean = normalized(english)
+        display = re.sub(" +", " ", english.replace("\u00a0", " ")).strip(" \t\n\r\v\f")
         if (hash_value in gossip["byNpc"].get(npc, {})
                 or hash_value in gossip["common"]):
             continue
         key = npc, hash_value
-        if key in by_npc_hash and by_npc_hash[key] != clean:
-            collisions.add(key)
-            continue
-        by_npc_hash[key] = clean
         identity = text_hash(clean)
         group = groups.setdefault(identity, {
             "group_id": identity, "english_sha256": identity, "english": display, "contexts": {}
@@ -88,12 +74,6 @@ def discover_groups(lines, gossip, spoken_rev, classicua_rev):
         group["contexts"][key] = {"npc_id": npc,
                                   "npc_name": name if type(name) is str else "",
                                   "english_hash": hash_value}
-    for key in collisions:
-        original = by_npc_hash[key]
-        identity = text_hash(original)
-        groups[identity]["contexts"].pop(key, None)
-        if not groups[identity]["contexts"]:
-            del groups[identity]
     result = []
     for group in groups.values():
         contexts = sorted(group["contexts"].values(),
@@ -114,7 +94,7 @@ def discover_groups(lines, gossip, spoken_rev, classicua_rev):
         "unique_english_texts_to_translate": len(result),
         "repeated_occurrences_deduplicated": occurrences - len(result),
         "groups_used_by_multiple_npcs": sum(x["occurrence_count"] > 1 for x in result),
-        "excluded_npc_hash_collisions": len(collisions),
+        "excluded_npc_hash_collisions": len(unsafe),
     }
 
 
@@ -244,7 +224,7 @@ class GossipReviews:
         self.file.save(copy)
         return version_status(row)
 
-    def import_approved(self):
+    def import_approved(self, *, skipped=None):
         by_group = defaultdict(list)
         for row in self.file.data["versions"]:
             if self.current(row) and version_status(row) == "approved":
@@ -252,6 +232,9 @@ class GossipReviews:
         output = []
         for group, versions in sorted(by_group.items()):
             if len(versions) != 1:
+                if skipped is not None:
+                    skipped.append((group, "conflicting_gossip_approved_versions"))
+                    continue
                 raise ValueError("conflicting_gossip_approved_versions")
             output.append({"group_id": group, "version_id": versions[0]["id"]})
         copy = deepcopy(self.file.data)

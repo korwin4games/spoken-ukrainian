@@ -5,14 +5,13 @@ This is separate from the Stage 3 human-reviewed identity ledger: a structural
 with explicit provisional status, never in Git, runtime packs or the approved
 human-content import ledger.
 """
-from collections import Counter
+from collections import Counter, defaultdict
 from copy import deepcopy
 from hashlib import sha256
 import re
 
 from adapters.classicua.evidence import SourceInventory
 from adapters.crosswalk import QUEST_EVENTS, digest
-from adapters.import_summary import unique_one_to_one_hint_pairs
 from adapters.local_review_store import LocalFile
 from adapters.mapping import target_context
 from adapters.translation_approvals import text_sha
@@ -43,7 +42,7 @@ def validate_machine_ledger(data):
         raise ValueError("invalid_machine_import_ledger_schema")
     seen, imported_targets = {}, set()
     for row in data["versions"]:
-        if type(row) is not dict or set(row) != FIELDS:
+        if type(row) is not dict or set(row) not in (FIELDS, FIELDS | {"shared_bindings"}):
             raise ValueError("invalid_machine_import_version")
         if (not SOURCE_ID.fullmatch(row["source_id"])
                 or not TARGET_ID.fullmatch(row["target_id"])
@@ -61,6 +60,14 @@ def validate_machine_ledger(data):
                 or row["text_sha256"] != row["field_sha256"]
                 or row["id"] != record_id(row) or row["id"] in seen):
             raise ValueError("invalid_machine_import_provenance")
+        if "shared_bindings" in row:
+            _, _, quest, event = row["source_id"].split(":")
+            bindings = row["shared_bindings"]
+            if (type(bindings) is not dict
+                    or set(bindings) != {f"quest:{side}:{quest}:{event}" for side in ("alliance", "horde")}
+                    or any(type(value) is not str or not HEX64.fullmatch(value) for value in bindings.values())
+                    or bindings[row["source_id"]] != row["source_context_sha256"]):
+                raise ValueError("invalid_shared_quest_bindings")
         seen[row["id"]] = row
     for ref in data["imports"]:
         if type(ref) is not dict or set(ref) != {"target_id", "version_id"}:
@@ -74,6 +81,21 @@ def validate_machine_ledger(data):
     return deepcopy(data)
 
 
+def machine_source_groups(dataset, source, views):
+    """Aliases are proven by resolving both factions to the same shared record."""
+    aliases = {}
+    for quest, record in dataset.records.get("quest_both", {}).items():
+        if not all(views[side].get(quest) is record for side in ("alliance", "horde")):
+            continue
+        for position, event in QUEST_EVENTS.items():
+            if (position,) not in record.fields:
+                continue
+            pair = tuple(f"quest:{side}:{quest}:{event}" for side in ("alliance", "horde"))
+            if all(key in source.units for key in pair):
+                aliases.update({key: pair for key in pair})
+    return aliases
+
+
 def machine_candidates(dataset, source, inventory, originals, hints, *, allow_ai_transations=False):
     """Revalidate exact pinned source field, target context and original bytes.
 
@@ -82,9 +104,32 @@ def machine_candidates(dataset, source, inventory, originals, hints, *, allow_ai
     """
     if not isinstance(source, SourceInventory):
         raise ValueError("audited_source_inventory_required")
-    pairs = unique_one_to_one_hint_pairs(
-        hints, source.units, inventory, allow_ai_transations=allow_ai_transations)
+    if type(allow_ai_transations) is not bool:
+        raise ValueError("invalid_allow_ai_transations")
     views, _ = dataset.faction_views(include_ai=True)
+    aliases = machine_source_groups(dataset, source, views)
+    by_group, by_target = defaultdict(set), defaultdict(set)
+    for hint in hints:
+        source_id = hint["source_id"]
+        group = aliases.get(source_id, (source_id,))
+        for target_id in hint["candidates"]:
+            by_group[group].add(target_id)
+            by_target[target_id].add(group)
+    pairs = []
+    for group, targets in by_group.items():
+        if len(targets) != 1:
+            continue
+        target_id = next(iter(targets))
+        if target_id not in inventory.targets or len(by_target[target_id]) != 1:
+            continue
+        contexts = inventory.contexts.get(target_id, ())
+        if len(contexts) != 1:
+            continue
+        faction = contexts[0].get("faction")
+        source_id = next((key for key in group if faction == key.split(":")[1]), group[0])
+        if source_id not in source.units:
+            continue
+        pairs.append((source_id, target_id))
     result = []
     for source_id, target_id in sorted(pairs):
         unit, target = source.units[source_id], inventory.targets[target_id]
@@ -135,6 +180,18 @@ def machine_candidates(dataset, source, inventory, originals, hints, *, allow_ai
             "text": leaf.node.value, "text_sha256": text_sha(leaf.node.value),
             "decision": "machine_1to1_provisional",
         }
+        if source_id in aliases:
+            bindings = {}
+            for key in aliases[source_id]:
+                binding = source.units[key]
+                if (binding.source_category != "quest_both"
+                        or (binding.source_revision, binding.origin_file, binding.origin_layer,
+                            binding.source_file_sha256, binding.effective_sha256, binding.ai)
+                        != (unit.source_revision, unit.origin_file, unit.origin_layer,
+                            unit.source_file_sha256, unit.effective_sha256, unit.ai)):
+                    raise ValueError("invalid_shared_quest_source_evidence")
+                bindings[key] = binding.context_sha256
+            row["shared_bindings"] = bindings
         row["id"] = record_id(row)
         result.append(row)
     return result

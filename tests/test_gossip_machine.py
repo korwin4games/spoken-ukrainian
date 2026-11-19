@@ -138,9 +138,30 @@ class GossipMachineTests(unittest.TestCase):
         for common in (False, True):
             state = state_for(self.allowed, common=common)
             with patch('tools.gossip_coverage.classicua_hash', return_value=H):
-                rows, items, _ = self.rows(state, [corpus(), corpus(43, 'Different sentence')])
+                lines = [corpus(), corpus(43, 'Different sentence')]
+                rows, items, _ = self.rows(state, lines)
+                self.assertFalse(discover_groups(lines, {'byNpc': {}, 'common': {}}, SP, REV)[0])
+                from tools.source_revision_review import gossip_contexts
+                self.assertEqual(gossip_contexts(lines), {})
             self.assertEqual(rows, [])
             self.assertTrue(all(i['status'] == 'conflict' for i in items))
+
+    def test_npc_type_ambiguity_is_blocked_by_every_review_path(self):
+        from tools.source_revision_review import gossip_contexts
+        lines = [corpus(), corpus() | {'npcType': 'vehicle'}, corpus(43)]
+        state = state_for(self.allowed, common=True)
+        lookup = builder.local_gossip_texts(state)
+        rows, items, _ = self.rows(state, lines)
+        self.assertEqual(rows, [])
+        self.assertEqual([item['status'] for item in items], ['conflict', 'conflict'])
+        groups, _ = discover_groups(lines, {'byNpc': {}, 'common': {}}, SP, REV)
+        self.assertEqual([c['npc_id'] for g in groups for c in g['contexts']], [43])
+        trusted = gossip_contexts(lines)
+        self.assertNotIn(('gossip', f'gossip:42:{H}'), trusted)
+        self.assertFalse(trusted['gossip', f'gossip:43:{H}']['common_safe'])
+        from tools.source_revision_review import classicua_snapshot
+        state.translation_observations = lambda: []
+        self.assertEqual(classicua_snapshot(state, trusted, lookup)['records'], [])
 
     def test_ai_policy_and_source_file_verification(self):
         state = state_for(self.allowed, ai=True)
@@ -170,7 +191,7 @@ class GossipMachineTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'conflict'):
                 stale.run(rows)
         with connection(self.db) as db:
-            self.assertEqual(db.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0], 6)
+            self.assertEqual(db.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0], 7)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM ledger_documents').fetchone()[0], 1)
 
     def test_changed_revision_pending_update_and_revert_stays_pending(self):
@@ -229,11 +250,26 @@ class GossipMachineTests(unittest.TestCase):
             service.run()
             self.assertEqual(service.build_lookup(), {'byNpc': {}, 'common': {}})
 
+    def test_npc_scoped_source_review_does_not_block_shared_machine_import(self):
+        state = state_for(self.allowed, common=True)
+        target = f"gossip:42:{H}"
+        with patch('tools.gossip_coverage.read_pinned_corpus', return_value=[corpus(), corpus(43)]), patch(
+                'tools.gossip_machine_import.source_review_targets', return_value={target}):
+            service = GossipMachineImport(state, '/unused')
+            _, items, _, blocked, _ = service.inspect()
+            self.assertEqual(blocked, {target})
+            self.assertEqual([row["status"] for row in items], ["source_selected", "eligible"])
+            service.run()
+            self.assertEqual(service.build_lookup(), {"byNpc": {}, "common": {H: UK}})
+
     def test_migrate_v4_database_preserves_old_snapshot(self):
         with connection(self.db) as db:
             db.execute('ALTER TABLE build_import_units DROP COLUMN text_sha256')
             db.execute('DELETE FROM schema_migrations WHERE version=5')
-            db.execute("INSERT INTO build_import_snapshots VALUES(1, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            db.execute("DELETE FROM schema_migrations WHERE version >= 5")
+            db.execute("""INSERT INTO build_import_snapshots
+                (id, fingerprint, artifact_sha256, spoken_revision, classicua_revision, created_at)
+                VALUES(1, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
                        ('d' * 64, 'e' * 64, SP, REV))
         with connection(self.db) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM build_import_snapshots').fetchone()[0], 1)
@@ -278,20 +314,20 @@ class GossipMachineTests(unittest.TestCase):
                 'tools.gossip_translation_review.load_reviewed_gossip',
                 side_effect=lambda state, existing, spoken: manual.imported_by_npc(existing)), patch.object(
                 builder, 'DIST', self.root / 'dist'), patch.object(builder, 'write_zip',
-                    side_effect=lambda entries: write_zip(entries, self.root / 'dist/test.zip')):
-            first = builder.build('/unused/ua', '/unused/spoken')
+                    side_effect=lambda entries, destination: write_zip(entries, self.root / 'dist/test.zip')):
+            first = builder.build('/unused/ua', '/unused/spoken', module=builder.GOSSIP_MODULE)
             with ZipFile(first['artifact']) as archive:
-                text = archive.read('Spoken_Quests_UA/GossipTranslations.lua').decode('utf-8')
+                text = archive.read('Spoken_Gossip_UA/GossipTranslations.lua').decode('utf-8')
                 self.assertIn(UK, text)
                 self.assertIn('[42]', text)
                 self.assertNotIn('[43]', text)
                 self.assertNotIn('[44]', text)
                 self.assertIn('Ручний перевірений текст.', text)
                 self.assertIn('[45]', text)
-            again = builder.build('/unused/ua', '/unused/spoken')
+            again = builder.build('/unused/ua', '/unused/spoken', module=builder.GOSSIP_MODULE)
             self.assertEqual(first['sha256'], again['sha256'])
             self.assertFalse(again['import_inventory']['new_snapshot'])
-            report = latest_successful_build(self.db)
+            report = latest_successful_build(self.db, builder.GOSSIP_MODULE)
             self.assertEqual(report['categories']['gossip'], 2)
             gossip = next(r for r in report['rows'] if r['category'] == 'gossip' and r['source'] == 'classicua')
             self.assertEqual(gossip['route'], 'machine_1to1')
@@ -303,31 +339,45 @@ class GossipMachineTests(unittest.TestCase):
             self.assertEqual(manual.file.data, human_history)
 
     def test_ui_post_authentication_filter_and_refresh(self):
+        from tools.translation_manager import ManagerUI
         service = GossipMachineImport(self.state, '/unused')
+        manager = ManagerUI('/unused', '/unused', self.db)
         with patch('tools.gossip_coverage.read_pinned_corpus', return_value=[corpus()]):
-            server = ThreadingHTTPServer(('127.0.0.1', 0), create_handler(self.state, 'token', 0))
+            server = ThreadingHTTPServer(('127.0.0.1', 0), create_handler('token', 0))
             port = server.server_address[1]
-            server.RequestHandlerClass = create_handler(self.state, 'token', port, gossip_machine=service)
+            server.RequestHandlerClass = create_handler('token', port, manager)
             worker = Thread(target=server.serve_forever, daemon=True)
             worker.start()
             base = f'http://127.0.0.1:{port}'
+            def import_worker(command, **options):
+                self.assertIn(builder.GOSSIP_MODULE, command)
+                try:
+                    result = service.run()
+                except ValueError as exc:
+                    self.assertEqual(str(exc), 'pinned_source_changed')
+                    return SimpleNamespace(returncode=1, stdout=b'{"error":"public_revision_mismatch"}')
+                payload = {"build": "success", "module": builder.GOSSIP_MODULE,
+                           "agent": {}, "summary": result, "skipped": [], "sha256": "fixture"}
+                return SimpleNamespace(returncode=0, stdout=json.dumps(payload).encode())
             try:
-                with urlopen(base + '/api/gossip-machine?status=eligible') as response:
-                    self.assertEqual(json.load(response)['total'], 1)
-                request = Request(base + '/api/gossip-machine/import', data=b'{}', method='POST',
+                self.assertEqual(service.page(status='eligible')['total'], 1)
+                request = Request(base + '/api/manager/reimport',
+                    data=json.dumps({"module": builder.GOSSIP_MODULE, "confirm": True}).encode(),
                     headers={'Origin': base, 'Content-Type': 'application/json'})
-                with self.assertRaises(HTTPError) as error:
-                    urlopen(request)
-                self.assertEqual(error.exception.code, 403)
-                request.add_header('X-Review-Token', 'token')
-                with urlopen(request) as response:
-                    self.assertEqual(json.load(response)['machine_imported'], 1)
-                with urlopen(base + '/api/gossip-machine?status=machine_1to1_provisional') as response:
-                    self.assertEqual(json.load(response)['total'], 1)
-                self.state.revalidate_inputs = Mock(side_effect=ValueError('pinned_source_changed'))
-                with self.assertRaises(HTTPError) as error:
-                    urlopen(request)
-                self.assertEqual(error.exception.code, 400)
+                with patch.object(manager, '_promote_worker_result'), patch(
+                        'tools.translation_manager.subprocess.run', side_effect=import_worker) as worker_call:
+                    with self.assertRaises(HTTPError) as error:
+                        urlopen(request)
+                    self.assertEqual(error.exception.code, 403)
+                    worker_call.assert_not_called()
+                    request.add_header('X-Review-Token', 'token')
+                    with urlopen(request) as response:
+                        self.assertEqual(json.load(response)['summary']['machine_imported'], 1)
+                    self.assertEqual(service.page(status='machine_1to1_provisional')['total'], 1)
+                    self.state.revalidate_inputs = Mock(side_effect=ValueError('pinned_source_changed'))
+                    with self.assertRaises(HTTPError) as error:
+                        urlopen(request)
+                    self.assertEqual(error.exception.code, 400)
             finally:
                 server.shutdown()
                 server.server_close()

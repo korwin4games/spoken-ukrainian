@@ -21,6 +21,8 @@ MAX_ROWS = 200000
 
 
 def _group(rows):
+    exclusions = [r for r in rows if r["domain"] == "gossip_excluded"]
+    rows = [r for r in rows if r["domain"] != "gossip_excluded"]
     grouped = defaultdict(lambda: {"text_records": 0, "entities": set(), "texts": set(), "unknown": 0})
     totals = {category: 0 for category in CATEGORIES}
     for row in rows:
@@ -45,6 +47,7 @@ def _group(rows):
     npc_rows = [r for r in gossip_rows if r["domain"] == "gossip" and
                 (r["unit"].startswith("npc:") or r["unit"].startswith("gossip:"))]
     return {"total_text_records": len(rows), "categories": totals, "rows": entries,
+            "gossip_excluded_npc_hashes": len(exclusions),
             "gossip_counts": {
                 "unique_translation_texts": len({r["text_sha256"] for r in gossip_rows if r.get("text_sha256")}),
                 "npc_hash_occurrences": len({r["unit"].split(":", 1)[1] for r in npc_rows}),
@@ -176,7 +179,9 @@ def _validate_build_rows(rows):
         if "text_sha256" in row and (type(row["text_sha256"]) is not str
                                       or not HEX64.fullmatch(row["text_sha256"])):
             raise ValueError("invalid_build_inventory_text_fingerprint")
-        if (row["domain"] not in CATEGORIES or row["route"] not in ROUTES
+        valid_route = (row["route"] == "excluded" if row["domain"] == "gossip_excluded"
+                       else row["domain"] in CATEGORIES and row["route"] in ROUTES)
+        if (not valid_route
                 or any(type(row[k]) is not str or not row[k] or len(row[k]) > 256
                        for k in ("unit", "entity", "source"))):
             raise ValueError("invalid_build_inventory_row")
@@ -188,15 +193,17 @@ def _validate_build_rows(rows):
 
 
 def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
-                           classicua_revision, rows):
+                           classicua_revision, rows, module=None):
     """Persist metadata after a successful ZIP write, never before."""
     if (type(artifact_sha256) is not str or not HEX64.fullmatch(artifact_sha256)
             or any(type(x) is not str or not re.fullmatch(r"[a-f0-9]{40}", x)
                    for x in (spoken_revision, classicua_revision))):
         raise ValueError("invalid_build_inventory_revision")
     checked = _validate_build_rows(rows)
+    if module not in (None, "Spoken_Quest_UA", "Spoken_Gossip_UA"):
+        raise ValueError("manager_unknown_module")
     payload = json.dumps([artifact_sha256, spoken_revision, classicua_revision,
-                          checked], ensure_ascii=False, sort_keys=True,
+                          checked] + ([module] if module else []), ensure_ascii=False, sort_keys=True,
                          separators=(",", ":")).encode("utf-8")
     fingerprint = sha256(payload).hexdigest()
     with connection(db_path) as db:
@@ -210,9 +217,9 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
                 new = False
             else:
                 cur = db.execute("""INSERT INTO build_import_snapshots
-                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision)
-                    VALUES (?, ?, ?, ?)""",
-                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision))
+                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision, module)
+                    VALUES (?, ?, ?, ?, ?)""",
+                    (fingerprint, artifact_sha256, spoken_revision, classicua_revision, module))
                 snapshot_id = cur.lastrowid
                 db.executemany("""INSERT INTO build_import_units
                     (snapshot_id, domain, unit_key, entity_key, source, route, text_sha256)
@@ -220,8 +227,12 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
                     [(snapshot_id, r["domain"], r["unit"], r["entity"],
                       r["source"], r["route"], r.get("text_sha256", "")) for r in checked])
                 new = True
-            db.execute("""INSERT INTO build_import_head(singleton, snapshot_id) VALUES(1, ?)
-                ON CONFLICT(singleton) DO UPDATE SET snapshot_id=excluded.snapshot_id""", (snapshot_id,))
+            if module is None:
+                db.execute("""INSERT INTO build_import_head(singleton, snapshot_id) VALUES(1, ?)
+                    ON CONFLICT(singleton) DO UPDATE SET snapshot_id=excluded.snapshot_id""", (snapshot_id,))
+            else:
+                db.execute("""INSERT INTO module_build_heads(module, snapshot_id) VALUES(?, ?)
+                    ON CONFLICT(module) DO UPDATE SET snapshot_id=excluded.snapshot_id""", (module, snapshot_id))
             db.commit()
         except BaseException:
             db.rollback()
@@ -229,11 +240,17 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
     return {"snapshot_id": snapshot_id, "new_snapshot": new, **_group(checked)}
 
 
-def latest_successful_build(db_path):
+def latest_successful_build(db_path, module=None):
     with connection(db_path) as db:
-        head = db.execute("""SELECT id, artifact_sha256, spoken_revision,
-            classicua_revision, created_at FROM build_import_snapshots
-            WHERE id = (SELECT snapshot_id FROM build_import_head WHERE singleton=1)""").fetchone()
+        if module is None:
+            head = db.execute("""SELECT id, artifact_sha256, spoken_revision,
+                classicua_revision, created_at FROM build_import_snapshots
+                WHERE id = (SELECT snapshot_id FROM build_import_head WHERE singleton=1)""").fetchone()
+        else:
+            head = db.execute("""SELECT s.id, s.artifact_sha256, s.spoken_revision,
+                s.classicua_revision, s.created_at FROM build_import_snapshots s
+                JOIN module_build_heads h ON h.snapshot_id=s.id
+                WHERE h.module=? AND s.module=?""", (module, module)).fetchone()
         if head is None:
             return None
         rows = [
@@ -248,4 +265,6 @@ def latest_successful_build(db_path):
 
 def report(db_path):
     return {**read_recorded_imports(db_path),
-            "latest_successful_build": latest_successful_build(db_path)}
+            "latest_successful_build": latest_successful_build(db_path),
+            "module_builds": {module: latest_successful_build(db_path, module)
+                              for module in ("Spoken_Quest_UA", "Spoken_Gossip_UA")}}

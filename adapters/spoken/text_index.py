@@ -6,12 +6,12 @@ texts *in memory only*, and use them only after checking the pinned inventory's
 stored wording digests. Places/Bosses are excluded until original story text
 is verified under a separately reviewed public input contract.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import Counter
 import gzip
 import json
 
-from adapters.crosswalk import digest
+from adapters.crosswalk import TARGET_PATTERNS, digest, quest_moment
 from adapters.spoken import literal_data
 
 
@@ -20,6 +20,7 @@ class TextIndex:
     original_english: dict
     unresolved: tuple
     families: dict
+    variants: dict = field(default_factory=dict)
 
     def metadata(self):
         return {
@@ -27,6 +28,11 @@ class TextIndex:
             "unresolved_public_original": len(self.unresolved),
             "families": self.families,
         }
+
+
+def ambiguous_quest_moments(index):
+    return {quest_moment(identity) for identity, variants in getattr(index, "variants", {}).items()
+            if TARGET_PATTERNS["quest"].fullmatch(identity) and len(variants) > 1}
 
 
 def index_verified_originals(reader, inventory):
@@ -75,4 +81,5 @@ def index_verified_originals(reader, inventory):
         counter["with_original" if identity in originals else "without_verified_original"] += 1
     if len(originals) + len(unresolved) != len(inventory.targets):
         raise ValueError("original_index_total_mismatch")
-    return TextIndex(originals, unresolved, dict(sorted(families.items())))
+    return TextIndex(originals, unresolved, dict(sorted(families.items())),
+                     {identity: tuple(sorted(words)) for identity, words in sorted(observed.items())})

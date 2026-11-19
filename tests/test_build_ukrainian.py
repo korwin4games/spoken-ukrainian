@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from lua_runtime import run_lua
+from adapters.spoken.text_index import TextIndex
 from tools import build_ukrainian as builder
 from tools import gossip_machine_import
 
@@ -35,18 +36,16 @@ class BuildUkrainianTests(unittest.TestCase):
         self.assertEqual(set(entries), {
             "Spoken_Ukrainian/Spoken_Ukrainian.toc",
             "Spoken_Ukrainian/Core.lua",
-            "Spoken_Quests_UA/Spoken_Quests_UA.toc",
-            "Spoken_Quests_UA/Module.lua",
-            "Spoken_Quests_UA/NativeQuestFrame.lua",
-            "Spoken_Quests_UA/GossipQuestTitles.lua",
-            "Spoken_Quests_UA/Translations.lua",
-            "Spoken_Quests_UA/GossipFrame.lua",
-            "Spoken_Quests_UA/GossipTranslations.lua",
+            "Spoken_Quest_UA/Spoken_Quest_UA.toc",
+            "Spoken_Quest_UA/Module.lua",
+            "Spoken_Quest_UA/NativeQuestFrame.lua",
+            "Spoken_Quest_UA/GossipQuestTitles.lua",
+            "Spoken_Quest_UA/Translations.lua",
         })
-        self.assertIn(b"Spoken_Ukrainian, ", entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"]
+        self.assertIn(b"Spoken_Ukrainian, ", entries["Spoken_Quest_UA/Spoken_Quest_UA.toc"]
                       .replace(b"Spoken_Ukrainian\n", b"Spoken_Ukrainian, "))
         self.assertIn(b"X-SpokenQuests-DataModule-Version: 1",
-                      entries["Spoken_Quests_UA/Spoken_Quests_UA.toc"])
+                      entries["Spoken_Quest_UA/Spoken_Quest_UA.toc"])
         self.assertNotIn(b".mp3", b"".join(entries.values()))
         self.assertNotIn(b"Silence", b"".join(entries.values()))
         self.assertIn("machine 1:1", generated.decode())
@@ -66,13 +65,15 @@ class BuildUkrainianTests(unittest.TestCase):
                     self.assertEqual(z.namelist(), sorted(entries))
                     self.assertIsNone(z.testzip())
                     self.assertEqual(
-                        z.read("Spoken_Quests_UA/Translations.lua"),
-                        entries["Spoken_Quests_UA/Translations.lua"])
+                        z.read("Spoken_Quest_UA/Translations.lua"),
+                        entries["Spoken_Quest_UA/Translations.lua"])
                     self.assertTrue(all(file.date_time == (1980, 1, 1, 0, 0, 0)
                                         for file in z.infolist()))
 
     def test_ambiguous_quest_event_suppressed_from_preview(self):
         state = Mock()
+        state.blocked_quest_moments.return_value = set()
+        state.original_index = TextIndex({}, (), {})
         state.inventory.targets = {
             "q:42:accept": SimpleNamespace(family="quest"),
             "q:42:accept:w2": SimpleNamespace(family="quest"),
@@ -100,6 +101,8 @@ class BuildUkrainianTests(unittest.TestCase):
         row = {"id": "machine-version", "target_id": target, "source_id": source_id,
                "decision": "machine_1to1_provisional", "text": "Вигаданий текст."}
         state = Mock()
+        state.blocked_quest_moments.return_value = set()
+        state.original_index = TextIndex({}, (), {})
         state.machine_imports.file.data = {
             "versions": [row], "imports": [{"target_id": target, "version_id": row["id"]}]}
         state.translations.file.data = {"versions": [], "imports": []}
@@ -128,6 +131,8 @@ class BuildUkrainianTests(unittest.TestCase):
              "decision": "machine_1to1_provisional", "text": "Другий текст."},
         ]
         state = Mock()
+        state.blocked_quest_moments.return_value = set()
+        state.original_index = TextIndex({}, (), {})
         state.machine_imports.file.data = {
             "versions": rows, "imports": [
                 {"target_id": item["target_id"], "version_id": item["id"]}
@@ -222,10 +227,10 @@ class BuildUkrainianTests(unittest.TestCase):
             return {"report": state.translation_action.return_value["report"]}
         state.translation_action.side_effect = do_import
         preview = {42: {"accept": {"text": UK, "reviewed": False}}}
-        def fake_zip(entries):
+        def fake_zip(entries, destination):
             order.append("zip")
-            self.assertIn("Spoken_Quests_UA/Translations.lua", entries)
-            self.assertIn("Spoken_Quests_UA/GossipTranslations.lua", entries)
+            self.assertIn("Spoken_Quest_UA/Translations.lua", entries)
+            self.assertNotIn("Spoken_Gossip_UA/GossipTranslations.lua", entries)
             return Path("dist/test.zip"), "b" * 64
         with patch.object(builder, "validate_source_paths"), patch.object(
                 gossip_machine_import,
@@ -315,7 +320,7 @@ UnitClass = function() return "Paladin", "PALADIN" end
 UnitRace = function() return "Orc", "Orc" end
 VoiceOver = {DataModules = {
     Register = function(self, name, module)
-        assert(name == "Spoken_Quests_UA")
+        assert(name == "Spoken_Quest_UA")
         assert(type(module.SoundLengthLookupByFileName) == "table")
         assert(next(module.SoundLengthLookupByFileName) == nil)
         self.registered = name
@@ -324,11 +329,11 @@ VoiceOver = {DataModules = {
 """
         for name in (
                 "Spoken_Ukrainian/Core.lua",
-                "Spoken_Quests_UA/Translations.lua",
-                "Spoken_Quests_UA/Module.lua"):
+                "Spoken_Quest_UA/Translations.lua",
+                "Spoken_Quest_UA/Module.lua"):
             script += "\n" + files[name].decode("utf-8") + "\n"
         script += """
-assert(VoiceOver.DataModules.registered == "Spoken_Quests_UA")
+assert(VoiceOver.DataModules.registered == "Spoken_Quest_UA")
 assert(SpokenUkrainian.previewEnabled == false)
 local found
 for _, widget in ipairs(widgets) do

@@ -1,6 +1,8 @@
 """End-to-end synthetic independent mapping → content review → inert import."""
 from copy import deepcopy
 from dataclasses import asdict, replace
+from contextlib import redirect_stdout
+from io import StringIO
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -16,7 +18,9 @@ from adapters.review_ui import LocalReviewState
 from adapters.spoken.text_index import TextIndex
 from adapters.mapping import review_file, load_reviews
 from adapters.translation_sources import SourcePolicy, TranslationCandidate, CandidateState
+from adapters.sqlite_translation_store import enable_sqlite
 from tools.review_ui_server import create_handler
+from tools import build_ukrainian, review_ui_server
 
 CHECKS = dict(text=True, grammar=True, ai=True, rights=True)
 
@@ -54,6 +58,44 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.state.translation_action("refresh", {})
         return self.state.translation_page()["versions"][0]["id"]
 
+    def test_mapping_decisions_block_every_automatic_entry_point(self):
+        policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
+            {"name": "classicua", "save_translations": True, "auto_approve_one_to_one": True}]})
+        payload = {"source": "classicua"}
+        for decision in ("rejected", "deferred"):
+            with self.subTest(decision=decision), enable_sqlite(self.base.parent / (decision + ".sqlite3")):
+                state = LocalReviewState(self.dataset, self.source, self.inventory, self.originals,
+                    self.base / "stage4b-decisions.json", self.base, policy=policy)
+                self.assertEqual(state.translation_action("auto_import_one_to_one", payload)["machine_imported"], 1)
+                state.decide(self.unit.source_id, "q:42:accept", decision, "wrong_speaker", "Fixture reviewer")
+                self.assertEqual(build_ukrainian.current_quest_texts(state)[0], {})
+                reasons = []
+                self.assertEqual(state.translation_action("auto_import_one_to_one", payload,
+                                                         skipped=reasons)["machine_imported"], 0)
+                self.assertIn(("q:42:accept", "quest_mapping_rejected_or_deferred"), reasons)
+                with patch.object(review_ui_server, "build_state", return_value=state), patch.object(
+                        review_ui_server, "validate_source_paths"), redirect_stdout(StringIO()):
+                    self.assertEqual(review_ui_server.main(["--classicua", "invented-classicua", "--spoken",
+                        "invented-spoken", "--auto-import-one-to-one"]), 0)
+                reopened = LocalReviewState(self.dataset, self.source, self.inventory, self.originals,
+                    self.base / "stage4b-decisions.json", self.base, policy=policy)
+                self.assertEqual(reopened.machine_imports.current_import_targets(), set())
+                self.assertEqual(len(reopened.machine_imports.file.data["versions"]), 1)
+                self.assertEqual(reopened.decisions["decisions"][0]["decision"], decision)
+
+    def test_defer_blocks_content_import_and_preserves_previous_approval(self):
+        identity = self.approve_and_collect()
+        self.state.translation_action("decide", {"identity": identity, "decision": "approved",
+            "reviewer": "Fixture content reviewer", "checks": CHECKS})
+        self.assertEqual(self.state.translation_action("import", {})["imported"], 1)
+        before = deepcopy(self.state.translations.file.data["versions"])
+        self.state.decide(self.unit.source_id, "q:42:accept", "deferred", "wrong_speaker",
+                          "Fixture mapping reviewer")
+        self.assertEqual(build_ukrainian.current_quest_texts(self.state)[0], {})
+        self.assertEqual(self.state.translation_action("import", {})["imported"], 0)
+        self.assertEqual(self.state.translations.file.data["versions"], before)
+        self.assertEqual(len(self.state.reviews), 1)
+
     def test_full_mapping_edit_review_import_restart_workflow(self):
         self.assertEqual(self.state.translation_page()["versions"], [])
         identity = self.approve_and_collect()
@@ -81,6 +123,84 @@ class ReviewApprovalUITests(unittest.TestCase):
         mapping_disk = (self.base / "stage3-ui-reviews.json").read_text()
         self.assertNotIn("invented wording", mapping_disk)
         self.assertNotIn("Вигаданий переклад.", mapping_disk)
+
+    def test_manager_missing_quest_draft_requires_mapping_and_needs_separate_confirmation(self):
+        from adapters.source_revision_store import CHECKS as ALL_CHECKS, sha
+        from tools.manager_inventory import load_inventory
+        from tools.manager_review import apply_review
+
+        module = build_ukrainian.QUEST_MODULE
+        identity = self.request["target_id"]
+        db = self.base.parent / "manager.sqlite3"
+        archive = self.base.parent / "quest.zip"
+        with patch("tools.manager_inventory.read_pinned_corpus", return_value=[]), patch(
+                "tools.gossip_coverage.read_pinned_corpus", return_value=[]):
+            def detail(state):
+                return load_inventory(None, None, db, archive, state=state).detail(identity=identity)
+
+            draft = {"identity": identity, "candidate": "", "confirm": True,
+                     "reviewer": "Fixture author", "text": "Вигадана чернетка."}
+            before = detail(self.state)
+            self.assertFalse(before["draft_available"])
+            self.assertTrue(before["mapping_options"])
+            self.assertEqual(before["candidates"][0]["eligibility"], "mapping_required")
+            self.assertNotIn("review_id", before["candidates"][0])
+            with self.assertRaisesRegex(ValueError, "approved_stage3_mapping"):
+                apply_review("save_translation", draft, module, before, self.state, None, db)
+            option = before["mapping_options"][0]
+            self.assertEqual(option["target_id"], identity)
+            self.assertIn("source_blob_sha256", option["evidence"])
+
+            self.state.approve_mapping(self.request)
+            mapped = detail(self.state)
+            self.assertTrue(mapped["draft_available"])
+            candidate = next(c for c in mapped["candidates"] if c["eligibility"] == "register")
+            self.assertNotIn("review_id", candidate)
+            with self.assertRaisesRegex(ValueError, "manager_candidate_unavailable"):
+                apply_review("register_candidate", {k: v for k, v in draft.items() if k != "text"}
+                             | {"candidate": "stale"}, module, mapped, self.state, None, db)
+            apply_review("save_translation", draft, module, mapped, self.state, None, db)
+            current = self.new_state()
+            saved = detail(current)
+            self.assertEqual(saved["mapping_state"], "mapping_verified")
+            self.assertTrue(saved["candidate_conflict"])
+            self.assertEqual(saved["status"], "conflict")
+            self.assertIsNone(saved["built"])
+            self.assertEqual(current.translations.file.data["imports"], [])
+            chosen = next(c for c in saved["candidates"] if c["text"] == draft["text"])
+            self.assertEqual(chosen["eligibility"], "selectable")
+            result = apply_review("confirm_candidate",
+                {k: v for k, v in draft.items() if k != "text"} | {
+                    "candidate": chosen["review_id"], "checks": dict.fromkeys(ALL_CHECKS, True)},
+                module, saved, current, None, db)
+            self.assertEqual(result, sha(draft["text"]))
+            self.assertEqual(current.translation_action("import", {})["imported"], 1)
+            preview = build_ukrainian.current_quest_texts(current)[0]
+            self.assertEqual(preview[42]["accept"]["text"], draft["text"])
+            from zipfile import ZipFile
+            entries = build_ukrainian.template_entries(
+                build_ukrainian.render_quest_lua(preview, current.inventory.revision))
+            with patch.object(build_ukrainian, "DIST", archive.parent):
+                build_ukrainian.write_zip(entries, archive)
+            with ZipFile(archive) as zipped:
+                self.assertIn(draft["text"].encode(), zipped.read(f"{module}/Translations.lua"))
+
+    def test_manager_registers_current_classicua_observation_as_pending(self):
+        from tools.manager_review import apply_review
+        self.state.approve_mapping(self.request)
+        observation, = self.state.translation_observations()
+        key = observation.row()["id"]
+        identity = self.request["target_id"]
+        row = {"id": identity, "originals": [observation.original], "mapping_state": "mapping_verified",
+               "candidates": [{"registration_key": key}]}
+        request = {"candidate": key, "identity": identity, "reviewer": "Fixture reviewer", "confirm": True}
+        self.assertIsNone(apply_review("register_candidate", request, build_ukrainian.QUEST_MODULE,
+                                       row, self.state, None, None))
+        reopened = self.new_state()
+        version, = reopened.translation_page()["versions"]
+        self.assertEqual(version["id"], key)
+        self.assertEqual(version["status"], "pending")
+        self.assertFalse(version["imported"])
 
     def test_auto_approval_requires_reviewed_identity_and_one_to_one(self):
         policy = SourcePolicy.from_mapping({"schema_version": 2, "sources": [
@@ -320,9 +440,33 @@ class ReviewApprovalUITests(unittest.TestCase):
         self.assertEqual(self.state.translations.file.data["imports"], [])
 
     def test_http_approval_routes_reject_csrf_unknown_fields_and_malformed_proofs(self):
-        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(self.state, "token", 0))
+        from types import SimpleNamespace
+        from tools.build_ukrainian import QUEST_MODULE
+        from tools.manager_review import apply_review
+
+        target = self.request["target_id"]
+        def action(name, fields):
+            if fields.get("module") != QUEST_MODULE or fields.get("identity") != target:
+                raise ValueError("manager_item_not_found")
+            versions = self.state.translations.file.data["versions"]
+            from adapters.translation_approvals import status
+            row = {"id": target, "original_variants": [{"target_id": target}],
+                   "originals": [self.state.original_index.original_english[target]],
+                   "mapping_state": "mapping_verified",
+                   "candidates": [{"text": v["text"], "review": status(v),
+                                   "review_kind": "quest", "review_id": v["id"]} for v in versions]}
+            if name == "detail":
+                return self.state.translation_page()
+            payload = {k: v for k, v in fields.items() if k != "module"}
+            apply_review(name, payload, QUEST_MODULE, row, self.state, None, None)
+            if name == "review_mapping":
+                self.state.translation_action("refresh", {})
+                return {"identity_approved": True}
+            return self.state.translation_action("import", {})
+        manager = SimpleNamespace(action=action)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler("token", 0))
         port = server.server_address[1]
-        server.RequestHandlerClass = create_handler(self.state, "token", port)
+        server.RequestHandlerClass = create_handler("token", port, manager)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join()))
@@ -330,9 +474,13 @@ class ReviewApprovalUITests(unittest.TestCase):
         def post(route, body, headers=None):
             return urlopen(Request(base + route, data=body, method="POST", headers=headers or {
                 "Content-Type": "application/json", "Origin": base, "X-Review-Token": "token"}), timeout=5)
-        for route in ("/api/mapping/approve", "/api/translations/refresh", "/api/translations/edit",
-                      "/api/translations/decide", "/api/translations/import",
-                      "/api/translations/auto_import_one_to_one"):
+        mapping = "/api/manager/review_mapping"
+        candidate = "/api/manager/confirm_candidate"
+        edit = "/api/manager/save_translation"
+        detail = "/api/manager/detail"
+        record = {"module": QUEST_MODULE, "identity": target}
+        proof = record | {"join": self.request, "confirm": True}
+        for route in (mapping, candidate, edit, "/api/manager/reimport"):
             with self.subTest(route=route), self.assertRaises(HTTPError) as error:
                 post(route, b'{}', {"Content-Type": "application/json", "Origin": base})
             self.assertEqual(error.exception.code, 403)
@@ -342,7 +490,7 @@ class ReviewApprovalUITests(unittest.TestCase):
             {"Content-Type": "application/json", "Origin": base, "X-Review-Token": "token", "Host": "evil.example"},
         ):
             try:
-                post("/api/translations/import", b'{}', headers)
+                post(candidate, b'{}', headers)
             except HTTPError as error:
                 self.assertIn(error.code, (400, 403))
             except OSError as error:
@@ -355,42 +503,38 @@ class ReviewApprovalUITests(unittest.TestCase):
             else:
                 self.fail("invalid HTTP headers were accepted")
         for body in (b'{}', b'{"schema_version":1,"schema_version":1}',
-                     json.dumps(self.request | {"proof": {}}).encode()):
+                     json.dumps(proof | {"join": self.request | {"proof": {}}}).encode()):
             with self.assertRaises(HTTPError) as error:
-                post("/api/mapping/approve", body)
+                post(mapping, body)
             self.assertEqual(error.exception.code, 400)
         with self.assertLogs("spoken.review_ui", level="INFO") as emitted:
-            with post("/api/mapping/approve", json.dumps(self.request).encode()) as response:
+            with post(mapping, json.dumps(proof).encode()) as response:
                 self.assertTrue(json.load(response)["identity_approved"])
-        self.assertTrue(any("mapping.approve succeeded" in row for row in emitted.output))
+        self.assertTrue(any("manager.review_mapping succeeded" in row for row in emitted.output))
         self.assertFalse(any("invented wording" in row or "Invented mapping reviewer" in row
                              for row in emitted.output))
-        with post("/api/translations/refresh", b'{}') as response:
-            self.assertTrue(json.load(response)["saved"])
-        with urlopen(base + "/api/translations", timeout=5) as response:
+        with post(detail, json.dumps(record).encode()) as response:
             row = json.load(response)["versions"][0]
+        self.assertFalse(row["imported"])
+        approval = record | {"candidate": row["id"], "reviewer": "Invented reviewer", "confirm": True}
+        checks = CHECKS | {"all_contexts": True}
         with self.assertRaises(HTTPError) as incomplete:
-            post("/api/translations/decide", json.dumps({"identity": row["id"],
-                 "decision": "approved", "reviewer": "Invented reviewer",
-                 "checks": CHECKS | {"rights": False}}).encode())
+            post(candidate, json.dumps(approval | {"checks": checks | {"rights": False}}).encode())
         self.assertEqual(incomplete.exception.code, 400)
         self.assertEqual(json.load(incomplete.exception.fp)["reason"],
-                         "explicit_content_attestation_required")
-        with urlopen(base + "/api/translations", timeout=5) as response:
+                         "manager_review_checks_required")
+        with post(detail, json.dumps(record).encode()) as response:
             self.assertEqual(json.load(response)["versions"][0]["status"], "pending")
-        with post("/api/translations/decide", json.dumps({"identity": row["id"], "decision": "approved",
-                  "reviewer": "Invented reviewer", "checks": CHECKS}).encode()) as response:
-            self.assertTrue(json.load(response)["saved"])
-        with urlopen(base + "/api/translations", timeout=5) as response:
+        with post(candidate, json.dumps(approval | {"checks": checks}).encode()) as response:
+            self.assertEqual(json.load(response)["imported"], 1)
+        with post(detail, json.dumps(record).encode()) as response:
             after_approval = json.load(response)["versions"][0]
             self.assertEqual(after_approval["status"], "approved")
             self.assertEqual(after_approval["id"], row["id"])
-            self.assertFalse(after_approval["imported"])
-        with post("/api/translations/import", b'{}') as response:
-            self.assertEqual(json.load(response)["imported"], 1)
-        for route, body, expected in (("/api/translations/import?x=1", b'{}', 404),
-                                       ("/api/translations/edit", b'{"text":"bad"}', 400),
-                                       ("/api/translations/import", b'x' * 262145, 413)):
+            self.assertTrue(after_approval["imported"])
+        for route, body, expected in ((candidate + "?x=1", b'{}', 404),
+                                       (edit, b'{"text":"bad"}', 400),
+                                       (candidate, b'x' * 262145, 413)):
             with self.assertRaises(HTTPError) as error:
                 post(route, body)
             self.assertEqual(error.exception.code, expected)
