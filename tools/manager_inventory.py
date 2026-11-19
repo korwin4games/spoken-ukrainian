@@ -658,6 +658,7 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
                     review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
                     draft_available=bool(binding) and moment not in rejected_moments,
                     ready_to_import=quick_ready, needs_choice=quick_conflict,
+                    selected_sha256=quick[2] if quick and binding and quick[0] == digest(binding) else None,
                     review_binding=digest(binding) if binding else None,
                     approved_variant_count=len(english) if approved and multiple else 0,
                     quest_id=quest_id, event=event, contexts=[c for t in targets for c in state.inventory.contexts[t]]))

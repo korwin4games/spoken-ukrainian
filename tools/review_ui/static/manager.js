@@ -192,7 +192,7 @@ function renderList(data) {
   el("rows").replaceChildren(...rows);
   if (domain() === "quest") {
     readyCount = Number(data.summary.quest?.ready || 0);
-    el("reimport").textContent = "Імпортувати все (" + number.format(readyCount) + ")";
+    el("reimport").textContent = "Створити модуль";
     el("reimport").disabled = busy || readyCount === 0;
   }
   el("list-message").hidden = rows.length > 0;
@@ -259,7 +259,7 @@ function simpleQuestControls(row) {
         binding: row.review_binding, confirm: true});
       el("run-summary").hidden = true;
       if (result.build !== "review_saved") throw new Error("manager_reimport_worker_invalid_response");
-      el("operation-status").textContent = "Збережено. Готовий до імпорту — натисніть «Імпортувати все».";
+      el("operation-status").textContent = "Збережено. Готовий до імпорту — натисніть «Створити модуль».";
       await list();
       if (selected === row.id) await detail(row.id);
     } catch (error) {
@@ -272,38 +272,46 @@ function simpleQuestControls(row) {
   };
   panel.append(make("h3", options.size > 1 ? "Оберіть переклад" :
     options.size === 1 ? "Доступний переклад" : "Немає перекладу"));
+  const field = make("textarea");
+  field.maxLength = 60000;
+  field.setAttribute("aria-label", "Український переклад");
+  field.placeholder = "Введіть або відредагуйте український переклад…";
+  let select = null;
   if (options.size) {
-    const select = make("select");
+    select = make("select");
     select.setAttribute("aria-label", "Оберіть український переклад");
     for (const candidate of options.values()) {
       const item = make("option", candidate.provider + " · " + candidate.text.slice(0, 100));
       item.value = candidate.sha256;
-      if (row.built?.text_sha256 === candidate.sha256) item.selected = true;
       select.append(item);
     }
-    const preview = make("pre");
     const first = options.keys().next().value;
-    const update = () => { preview.textContent = options.get(select.value || first)?.text || ""; };
-    select.addEventListener("change", update);
-    update();
-    const apply = make("button", "Зберегти вибір");
-    apply.type = "button";
-    apply.disabled = !editable;
-    apply.addEventListener("click", () => {
-      const key = select.value || first;
-      if (key) run("choose_quest", {candidate: key});
-    });
-    panel.append(select, preview, apply);
+    const initial = row.selected_sha256 && options.has(row.selected_sha256) ?
+      row.selected_sha256 : row.built?.text_sha256 && options.has(row.built.text_sha256) ?
+      row.built.text_sha256 : first;
+    select.value = initial;
+    const useCandidate = () => {
+      const chosen = options.get(select.value);
+      if (chosen) field.value = chosen.text;
+    };
+    select.addEventListener("change", useCandidate);
+    useCandidate();
+    panel.append(select);
   }
-  const field = make("textarea");
-  field.maxLength = 60000;
-  field.setAttribute("aria-label", "Власний український переклад");
-  field.placeholder = "Введіть свій український переклад…";
-  const save = make("button", "Зберегти переклад");
+  const save = make("button", "Зберегти");
   save.type = "button";
   save.disabled = !editable;
   save.addEventListener("click", () => {
-    if (field.value.trim()) run("save_quest", {text: field.value});
+    const text = field.value;
+    if (!text.trim()) return;
+    const chosen = select && options.get(select.value);
+    if (chosen && chosen.text === text) {
+      // Preserve the selected candidate's source when its text is untouched.
+      run("choose_quest", {candidate: chosen.sha256});
+    } else {
+      // Any edited/pasted text is the user's manual translation.
+      run("save_quest", {text});
+    }
   });
   const codex = make("button", "Скопіювати запит для Codex");
   codex.type = "button";
@@ -320,7 +328,7 @@ function simpleQuestControls(row) {
       message.textContent = "Не вдалося скопіювати. Перевірте доступ до буфера обміну.";
     }
   });
-  panel.append(make("h3", "Додати переклад"), field, save, codex);
+  panel.append(make("h3", "Український переклад"), field, save, codex);
   if (!editable) panel.append(make("p", "Немає перевіреного англійського оригіналу для цього квесту."));
   return panel;
 }
@@ -665,13 +673,15 @@ async function reimport(dryRun) {
   busy = true;
   for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = true;
   el("run-summary").hidden = true;
-  el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" : "Переімпорт і збірка тривають…";
+  el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" :
+    domain() === "quest" ? "Створюємо архів модуля Quest…" : "Переімпорт і збірка тривають…";
   try {
     const result = await call(domain() === "quest" && !dryRun ? "import_ready" : "reimport",
       {reset: domain() === "quest" ? false : el("reset").checked,
         dry_run: dryRun, confirm: !dryRun});
     el("operation-status").textContent = dryRun ? "Попередня збірка готова. Поточні записи й ZIP збережено." :
-      domain() === "quest" ? "Усі готові переклади імпортовано в Quest ZIP." : "Нову локальну збірку створено.";
+      domain() === "quest" ? "Модуль Quest створено. Архів містить попередні переклади та всі готові зміни." :
+      "Нову локальну збірку створено.";
     renderResult(result);
     if (!dryRun) {
       offset = 0;
@@ -698,14 +708,14 @@ el("filters").addEventListener("submit", event => { event.preventDefault(); rese
 for (const id of ["filter", "translation-status", "quest-filter"])
   el(id).addEventListener("change", resetList);
 function refreshModuleControls() {
-  el("reimport").textContent = domain() === "quest" ? "Імпортувати все" : "Оновити " + domainName();
+  el("reimport").textContent = domain() === "quest" ? "Створити модуль" : "Оновити " + domainName();
   const simple = domain() === "quest";
   for (const id of ["reset-control", "filter-control", "translation-status-control", "preview"])
     el(id).hidden = simple;
   el("quest-filter-control").hidden = !simple;
   el("metrics").hidden = false;
   el("build-state").hidden = false;
-  el("operation-heading").textContent = simple ? "Автоматичний імпорт" : "Оновити переклади модуля";
+  el("operation-heading").textContent = simple ? "Створення модуля Quest" : "Оновити переклади модуля";
   el("inventory-heading").textContent = "Переклади " + domainName();
   for (const option of document.querySelectorAll('option[value="multiple_originals"]')) {
     option.hidden = domain() !== "quest";

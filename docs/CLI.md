@@ -7,7 +7,7 @@
 
 ## Incremental Quest import (only ready records)
 
-Saving a Quest translation or choosing an existing candidate stores the selection in SQLite only. It **does not rebuild a ZIP**. The Quest UI shows three buckets: Imported, Ready to import, and Problematic. The **Import all (N)** button performs a ready-only incremental import: it copies previously imported Quest ID/event texts and provenance from the current checksum-verified ZIP, adding or replacing only ready moments. All other candidate texts are excluded. It rebuilds the ZIP file as a deployment artifact, not as a second database. Gossip is not touched.
+Saving a Quest translation or choosing an existing candidate stores the selection in SQLite only. It **does not rebuild a ZIP**. The Quest UI shows three buckets: Imported, Ready to import, and Problematic. The **Create module** button performs a ready-only incremental import: it copies previously imported Quest ID/event texts and provenance from the current checksum-verified ZIP, adding or replacing only ready moments. All other candidate texts are excluded. It rebuilds the ZIP file as a deployment artifact, not as a second database. Gossip is not touched.
 
 The same operation is available through the CLI:
 

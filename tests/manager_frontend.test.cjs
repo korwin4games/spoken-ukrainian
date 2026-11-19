@@ -172,13 +172,38 @@ test("Quest selection shows all candidates without reviewer forms or checkboxes"
   const select = nodes.find(x => x.tag === "select");
   assert.equal(select.children.length, 2);
   assert.ok(select.children.some(x => x.textContent.includes("Доброго дня.")));
+  const field = nodes.find(x => x.tag === "textarea");
+  assert.equal(field.value, "Вітаю.");
   select.value = "choice-b";
   select.events.change();
-  nodes.find(x => x.textContent === "Зберегти вибір").events.click();
+  assert.equal(field.value, "Доброго дня.");
+  nodes.find(x => x.textContent === "Зберегти").events.click();
   await flush();
   assert.equal(b.requests.find(x => x.action === "choose_quest").candidate, "choice-b");
   assert.ok(b.el("selected").all().some(x => x.textContent === "Готовий до імпорту"));
   assert.equal(b.requests.some(x => x.action === "reimport"), false);
+});
+
+test("Editing a selected Quest candidate saves a manual translation via the same button", async () => {
+  const row = {...fixture, review_binding:"pinned-binding", selected_sha256:"choice-a",
+    candidates:[{text:"Вітаю.", provider:"classicua", sha256:"choice-a"}]};
+  const b = browser((action, body) => {
+    if (action === "list") return listing(body.module);
+    if (action === "detail") return row;
+    assert.equal(action, "save_quest");
+    assert.equal(body.text, "Вітаю, друже!");
+    return {module:quest, build:"review_saved"};
+  });
+  await flush();
+  b.run("renderDetail(" + JSON.stringify(row) + ")");
+  const nodes = b.el("selected").all();
+  const field = nodes.find(x => x.tag === "textarea");
+  assert.equal(field.value, "Вітаю.");
+  field.value = "Вітаю, друже!";
+  nodes.find(x => x.textContent === "Зберегти").events.click();
+  await flush();
+  assert.equal(b.requests.filter(x => x.action === "save_quest").length, 1);
+  assert.equal(b.requests.filter(x => x.action === "choose_quest").length, 0);
 });
 
 test("Quest bulk button imports all ready records and skips confirmation modal", async () => {
@@ -192,7 +217,7 @@ test("Quest bulk button imports all ready records and skips confirmation modal",
     return {...listing(body.module), summary: {quest: {total: 20, ready: 3}}};
   });
   await flush();
-  assert.equal(b.el("reimport").textContent, "Імпортувати все (3)");
+  assert.equal(b.el("reimport").textContent, "Створити модуль");
   assert.equal(b.el("reimport").disabled, false);
   b.el("reimport").events.click();
   await flush();
@@ -200,7 +225,8 @@ test("Quest bulk button imports all ready records and skips confirmation modal",
   assert.equal(imports.length, 1);
   assert.equal(imports[0].module, quest);
   assert.equal(imports[0].confirm, true);
-  assert.equal(b.el("operation-status").textContent, "Усі готові переклади імпортовано в Quest ZIP.");
+  assert.equal(b.el("operation-status").textContent,
+    "Модуль Quest створено. Архів містить попередні переклади та всі готові зміни.");
 });
 
 test("Quest summary and filters show only imported, ready and problematic buckets", async () => {
@@ -219,7 +245,7 @@ test("Quest summary and filters show only imported, ready and problematic bucket
     ["Імпортовано", "Готові до імпорту", "Проблемні"]);
   assert.deepEqual(b.el("metrics").children.map(x => x.children[1].textContent),
     ["5", "2", "3"]);
-  assert.equal(b.el("reimport").textContent, "Імпортувати все (2)");
+  assert.equal(b.el("reimport").textContent, "Створити модуль");
   b.el("quest-filter").value = "quest_problem";
   b.el("quest-filter").events.change();
   await flush();
@@ -248,7 +274,7 @@ test("Quest missing translation can be entered without reviewer identity", async
   const field = nodes.find(x => x.tag === "textarea");
   assert.ok(field);
   field.value = "Мій переклад.";
-  nodes.find(x => x.textContent === "Зберегти переклад").events.click();
+  nodes.find(x => x.textContent === "Зберегти").events.click();
   await flush();
   assert.equal(b.requests.find(x => x.action === "save_quest").text, "Мій переклад.");
   assert.equal(b.requests.some(x => x.action === "reimport"), false);
