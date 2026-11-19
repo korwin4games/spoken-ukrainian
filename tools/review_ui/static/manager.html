@@ -56,6 +56,14 @@
           <label class="query">Пошук
             <input type="search" maxlength="200" id="query" placeholder="ID, назва, NPC або текст">
           </label>
+          <label id="quest-filter-control" hidden>Стан Quest
+            <select id="quest-filter">
+              <option value="all">Усі</option>
+              <option value="quest_imported">Імпортовано</option>
+              <option value="quest_ready">Готові до імпорту</option>
+              <option value="quest_problem">Проблемні</option>
+            </select>
+          </label>
           <label id="filter-control">Показати
             <select id="filter">
               <option value="all">Усі</option><option value="imported">Імпортовані в ZIP</option>
