@@ -1,53 +1,122 @@
-# Spoken 3.10.1 text-pack integration (DRAFT)
+# Spoken 3.10.1 Ukrainian Quest/Gossip text packs (private integration)
 
-**Scope:** issue #38 / PR #39. Text-only Ukrainian packs are separate from voice packs and retain private, local-testing restrictions.
+Issue #38 / PR #39. Text is independent of any Ukrainian voice pack. **This is a
+private local-test build, not a public release.** Actual WoW: Forever client
+acceptance remains outstanding.
 
-## Verified upstream API and current pin
+## Verified upstream source contract
 
-The official upstream tag `spoken/v3.10.1` resolves to commit `db5669b0a39815dd38568f0e871f4ced82bc9229`. In the published upstream source:
+- Active source pin: official \`spoken/v3.10.1\` commit
+  \`db5669b0a39815dd38568f0e871f4ced82bc9229\`.
+- The Quest/Gossip corpus, aliases and all 13 Stage 3 file blobs are identical
+  to Spoken 3.9.0. The active \`sources.lock.json\` file hashes were recomputed
+  from the 3.10.1 Git blobs; the legacy Stage 1/2B 3.9.0 contract is preserved
+  in \`tests/stage1_legacy_sources.json\`.
+- Official text pack protocol: \`Spoken:RegisterText("ukUA", "quests",
+  {titles = {...}, lines = {...}})\`, metadata \`X-Spoken-Text: ukUA\` and
+  \`X-Spoken-TextFormat: 1\`.
+- The upstream \`DataModules:LineIds\` maps \`ID-event[-wN]\` to
+  \`q:ID:event[:wN]\`, hashes and \`bID-voice\` stems to \`g:...\`, and tries
+  player sex suffixes \`:m\` / \`:f\` before the base ID.
+- Spoken Compendium's Quest page renders **accept and complete** text;
+  progress belongs to other supported contexts.
+- Official contract: [TEXT-PACKS.md](https://github.com/rusty-key/spoken-wow/blob/spoken/v3.10.1/docs/contributors/TEXT-PACKS.md).
 
-- `docs/contributors/TEXT-PACKS.md` specifies `X-Spoken-Text: ukUA`, `X-Spoken-TextFormat: 1`, and `Spoken:RegisterText("ukUA", "quests", { titles = ..., lines = ... })`.
-- `addons/Spoken_Quests/UI/QuestsTab.lua` uses `Spoken:TextIn` and `DataModules:TextPackText`.
-- The Text Language setting must be **Ukrainian** followed by a reload. The English game-client locale must not be spoofed.
+## Independent modules and load order
 
-**Not yet complete:** `sources.lock.json` and Stage 3/4 snapshots still pin 3.9.0. The exporter currently works from the old audited corpus, so a new 3.10.1 runtime may have a different canonical ID, revised English wording or new quests. Do **not** claim complete live coverage or merge this PR before validating and migrating all source pins, SHA-256 fingerprints, canonical mappings, tests and review decisions.
+Each separately built ZIP contains \`Spoken_Ukrainian\` and exactly one of:
 
-## Intended independent addons
+- \`Spoken_Quest_UA\`: public Quest text pack, existing native QuestFrame,
+  Journal, quest-title hooks, and optional local preview. Does **not** register
+  a fake voice/data module. Its .toc is always loaded to retain native hooks
+  even when Ukrainian is not the chosen Text Language.
+- \`Spoken_Gossip_UA\`: public Gossip text pack and existing NPC-specific
+  native Gossip frames. Its .toc is always loaded for the same reason.
+  Includes a licensed \`NotoSans-Regular.ttf\` and OFL attribution independently
+  of the Quest addon; font bytes are reused from the reviewed Quest template.
+- \`Spoken_Ukrainian\`: shared helper, depends on official \`Spoken\`.
+  Calls \`Spoken:RegisterText\` only if the API exists; older versions retain
+  the supported native hooks but cannot display Text Packs in Compendium.
 
-- `Spoken_Ukrainian`: shared helper. Calls public `Spoken:RegisterText` only when present.
-- `Spoken_Quest_UA`: Quest text-only addon, canonical `quests.titles[questID]` and `quests.lines["q:id:stage"]`; preserves native QuestFrame, QuestJournal and Shift behavior.
-- `Spoken_Gossip_UA`: independent NPC-frame localization and optional canonical `quests.lines["g:..."]` text, using Spoken line IDs rather than ClassicUA NPC/hash keys.
+The official Text Packs guide permits always-loaded addons, though
+LoadOnDemand is preferred for a text-only addon with no native hooks.
+Quest/Gossip here perform both jobs. The dependency chain does not require a
+Ukrainian voice pack; \`Spoken_Quests\` remains the independent official provider
+of the Quests tab and must be installed for Compendium Quest pages.
 
-No addon fabricates audio, sound lengths or human approval.
+## Safety and intentionally omitted lines
 
-For Compendium, a line omitted for unsupported grammatical cases or ambiguous canonical mappings must fall back to upstream words. Direct QuestFrame translations may still include local declined placeholders; that does not mean they can safely be exported as Spoken Text Pack placeholders.
+- Only unambiguous imported Quest ID/event values are eligible. The
+  exporter checks the *entire pinned English wording set* for the moment;
+  more than one original blocks the base \`q:ID:event\`. It does not guess
+  \`:wN\` or \`:m/:f\` translations without variant-specific proof.
+- A shared Gossip \`g:...\` key is exported only when **every** context using
+  that key in the complete pinned corpus is within the safe editor scope,
+  every distinct NPC/hash selection exists, all verified English originals
+  agree, and all translations agree. Gameobject or unsupported contexts,
+  missing selections, stale evidence and conflicting translations block it.
+  Native NPC/hash-specific Gossip translation still works separately.
+- Public Text Pack placeholders use \`$N\`, \`$C\`, \`$R\`, \`$B\`, \`$Gmale:female;\`.
+  Local declined grammatical forms that cannot be represented safely are
+  omitted from the Text Pack rather than shown literally. This does not
+  discard the corresponding native Quest/Gossip translation.
+- Quest title candidates originate from current pinned ClassicUA fields.
+  A single global title ID is omitted when faction sources disagree.
+  Local selections and provisional imports are not human approvals.
+- Nothing fakes audio, playback metadata, \`GetLocale()\`, or official addon
+  files. Missing Text Pack values use Spoken's existing fallback.
 
-## Safe test plan (not yet executed in game)
+## Building and installing
 
-1. Back up the existing `Interface/AddOns` and addon settings. Do not replace official Spoken using a local Ukrainian ZIP.
-2. Verify official Spoken and Spoken_Quests version 3.10.1 or an audited compatible commit; ensure the Ukrainian Quest and Gossip modules can be independently enabled/disabled.
-3. Prepare clean ClassicUA and Spoken source checkouts at **the revisions expected by `sources.lock.json`**; do not point the old pipeline at 3.10.1 until the migration is complete.
-4. Build each private ZIP:
+Use **clean** pinned Git checkouts, not arbitrary default branches:
 
-   ```bash
-   uv run --locked python tools/build_ukrainian.py --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow
-   uv run --locked python tools/build_ukrainian.py --module Spoken_Gossip_UA --classicua ../ClassicUA --spoken ../spoken-wow
-   ```
+\`\`\`bash
+uv sync --locked
+uv run --locked python tools/build_ukrainian.py --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow
+uv run --locked python tools/build_ukrainian.py --module Spoken_Gossip_UA --classicua ../ClassicUA --spoken ../spoken-wow
+\`\`\`
 
-5. Install one module at a time using the reviewed installer. In Spoken settings, set **Language → Text Language → Ukrainian**, then `/reload`. If Ukrainian is absent from the selector, inspect add-on enablement, format metadata, load-order failures and Cyrillic font coverage.
-6. Check Compendium Quest list titles and accept/progress/complete pages against exact canonical IDs. Missing/unsupported words must fall back to English; no fake audio Play controls.
-7. Check NPC QuestFrame/Journal and gossip panes with and without the other Ukrainian module, with and without ClassicUA. Verify Shift, `$N`, `$C`, `$R`, `$B`, `$G`, and `і, ї, є, ґ, І, Ї, Є, Ґ`.
-8. Verify that a single `g:...` ID reused by NPCs with conflicting Ukrainian translations is excluded, not silently overwritten.
-9. Verify ZIP SHA-256, safe rollback, import statistics, and no change to approvals or source provenance.
+Or select the module in the private Translation Manager. \`Створити модуль\`
+builds that module; \`Інсталювати\` first rebuilds it, verifies the ZIP
+and SHA-256 sidecar, and uses the existing safe backup/rollback installer.
 
-**No user-reported in-game verification yet.** These instructions describe future manual testing, not successful tests.
+For direct CLI installation, close the game and use the validated installer:
 
-## Remaining blockers
+\`\`\`bash
+uv run --locked python tools/install_addon.py --addons "/path/to/World of Warcraft/_forever_/Interface/AddOns" --archive dist/Spoken_Quest_UA_Local_Test.zip --dry-run
+uv run --locked python tools/install_addon.py --addons "/path/to/World of Warcraft/_forever_/Interface/AddOns" --archive dist/Spoken_Quest_UA_Local_Test.zip
+\`\`\`
 
-- Re-pin Spoken 3.10.1 after full source audit, update historical fixtures/baselines without losing decisions.
-- Confirm the official text pack discovery/load order for the Quest addon with real add-on dependency constraints.
-- Confirm independent Gossip Cyrillic font coverage.
-- Test in WoW: Forever and verify fallback for mixed-language voice/text subtitles.
-- Update bilingual install/CLI guides when implementation and actual commands are finalized.
+Substitute \`Spoken_Gossip_UA_Local_Test.zip\` for the independent Gossip pack.
+Always back up the existing AddOns and SavedVariables before in-game testing.
+The installer backs up replaced Ukrainian folders under
+\`Interface/AddOns/.spoken-ukrainian-backups/\` and leaves official Spoken
+folders untouched. To roll back manually, fully close WoW, remove only the
+newly installed Ukrainian folders, then restore the corresponding named
+folders from the latest backup.
 
-Reference: https://github.com/rusty-key/spoken-wow/blob/spoken/v3.10.1/docs/contributors/TEXT-PACKS.md
+## WoW: Forever manual acceptance — NOT EXECUTED
+
+1. Install supported official \`Spoken\` and \`Spoken_Quests\` version 3.10.1.
+   Install Quest alone; start WoW. Under Spoken Settings → Language choose
+   **Text Language = Ukrainian** and run \`/reload\`. Enable Spoken's
+   Developer log to diagnose refused text registration.
+2. Verify Ukrainian \`і ї є ґ І Ї Є Ґ\` in the selector, Quest titles and
+   the Quest accept/complete pages in Azeroth's Compendium. Check fallbacks
+   when translation is absent. Progress is checked in its own supported context,
+   **not** as a Compendium Quest page section.
+3. Check native QuestFrame, Journal and quest giver labels, with Shift held
+   and released. Verify placeholders and original English fallback.
+4. Disable Quest; install **Gossip alone**, then reload. Confirm Ukrainian
+   can be selected, Cyrillic renders, native NPC greetings/replies work, and
+   no shared canonical ID displays another NPC's translation.
+5. Enable both modules, then repeat without any Ukrainian audio pack. Ensure
+   both datasets coexist and no false Play button or fake voice metadata appears.
+6. Repeat with ClassicUA enabled/disabled. Verify precedence, all placeholder
+   variants and English fallback. Check the WoW error log for Lua faults.
+7. On an older unsupported Spoken version, confirm no crash and that native
+   translations still work where supported; Compendium Text Pack is unavailable.
+8. Test the installer backup and restore only with the game closed.
+
+**Do not close issue #38 or merge PR #39 based only on CI.** Actual client
+verification and a separate authorized merge are required.
