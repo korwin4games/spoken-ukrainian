@@ -1,15 +1,11 @@
--- Public WoW APIs and the official Spoken_Quests Community Pack registration.
--- An empty sound table is intentional: do not fabricate clips/durations.
+-- Standalone Quest text-only module. The public Spoken text pack is in
+-- TextPack.lua; this module adds only the optional local NPC-quest preview.
+-- No voice pack registration or synthetic sound duration tables.
 local SU = assert(SpokenUkrainian, "Spoken_Ukrainian dependency not loaded")
 local translations = assert(SU.QuestTranslations, "Spoken Ukrainian translations not generated")
-local quests = assert(VoiceOver and VoiceOver.DataModules, "Spoken_Quests not initialized")
 
-quests:Register("Spoken_Quest_UA", {
-    SoundLengthLookupByFileName = {},
-})
-
--- Quest 1:1 provisional text-only preview, separate from native quest frames
--- and from Spoken's audio-gated narrator captions. Never hook upstream internals.
+-- Quest 1:1 provisional preview, separate from native quest frames and
+-- Spoken's narrator captions. Never hook upstream internals.
 local shown
 local function HidePreview()
     if shown then shown:Hide() end
