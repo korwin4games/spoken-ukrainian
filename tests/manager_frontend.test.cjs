@@ -171,8 +171,8 @@ test("Gossip audit alternatives populate the editor but save as manual choices",
   assert.ok(select);
   assert.equal(select.children.length, 3);
   assert.ok(select.children[0].textContent.includes("Аудит 1"));
-  assert.ok(select.children[1].textContent.includes("Подарунки за знаки любові."));
-  assert.ok(select.children.every(option => option.textContent.length <= 75));
+  assert.ok(select.children[1].textContent.includes("Подарунки за знаки…"));
+  assert.ok(select.children.every(option => option.textContent.length <= 56));
   assert.ok(select.children.every(option => !option.textContent.includes("entries/")));
   assert.equal(select.children[2].disabled, true);
   assert.match(select.children[2].textContent, /Українського перекладу немає/);
