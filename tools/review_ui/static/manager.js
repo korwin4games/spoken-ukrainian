@@ -103,8 +103,8 @@ function metrics(summary, build) {
       return card;
     }));
     el("build-state").textContent = build ?
-      "Останній Quest ZIP: " + build.built_at + " UTC" :
-      "Quest ZIP ще не зібрано.";
+      "Останній " + domainName() + " ZIP: " + build.built_at + " UTC" :
+      domainName() + " ZIP ще не зібрано.";
 }
 
 function renderList(data) {
@@ -123,7 +123,7 @@ function renderList(data) {
     tr.append(make("td", gossip ? "Gossip" : "Quest"),
       make("td", npcID), make("td", id));
     tr.appendChild(make("td")).append(name);
-    const status = item.ready_to_import ? "Готовий до імпорту" : item.built ? "У ZIP" : "Проблемний";
+    const status = item.ready_to_import ? "Готовий до імпорту" : item.built ? "Імпортовано" : "Проблемний";
     tr.appendChild(make("td")).append(badge(status, item.built && !item.ready_to_import ? "built" : ""));
     tr.appendChild(make("td")).append(make("span", item.needs_choice ? "Потрібен вибір" :
       item.status === "invalid" || item.status === "stale" ? "Перевірте контекст" : ""));
