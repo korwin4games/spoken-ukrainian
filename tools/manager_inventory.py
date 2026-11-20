@@ -90,15 +90,22 @@ class ModuleInventory:
             pending = Counter(r["status"] for r in rows if r["built"] is None)
             built = sum(r["built"] is not None for r in rows)
             conflicts = sum(r.get("candidate_conflict", r["status"] == "conflict") for r in rows)
-            result[kind] = {"total": len(rows), "included": built, "not_included": len(rows) - built,
+            # The three mutually exclusive UI buckets are authoritative for
+            # coverage; a row that is both built and ready counts only once.
+            buckets = Counter(quest_bucket(r) for r in rows)
+            covered = buckets["quest_imported"] + buckets["quest_ready"]
+            total = len(rows)
+            result[kind] = {"total": total, "included": built, "not_included": total - built,
+                            "covered": covered,
+                            "coverage_percent": round(100 * covered / total, 1) if total else None,
                             "recorded": sum(r["recorded"] for r in rows),
                             "conflicts": conflicts,
                             "multiple_originals": sum(len(r.get("originals", ())) > 1 for r in rows
                                                       if r["type"] == "quest"),
                             "conflicting_candidates": conflicts, "missing": counts["missing"],
-                            "ready": sum(bool(r.get("ready_to_import")) for r in rows),
-                            "quest_imported": sum(quest_bucket(r) == "quest_imported" for r in rows),
-                            "quest_problem": sum(quest_bucket(r) == "quest_problem" for r in rows),
+                            "ready": buckets["quest_ready"],
+                            "quest_imported": buckets["quest_imported"],
+                            "quest_problem": buckets["quest_problem"],
                             "pending_review": pending["review"] + pending["stale"],
                             "mapping_states": dict(Counter(r.get("mapping_state", r["status"]) for r in rows)),
                             "translation_states": dict(Counter(r.get("translation_state", r["status"]) for r in rows)),
