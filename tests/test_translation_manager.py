@@ -233,11 +233,10 @@ class ManagerTests(unittest.TestCase):
         state = LocalReviewState(fixture.dataset, fixture.inventory(), inventory,
             TextIndex({}, (identity,), {}, {identity: texts}), self.root / "decisions.json", self.root)
         with patch("tools.manager_inventory.read_pinned_corpus", return_value=[]), patch(
-                "tools.gossip_machine_import.GossipMachineImport.inspect") as gossip_inspection, patch(
-                "tools.manager_inventory.discover_groups") as gossip_groups, patch(
-                "tools.manager_inventory.gossip_evidence") as gossip_hashes:
+                "tools.gossip_simple.audit_catalog") as gossip_audit, patch(
+                "tools.gossip_simple.contexts") as gossip_contexts:
             catalog = load_inventory(*self.paths, self.db, self.archive, state=state)
-        for gossip_work in (gossip_inspection, gossip_groups, gossip_hashes):
+        for gossip_work in (gossip_audit, gossip_contexts):
             gossip_work.assert_not_called()
         detail = catalog.detail(identity=identity)
         self.assertEqual(detail["status"], "multiple_originals")
@@ -648,7 +647,8 @@ sleep(60)
             pins[name] = {"revision": commit(path, name), "files": {}}
         for name in ("tests", "config"):
             (self.root / name).mkdir()
-        for path in ("config/translation_sources.json", "tests/stage3_sources.json"):
+        for path in ("config/translation_sources.json", "tests/stage3_sources.json",
+                     "config/gossip_audit_baselines.json"):
             (self.root / path).write_text("{}")
         lock = self.root / "sources.lock.json"
         lock.write_text(json.dumps(pins))
