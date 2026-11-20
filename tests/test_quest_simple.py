@@ -51,6 +51,33 @@ class SimpleQuestTests(TestCase):
         self.assertEqual(resolved(state, None)[self.target]["text"], "Вітаю.")
         self.assertFalse(resolved(state, None)[self.target]["selected"])
 
+    def test_unique_quest_id_event_translation_needs_no_stage3_hint(self):
+        state = self.state(originals=("Go to Uldaman.", "Find caps near Uldaman."),
+                           texts=("Принеси гриби.",))
+        state._hints = []
+        candidate = resolved(state, None)[self.target]
+        self.assertEqual(candidate["text"], "Принеси гриби.")
+        self.assertEqual(candidate["source"], "classicua")
+        self.assertFalse(candidate["selected"])
+
+    def test_faction_and_source_field_mismatch_are_not_importable(self):
+        state = self.state(texts=("Вітаю.",))
+        state._hints = []
+        state.inventory.contexts[self.target] = [
+            {"wording_sha256": digest("Hello."), "faction": "alliance",
+             "quest_id": 42, "source": "accept"}]
+        state.original_index = TextIndex({}, (), {}, {self.target: ("Hello.",)})
+        # Only a Horde source is present; Alliance-only Spoken context
+        # must not inherit the opposite faction's translation.
+        self.assertNotIn(self.target, resolved(state, None))
+        state.inventory.contexts[self.target][0]["faction"] = "horde"
+        state.source.units["quest:horde:42:accept"].effective_sha256 = "0" * 64
+        self.assertNotIn(self.target, resolved(state, None))
+        state.source.units["quest:horde:42:accept"].effective_sha256 = sha("Вітаю.")
+        self.assertEqual(resolved(state, None)[self.target]["text"], "Вітаю.")
+        state.blocked_quest_moments = lambda: {self.target}
+        self.assertNotIn(self.target, resolved(state, None))
+
     def test_choose_between_two_translations_and_revalidate_evidence(self):
         state = self.state(texts=("Вітаю.", "Доброго дня."))
         with TemporaryDirectory() as temp:
