@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import json
 import os
 import sqlite3
+from stat import S_IMODE
 
 LEDGER_NAMES = frozenset({
     "stage4b-decisions.json",
@@ -20,6 +21,7 @@ LEDGER_NAMES = frozenset({
     "gossip-machine-one-to-one.json",
 })
 DB_ENV = "SPOKEN_TRANSLATION_DB"
+SCHEMA_VERSION = 9
 
 
 def default_db_path():
@@ -62,163 +64,195 @@ def connection(path):
     try:
         db.execute("PRAGMA busy_timeout=10000")
         db.execute("PRAGMA synchronous=FULL")
-        db.execute("PRAGMA journal_mode=DELETE")
         db.execute("PRAGMA foreign_keys=ON")
-        db.executescript("""
-            CREATE TABLE IF NOT EXISTS schema_migrations (
-                version INTEGER PRIMARY KEY,
-                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS ledger_documents (
-                ledger_name TEXT PRIMARY KEY,
-                payload TEXT NOT NULL,
-                revision INTEGER NOT NULL CHECK (revision >= 1),
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS translation_memory (
-                version_id TEXT PRIMARY KEY,
-                domain TEXT NOT NULL CHECK(domain IN ('gossip', 'quest')),
-                english_sha256 TEXT NOT NULL,
-                ukrainian_text TEXT NOT NULL,
-                review_status TEXT NOT NULL,
-                provider TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                context_sha256 TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_translation_memory_original
-                ON translation_memory(domain, english_sha256, review_status);
-            CREATE TABLE IF NOT EXISTS source_snapshots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                provider TEXT NOT NULL CHECK (provider IN
-                    ('classicua', 'another', 'own_translator')),
-                revision TEXT NOT NULL,
-                content_sha256 TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(provider, revision)
-            );
-            CREATE TABLE IF NOT EXISTS source_candidates (
-                id TEXT PRIMARY KEY,
-                snapshot_id INTEGER NOT NULL REFERENCES source_snapshots(id),
-                domain TEXT NOT NULL CHECK (domain IN ('gossip', 'quest')),
-                target_id TEXT NOT NULL,
-                english_sha256 TEXT NOT NULL,
-                context_sha256 TEXT NOT NULL,
-                ukrainian_text TEXT NOT NULL,
-                text_sha256 TEXT NOT NULL,
-                source_ref TEXT NOT NULL,
-                UNIQUE(snapshot_id, domain, target_id, english_sha256, context_sha256)
-            );
-            CREATE INDEX IF NOT EXISTS idx_source_candidates_context
-                ON source_candidates(domain, target_id, english_sha256, context_sha256);
-            CREATE TABLE IF NOT EXISTS source_candidate_decisions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
-                decision TEXT NOT NULL CHECK (decision IN
-                    ('approved', 'rejected', 'deferred')),
-                reviewer TEXT NOT NULL,
-                checks_json TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_source_decisions_version
-                ON source_candidate_decisions(candidate_id, id);
-            CREATE TABLE IF NOT EXISTS source_active_selections (
-                domain TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                english_sha256 TEXT NOT NULL,
-                context_sha256 TEXT NOT NULL,
-                candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
-                reviewer TEXT NOT NULL,
-                selected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (domain, target_id, english_sha256, context_sha256)
-            );
-            CREATE TABLE IF NOT EXISTS source_selection_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                domain TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                english_sha256 TEXT NOT NULL,
-                context_sha256 TEXT NOT NULL,
-                candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
-                action TEXT NOT NULL CHECK (action IN ('activate', 'clear')),
-                reviewer TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_source_selection_history
-                ON source_selection_events(domain, target_id, id);
-            INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
-            INSERT OR IGNORE INTO schema_migrations(version) VALUES (2);
-            CREATE TABLE IF NOT EXISTS build_import_snapshots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fingerprint TEXT NOT NULL UNIQUE,
-                artifact_sha256 TEXT NOT NULL,
-                spoken_revision TEXT NOT NULL,
-                classicua_revision TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS build_import_units (
-                snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id),
-                domain TEXT NOT NULL,
-                unit_key TEXT NOT NULL,
-                entity_key TEXT NOT NULL,
-                source TEXT NOT NULL,
-                route TEXT NOT NULL,
-                PRIMARY KEY (snapshot_id, domain, unit_key)
-            );
-            CREATE INDEX IF NOT EXISTS idx_build_import_source
-                ON build_import_units(snapshot_id, domain, source);
-            INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
-            INSERT OR IGNORE INTO schema_migrations(version) VALUES (4);
-            CREATE TABLE IF NOT EXISTS agent_assessments (
-                id INTEGER PRIMARY KEY,
-                candidate_id TEXT NOT NULL,
-                status TEXT NOT NULL CHECK(status IN ('agent_verified', 'needs_human_review',
-                    'agent_reject_recommended', 'agent_unavailable')),
-                payload TEXT NOT NULL,
-                assessed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS agent_assessments_candidate
-                ON agent_assessments(candidate_id, id);
-            CREATE TABLE IF NOT EXISTS agent_stale_evidence (
-                candidate_id TEXT PRIMARY KEY,
-                detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS agent_imports (
-                id INTEGER PRIMARY KEY,
-                candidate_id TEXT NOT NULL,
-                assessment_id INTEGER NOT NULL REFERENCES agent_assessments(id),
-                action TEXT NOT NULL DEFAULT 'import' CHECK(action IN ('import', 'invalidate')),
-                reason TEXT,
-                imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS agent_imports_candidate ON agent_imports(candidate_id, id);
-        """)
-        db.execute("BEGIN IMMEDIATE")
-        try:
-            if "text_sha256" not in {r[1] for r in db.execute("PRAGMA table_info(build_import_units)")}:
-                db.execute("ALTER TABLE build_import_units ADD COLUMN text_sha256 TEXT NOT NULL DEFAULT ''")
-            db.execute("""CREATE TABLE IF NOT EXISTS build_import_head (
-                singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-                snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
-            db.execute("""INSERT OR IGNORE INTO build_import_head(singleton, snapshot_id)
-                SELECT 1, MAX(id) FROM build_import_snapshots
-                WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version=5)
-                HAVING COUNT(*) > 0""")
-            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (5)")
-            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (6)")
-            columns = {r[1] for r in db.execute("PRAGMA table_info(build_import_snapshots)")}
-            if "module" not in columns:
-                db.execute("ALTER TABLE build_import_snapshots ADD COLUMN module TEXT")
-            db.execute("""CREATE TABLE IF NOT EXISTS module_build_heads (
-                module TEXT PRIMARY KEY CHECK(module IN ('Spoken_Quest_UA', 'Spoken_Gossip_UA')),
-                snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
-            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (7)")
-            db.commit()
-        except BaseException:
-            db.rollback()
-            raise
-        os.chmod(path, 0o600)
+        if not _schema_current(db):
+            _initialize_schema(db)
+        # POSIX chmod updates ctime even when the mode is already correct.
+        if os.name != "nt" and S_IMODE(path.stat().st_mode) != 0o600:
+            os.chmod(path, 0o600)
         yield db
     finally:
         db.close()
+
+
+def _schema_current(db):
+    # A current database needs no DDL or write transaction just to be opened.
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").fetchone():
+        return False
+    return db.execute("SELECT 1 FROM schema_migrations WHERE version=?", (SCHEMA_VERSION,)).fetchone() is not None
+
+
+def _initialize_schema(db):
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS ledger_documents (
+            ledger_name TEXT PRIMARY KEY,
+            payload TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision >= 1),
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS translation_memory (
+            version_id TEXT PRIMARY KEY,
+            domain TEXT NOT NULL CHECK(domain IN ('gossip', 'quest')),
+            english_sha256 TEXT NOT NULL,
+            ukrainian_text TEXT NOT NULL,
+            review_status TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            context_sha256 TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_translation_memory_original
+            ON translation_memory(domain, english_sha256, review_status);
+        CREATE TABLE IF NOT EXISTS source_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL CHECK (provider IN
+                ('classicua', 'another', 'own_translator')),
+            revision TEXT NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(provider, revision)
+        );
+        CREATE TABLE IF NOT EXISTS source_candidates (
+            id TEXT PRIMARY KEY,
+            snapshot_id INTEGER NOT NULL REFERENCES source_snapshots(id),
+            domain TEXT NOT NULL CHECK (domain IN ('gossip', 'quest')),
+            target_id TEXT NOT NULL,
+            english_sha256 TEXT NOT NULL,
+            context_sha256 TEXT NOT NULL,
+            ukrainian_text TEXT NOT NULL,
+            text_sha256 TEXT NOT NULL,
+            source_ref TEXT NOT NULL,
+            UNIQUE(snapshot_id, domain, target_id, english_sha256, context_sha256)
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_candidates_context
+            ON source_candidates(domain, target_id, english_sha256, context_sha256);
+        CREATE TABLE IF NOT EXISTS source_candidate_decisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
+            decision TEXT NOT NULL CHECK (decision IN
+                ('approved', 'rejected', 'deferred')),
+            reviewer TEXT NOT NULL,
+            checks_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_decisions_version
+            ON source_candidate_decisions(candidate_id, id);
+        CREATE TABLE IF NOT EXISTS source_active_selections (
+            domain TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            english_sha256 TEXT NOT NULL,
+            context_sha256 TEXT NOT NULL,
+            candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
+            reviewer TEXT NOT NULL,
+            selected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (domain, target_id, english_sha256, context_sha256)
+        );
+        CREATE TABLE IF NOT EXISTS source_selection_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            english_sha256 TEXT NOT NULL,
+            context_sha256 TEXT NOT NULL,
+            candidate_id TEXT NOT NULL REFERENCES source_candidates(id),
+            action TEXT NOT NULL CHECK (action IN ('activate', 'clear')),
+            reviewer TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_selection_history
+            ON source_selection_events(domain, target_id, id);
+        INSERT OR IGNORE INTO schema_migrations(version) VALUES (1);
+        INSERT OR IGNORE INTO schema_migrations(version) VALUES (2);
+        CREATE TABLE IF NOT EXISTS build_import_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fingerprint TEXT NOT NULL UNIQUE,
+            artifact_sha256 TEXT NOT NULL,
+            spoken_revision TEXT NOT NULL,
+            classicua_revision TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS build_import_units (
+            snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id),
+            domain TEXT NOT NULL,
+            unit_key TEXT NOT NULL,
+            entity_key TEXT NOT NULL,
+            source TEXT NOT NULL,
+            route TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, domain, unit_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_build_import_source
+            ON build_import_units(snapshot_id, domain, source);
+        INSERT OR IGNORE INTO schema_migrations(version) VALUES (3);
+        INSERT OR IGNORE INTO schema_migrations(version) VALUES (4);
+        CREATE TABLE IF NOT EXISTS agent_assessments (
+            id INTEGER PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('agent_verified', 'needs_human_review',
+                'agent_reject_recommended', 'agent_unavailable')),
+            payload TEXT NOT NULL,
+            assessed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS agent_assessments_candidate
+            ON agent_assessments(candidate_id, id);
+        CREATE TABLE IF NOT EXISTS agent_stale_evidence (
+            candidate_id TEXT PRIMARY KEY,
+            detected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS agent_imports (
+            id INTEGER PRIMARY KEY,
+            candidate_id TEXT NOT NULL,
+            assessment_id INTEGER NOT NULL REFERENCES agent_assessments(id),
+            action TEXT NOT NULL DEFAULT 'import' CHECK(action IN ('import', 'invalidate')),
+            reason TEXT,
+            imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS agent_imports_candidate ON agent_imports(candidate_id, id);
+    """)
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        if "text_sha256" not in {r[1] for r in db.execute("PRAGMA table_info(build_import_units)")}:
+            db.execute("ALTER TABLE build_import_units ADD COLUMN text_sha256 TEXT NOT NULL DEFAULT ''")
+        db.execute("""CREATE TABLE IF NOT EXISTS build_import_head (
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+            snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
+        db.execute("""INSERT OR IGNORE INTO build_import_head(singleton, snapshot_id)
+            SELECT 1, MAX(id) FROM build_import_snapshots
+            WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version=5)
+            HAVING COUNT(*) > 0""")
+        db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (5)")
+        db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (6)")
+        columns = {r[1] for r in db.execute("PRAGMA table_info(build_import_snapshots)")}
+        if "module" not in columns:
+            db.execute("ALTER TABLE build_import_snapshots ADD COLUMN module TEXT")
+        db.execute("""CREATE TABLE IF NOT EXISTS module_build_heads (
+            module TEXT PRIMARY KEY CHECK(module IN ('Spoken_Quest_UA', 'Spoken_Gossip_UA')),
+            snapshot_id INTEGER NOT NULL REFERENCES build_import_snapshots(id))""")
+        db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (7)")
+        db.execute("""CREATE TABLE IF NOT EXISTS quest_runtime_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            moment TEXT NOT NULL,
+            candidate TEXT NOT NULL,
+            evidence TEXT NOT NULL,
+            text TEXT NOT NULL,
+            decision TEXT NOT NULL CHECK(decision IN ('pending', 'approved', 'withdrawn')),
+            reviewer TEXT NOT NULL,
+            checks_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (8)")
+        db.execute("""CREATE TABLE IF NOT EXISTS quest_simple_choices (
+            moment TEXT PRIMARY KEY,
+            evidence TEXT NOT NULL,
+            text TEXT NOT NULL,
+            text_sha256 TEXT NOT NULL,
+            source TEXT NOT NULL CHECK(source IN ('classicua', 'manual')),
+            changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)", (SCHEMA_VERSION,))
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
 
 
 def _memory_versions(db, name, data):

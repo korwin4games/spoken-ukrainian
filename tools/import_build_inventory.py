@@ -59,6 +59,25 @@ def collect_build_rows(state, preview, gossip, titles, reviewed_gossip,
             if event not in ("accept", "progress", "complete"):
                 continue  # Title and objective are a separate source-only field.
             text = value["text"]
+            if "preserved_route" in value:
+                # Existing Quest ZIP entry: retain original source and route
+                # rather than inventing a new review or source attribution.
+                rows.append({"domain": "quests", "unit": f"{quest_id}:{event}",
+                             "entity": str(quest_id), "source": value["preserved_source"],
+                             "route": value["preserved_route"],
+                             "text_sha256": sha256(text.encode("utf-8")).hexdigest()})
+                continue
+            if "quick_source" in value:
+                rows.append({"domain": "quests", "unit": f"{quest_id}:{event}",
+                             "entity": str(quest_id), "source": value["quick_source"],
+                             "route": "user_selected" if value.get("quick_selected") else "pinned_unique",
+                             "text_sha256": sha256(text.encode("utf-8")).hexdigest()})
+                continue
+            if "review_source" in value:
+                rows.append({"domain": "quests", "unit": f"{quest_id}:{event}",
+                             "entity": str(quest_id), "source": value["review_source"], "route": "reviewed",
+                             "text_sha256": sha256(text.encode("utf-8")).hexdigest()})
+                continue
             contributions = [(source, route) for source, route, body
                              in by_moment.get((int(quest_id), event), ()) if body == text]
             if not contributions:

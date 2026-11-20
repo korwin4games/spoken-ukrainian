@@ -1,6 +1,21 @@
 # Spoken Ukrainian CLI
 
+**Quest local UI:** For normal Quest translation selection, use the simplified [Translation Manager guide](TRANSLATION_MANAGER.md). Historic advanced review commands remain available for migration and diagnostics, but the Quest screen no longer requires reviewers or attestations.
+
 [Українська](CLI.uk.md)
+
+
+## Incremental Quest import (only ready records)
+
+Saving a Quest translation or choosing an existing candidate stores the selection in SQLite only. It **does not rebuild a ZIP**. The Quest UI shows three buckets: Imported, Ready to import, and Problematic. The **Create module** button performs a ready-only incremental import: it copies previously imported Quest ID/event texts and provenance from the current checksum-verified ZIP, adding or replacing only ready moments. All other candidate texts are excluded. It rebuilds the ZIP file as a deployment artifact, not as a second database. Gossip is not touched.
+
+The same operation is available through the CLI:
+
+```bash
+uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm --import-ready
+```
+
+The legacy command without `--import-ready` remains a separate full rebuild. A first import can start without an existing ZIP if no prior build is recorded. Otherwise, the ready-only operation fails closed if a previously recorded Quest ZIP is missing, untracked, modified, or has stale import metadata. Back up your DB/ZIP before a recovery or full rebuild. Never treat a SQLite-only selection as already installed in WoW.
 
 ## Setup and source pins
 
@@ -154,6 +169,11 @@ import states separately, with review queue coverage, agent warnings by
 assessed version and unverified Gossip alternatives by NPC/hash occurrence.
 The summary counts candidate conflicts (`conflicts`) and rows with multiple
 verified English originals (`multiple_originals`) separately.
+Use **Save translation** or **Save selection** for a Quest moment in the
+Manager. **Import all** applies only ready Quest moments. The Quest ZIP and
+Gossip ZIP have separate build heads. Use the
+[Manager example](TRANSLATION_MANAGER.md#приклад-перевірки-quest) for selecting
+between translations and testing the Quest Journal and font in WoW: Forever.
 `--json` includes detailed results
 and failure codes. Exit 0 indicates preview or successful promotion, 1 a
 failed operation, and 2 invalid CLI syntax. See the [manager guide](TRANSLATION_MANAGER.md).
@@ -163,3 +183,25 @@ uv run --locked python tools/translation_manager.py reimport --module Spoken_Que
 uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm
 uv run --locked python tools/translation_manager.py reimport --module Spoken_Gossip_UA --classicua ../ClassicUA --spoken ../spoken-wow --confirm
 ```
+
+### Manager cache and timings
+
+The server keeps one catalog per module and shares the parsed, pinned source
+inputs between them. Search, filters, pagination and details reuse those
+catalogs. Each browse still checks both Git checkouts for the expected revision
+and cleanliness. Source pin, manifest or provider policy changes reload the
+shared inputs. Database commits, database replacement, legacy ledger changes,
+or a changed module ZIP invalidate affected catalog reads. SQLite
+`PRAGMA data_version` detects external commits that are still in the WAL.
+Successful promotion clears the catalogs. A failed worker leaves the current
+catalog eligible for reuse if its input fingerprints match.
+
+Set `SPOKEN_MANAGER_TIMING=1` in the environment before launching
+`review_ui_server.py`. Lines marked `manager_timing` report stages, module,
+action and milliseconds. The logs omit translation bodies and reviewer data.
+Compare builds using the same source commits and copies of the same private
+SQLite database and ZIPs. Start a fresh server, open Quest, repeat the list or
+search, switch to Gossip, repeat, then switch back and forth. Use `api` for
+server dispatch latency and `api_response` to include response serialization
+and writing. The first visit to each module is a catalog miss. A first visit
+to Gossip after Quest can already reuse the shared sources.

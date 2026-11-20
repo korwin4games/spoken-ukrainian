@@ -53,6 +53,8 @@ local function ShowPreview(questID, event, entry, localizedTitle)
         frame.Content = text
         frame.ScrollBody = body
         frame.Scroll = scroll
+        SU:UseQuestFont(info, SU:CaptureQuestFont(info), true)
+        SU:UseQuestFont(text, SU:CaptureQuestFont(text), true)
         shown = frame
     end
     local title = localizedTitle

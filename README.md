@@ -1,5 +1,7 @@
 # Spoken Ukrainian 🇺🇦
 
+**Current Quest UI:** In the local Translation Manager, Quest translation editing has a simple choose-or-enter workflow: one existing translation applies automatically across verified English variants, two alternatives require choosing one, and missing text can be entered or drafted using a copyable Codex prompt. No Quest reviewer checkboxes or journal menus are shown. See [the simplified Quest Manager guide](docs/TRANSLATION_MANAGER.md). Historical SQLite records are retained; these are private test builds.
+
 [Complete CLI guide](docs/CLI.md) · [Посібник українською](docs/CLI.uk.md)
 Open the local Translation Manager to browse Quest and Gossip together and rebuild the private ZIP. [Manager guide](docs/TRANSLATION_MANAGER.md)
 

@@ -35,7 +35,8 @@ ARCHIVES = {module: DIST / f"{module}_Local_Test.zip" for module in MODULE_DOMAI
 ARCHIVE = ARCHIVES[QUEST_MODULE]
 TEMPLATE_FILES = {
     "Spoken_Ukrainian": ("Spoken_Ukrainian.toc", "Core.lua"),
-    QUEST_MODULE: (f"{QUEST_MODULE}.toc", "Module.lua", "NativeQuestFrame.lua", "GossipQuestTitles.lua"),
+    QUEST_MODULE: (f"{QUEST_MODULE}.toc", "QuestFont.lua", "Module.lua", "NativeQuestFrame.lua",
+                   "QuestJournal.lua", "GossipQuestTitles.lua", "NotoSans-Regular.ttf", "OFL-NotoSans.txt"),
     GOSSIP_MODULE: (f"{GOSSIP_MODULE}.toc", "GossipFrame.lua"),
 }
 QUEST_TARGET = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
@@ -79,7 +80,13 @@ def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None
     from adapters.crosswalk import quest_moment
     from adapters.spoken.text_index import ambiguous_quest_moments
     blocked = (state.blocked_quest_moments() if hasattr(state, "blocked_quest_moments") else set())
-    ambiguous = ambiguous_quest_moments(getattr(state, "original_index", None))
+    index = getattr(state, "original_index", None)
+    ambiguous = ambiguous_quest_moments(index)
+    wordings = defaultdict(set)
+    for target, wording in getattr(index, "original_english", {}).items():
+        if QUEST_TARGET.fullmatch(target):
+            wordings[quest_moment(target)].add(wording)
+    ambiguous.update(moment for moment, variants in wordings.items() if len(variants) > 1)
 
     def excluded(target):
         moment = quest_moment(target)
@@ -197,12 +204,50 @@ def current_quest_texts(state, selected_out=None, agent_rows=(), *, skipped=None
             "text": rows[0]["text"],
             "reviewed": all(row["reviewed"] for row in rows),
         }
+    if db_path:
+        from tools.quest_runtime_review import approved
+        for moment, review in approved(state, db_path, skipped).items():
+            _, quest_id, event = moment.split(":")
+            quest = int(quest_id)
+            if review is None:
+                if quest in result:
+                    result[quest].pop(event, None)
+                    if not result[quest]:
+                        del result[quest]
+            else:
+                if (quest, event) in conflicted_moments:
+                    continue
+                result.setdefault(quest, {})[event] = {
+                    "text": review["text"], "reviewed": True, "review_source": review["source"],
+                }
     # Conflicting source factions stay ambiguous: omit unsupported fields.
     for quest, fields in supporting_fields.items():
         if quest in result:
             for key, candidates in fields.items():
                 if len(candidates) == 1:
                     result[quest][key] = next(iter(candidates))
+    # Local choices are private test-pack preferences, not fabricated approvals.
+    from tools.quest_simple import resolved as simple_resolved
+    for moment, choice in simple_resolved(state, db_path).items():
+        _, number, event = moment.split(":")
+        quest = int(number)
+        if choice.get("conflict"):
+            if quest in result:
+                result[quest].pop(event, None)
+                if not result[quest]:
+                    del result[quest]
+            if skipped is not None:
+                skipped.append((moment, "quest_choice_required"))
+            continue
+        if not choice["selected"] and event in result.get(quest, {}):
+            continue
+        result.setdefault(quest, {})[event] = {
+            "text": choice["text"], "reviewed": False, "quick": True,
+            "quick_source": choice["source"], "quick_selected": choice["selected"],
+        }
+        for field in ("title", "objective"):
+            if field in choice and field not in result[quest]:
+                result[quest][field] = choice[field]
     return result, len(texts), skipped_count
 
 
@@ -492,9 +537,10 @@ def quest_lines(preview, gossip_titles):
         for event in ("accept", "progress", "complete"):
             if event in events:
                 row = events[event]
-                lines.append("        %s = { text = %s, reviewed = %s }," % (
+                lines.append("        %s = { text = %s, reviewed = %s%s }," % (
                     event, lua_quote(row["text"]),
-                    "true" if row["reviewed"] else "false"))
+                    "true" if row["reviewed"] else "false",
+                    ", quick = true" if row.get("quick") else ""))
         lines.append("    },")
     lines.append("}")
     return lines
@@ -514,7 +560,8 @@ def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE):
             path = directory / name
             if path.is_symlink() or not path.is_file():
                 raise ValueError("unsafe_ukrainian_addon_template")
-            entries[folder + "/" + name] = path.read_bytes().replace(b"\r\n", b"\n")
+            content = path.read_bytes()
+            entries[folder + "/" + name] = content if path.suffix == ".ttf" else content.replace(b"\r\n", b"\n")
     base_toc = entries["Spoken_Ukrainian/Spoken_Ukrainian.toc"].decode("utf-8").replace("\r\n", "\n")
     toc = entries[f"{module}/{module}.toc"].decode("utf-8").replace("\r\n", "\n")
     for required in (
@@ -535,7 +582,7 @@ def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE):
             "## LoadOnDemand: 1\n",
             "## X-SpokenQuests-DataModule-Version: 1\n",
             "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nModule.lua\nNativeQuestFrame.lua\nGossipQuestTitles.lua\n"):
+            "Translations.lua\nQuestFont.lua\nModule.lua\nNativeQuestFrame.lua\nQuestJournal.lua\nGossipQuestTitles.lua\n"):
         if required not in toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
     # Module must never invent sound files or call AddOn playback.
@@ -602,19 +649,36 @@ def local_test_state(classicua, spoken):
         ROOT / "config/translation_sources.json")
 
 
-def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None, destination=None, skipped=None):
+def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None,
+          destination=None, skipped=None, incremental=False):
     """Auto-import is mandatory; there is no build-without-import switch."""
     if module not in MODULE_DOMAINS:
         raise ValueError("manager_unknown_module")
     is_quest = module == QUEST_MODULE
+    if incremental and not is_quest:
+        raise ValueError("manager_incremental_quest_only")
     classicua, spoken = Path(classicua), Path(spoken)
     state = local_test_state(classicua, spoken)
+    previous, ready = {}, set()
+    if incremental:
+        from adapters.sqlite_translation_store import DB_ENV
+        from tools.manager_inventory import load_inventory
+        from tools.quest_incremental import previous_snapshot
+        db_path = os.environ.get(DB_ENV)
+        if not db_path:
+            raise ValueError("manager_incremental_database_required")
+        previous, _ = previous_snapshot(db_path, ARCHIVES[module],
+                                        state.inventory.revision, state.source.revision)
+        catalog = load_inventory(classicua, spoken, db_path, ARCHIVES[module],
+                                 module=module, state=state)
+        ready = {identity for identity, row in catalog.rows.items()
+                 if row.get("ready_to_import")}
     if before_import is not None:
         before_import(state)
     # Explicitly call the *same* guarded UI/CLI action. Re-check current
     # canonical mappings, source bytes, rights policy and source versions.
     report = {}
-    if is_quest:
+    if is_quest and not incremental:
         report = state.translation_action(
             "auto_import_one_to_one", {"source": "classicua"},
             **({} if skipped is None else {"skipped": skipped}))["report"]
@@ -636,6 +700,9 @@ def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare
             state, selected_quest, agent_rows, skipped=skipped)
     else:
         preview, imported, ambiguous = current_quest_texts(state, selected_quest)
+    if incremental:
+        from tools.quest_incremental import merge_ready
+        preview = merge_ready(previous, preview, ready)
     preview_count = sum(event in ("accept", "progress", "complete")
                         for events in preview.values() for event in events)
     if is_quest and not preview_count:

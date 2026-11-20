@@ -26,3 +26,11 @@ no dialogue or lore snapshots are bundled. The ClassicUA numeric string fingerpr
 is independently implemented from the pinned public algorithm in
 `scripts/utils.lua` (commit `1770d208ad853d23d61105cf510d53804770d916`);
 it is not a canonical Spoken identity. ClassicUA remains external and unmodified.
+
+The Quest-only test addon includes the unmodified hinted static TrueType
+Noto Sans Regular from the
+[Noto Sans v2.015 release](https://github.com/notofonts/latin-greek-cyrillic/releases/tag/NotoSans-v2.015).
+The SIL Open Font License 1.1 and copyright notice ship next to the font as
+[`OFL-NotoSans.txt`](addons/Spoken_Quest_UA/OFL-NotoSans.txt).
+The font file SHA-256 is
+`478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823`.

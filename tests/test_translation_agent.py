@@ -101,7 +101,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(read_recorded_imports(self.db)["recorded_imports"]["total_text_records"], 0)
         copy = backup_database(self.db, self.db.with_name("backup.sqlite3"))
         with connection(copy) as db:
-            self.assertEqual(db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 7)
+            self.assertEqual(db.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0], 9)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM agent_assessments").fetchone()[0], 1)
             self.assertEqual(db.execute("SELECT action FROM agent_imports ORDER BY id").fetchall(),
                              [("import",), ("invalidate",)])

@@ -61,6 +61,7 @@ button:disabled { opacity: .5; cursor: default; }
 :focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
 button.primary { background: var(--mint); color: #13261a; border-color: transparent; font-weight: 720; }
 .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .65rem; }
+.metrics.quest-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .metric { background: var(--panel); border: 1px solid var(--line); border-radius: .75rem; padding: .85rem 1rem; }
 .metric span { color: var(--muted); display: block; font-size: .84rem; }
 .metric strong { display: block; font-size: 1.85rem; font-variant-numeric: tabular-nums; }
@@ -111,6 +112,9 @@ dialog::backdrop { background: #070a08cc; }
 @media (max-width: 38rem) {
   .wrap { width: calc(100% - 1.5rem); }
   .metrics { grid-template-columns: repeat(2, 1fr); }
+  .metrics.quest-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .metrics.quest-summary .metric { padding: .55rem; }
+  .metrics.quest-summary .metric strong { font-size: 1.45rem; }
   .hero { padding-top: 1.5rem; }
   .top-inner { font-size: .83rem; }
 }

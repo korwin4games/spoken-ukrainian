@@ -2,10 +2,24 @@
 
 | Addon | Dependencies | Native game text |
 | --- | --- | --- |
-| `Spoken_Quest_UA` | `Spoken_Ukrainian`, official `Spoken` and `Spoken_Quests` | NPC QuestFrame titles, descriptions, objectives, progress and completion. Quest labels in the quest lists shown by Gossip and NPC greeting windows. |
+| `Spoken_Quest_UA` | `Spoken_Ukrainian`, official `Spoken` and `Spoken_Quests` | NPC QuestFrame titles, descriptions, objectives, progress and completion. Accepted Quest Journal titles, description and overall objectives when corresponding imported fields exist. Quest labels in the quest lists shown by Gossip and NPC greeting windows. |
 | `Spoken_Gossip_UA` | `Spoken_Ukrainian`, which depends on official `Spoken` | Exact NPC/English-hash greetings and reply choices, with NPC-specific precedence, common fallback and scoped exclusions. |
 
-The Quest module registers through the pinned public load-on-demand Community Pack interface with an empty sound-length table. Quest journal text and reward-item labels have no verified translation hooks in this build. Native game windows, the optional Quest preview, and Spoken narrator captions are separate surfaces.
+The Quest module registers through the pinned public load-on-demand Community Pack interface with an empty sound-length table. Native game windows, the optional Quest preview, and Spoken narrator captions are separate surfaces.
+
+The Forever Journal adapter uses the hooks demonstrated in pinned ClassicUA
+`1770d208ad853d23d61105cf510d53804770d916` in `scripts/frame_hooks.lua`
+(`quest_info_quest_id`, `update_forever_quest_log_list` and
+`prepare_forever_quest_texts`). It resolves details using
+`C_QuestLog.GetSelectedQuest()` during `QuestInfo_Display` and finds list
+row IDs in the pool during `QuestScrollFrame:UpdateBackground`. It uses only
+emitted Quest fields. ClassicUA's separate objective-row hook uses
+`entries.translate_quest_objective` for live task lines. The build has no
+audited equivalent for those dynamic task lines or reward items. If the client omits the verified
+hooks, the corresponding surface stays native. The static Noto Sans font
+ships in the Quest addon with its [OFL notice](../addons/Spoken_Quest_UA/OFL-NotoSans.txt).
+The Quest widgets keep their size and font flags and restore the original
+font when Shift shows the captured native text.
 
 ## Build each module
 

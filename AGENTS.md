@@ -1,6 +1,9 @@
 # Instructions for coding agents
 
 ## Project
+
+### Latest Quest local-test UX decision (supersedes older Quest reviewer-UI notes)
+For the private `Spoken_Quest_UA` manager, the owner explicitly requests only three flows: write/paste a missing Ukrainian translation (optionally using Codex), choose between multiple Ukrainian texts, or automatically use a single Ukrainian text across multiple verified English variants of one Quest ID/event. Do not expose Quest reviewer names, attestations, Stage 3 menus or history panels. Selecting/saving Quest text writes only SQLite and marks a moment ready. A dedicated incremental "Import all" operation merges only ready Quest ID/event moments into the checksum-verified previous Quest ZIP, preserving all other imported translations and their provenance. Keep the full rebuild command separate. Existing SQLite review histories remain intact for non-destructive migration; do not mislabel simple local choices as human approvals. Gossip workflows remain separate. This is private testing, not a public translation release.
 Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. Spoken Player and ClassicUA are external repositories. A Community Pack is not a replacement for the player; `ukUA` is a content language, not a Blizzard client locale.
 
 ## Read relevant context

@@ -13,6 +13,8 @@
 ## X-Spoken-LanguageNative: Українська
 
 Translations.lua
+QuestFont.lua
 Module.lua
 NativeQuestFrame.lua
+QuestJournal.lua
 GossipQuestTitles.lua

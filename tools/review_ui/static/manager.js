@@ -24,6 +24,8 @@ const queueLabels = {
 };
 const problems = {
   quest_mapping_rejected_or_deferred: "Рев’юер відхилив або відклав зіставлення. Перегляньте рішення.",
+  conflicting_quest_runtime_variants: "Для цієї події є різні чинні схвалення. Перегляньте попередні рішення.",
+  quest_runtime_review_stale: "Докази спільного рішення змінилися. Звірте актуальні оригінали й підтвердьте переклад знову.",
   quest_multiple_verified_originals: "Перегляньте кожен оригінал окремо. Для цієї події автоматичний імпорт заблоковано.",
   quest_original_missing: "У закріпленому корпусі немає підтвердженого оригіналу.",
   quest_mapping_unverified: "Для цього кандидата бракує доказів фракції, відповідності контексту або незалежної перевірки AI.",
@@ -42,7 +44,7 @@ const routes = {
 const errors = {
   manager_confirmation_required: "Підтвердіть переімпорт.",
   manager_reimport_already_running: "Інший переімпорт уже триває. Дочекайтеся його завершення.",
-  manager_state_changed_retry_reimport: "Дані змінилися під час збірки. Оновіть список і повторіть.",
+  manager_state_changed_retry_reimport: "Дані змінилися або база зайнята. Оновіть список і повторіть дію.",
   no_unambiguous_quest_imports_for_local_test_pack: "Для збірки бракує однозначних перекладів квестів.",
   manager_reimport_timed_out_check_build: "Час очікування минув. Оновіть список, щоб перевірити стан збірки.",
   manager_reimport_worker_unavailable: "Не вдалося запустити збірку. Перезапустіть локальний менеджер.",
@@ -54,7 +56,9 @@ const errors = {
   manager_spoken_checkout_invalid: "Потрібна чиста копія Spoken на закріпленій ревізії.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
-let loading = 0;
+let readyCount = 0;
+const loading = new Map();
+const recentLists = new Map();
 const pageSize = 30;
 
 function make(tag, text, cls) {
@@ -68,9 +72,11 @@ Object.assign(errors, {
   manager_invalid_review_request: "Перевірте вибраний запис і підтвердження.",
   manager_review_checks_required: "Підтвердьте всі п’ять перевірок.",
   manager_review_context_blocked: "Цей контекст не можна безпечно зіставити з ігровим записом.",
-  manager_invalid_translation_format: "Перевірте підстановки та форматування за англійським оригіналом.",
+  manager_invalid_translation_format: "Введіть непорожній текст до 60 000 символів без NUL.",
   manager_candidate_unavailable: "Кандидат застарів, відхилений або відсутній. Оновіть запис.",
   manager_candidate_not_built: "Текст не ввійшов до ZIP. Перевірте конфлікти та чинні схвалення.",
+  conflicting_quest_runtime_variants: "Спершу відкличте суперечливе чинне схвалення або вибір джерела.",
+  invalid_quest_runtime_review: "У локальній базі є недійсний запис перевірки Quest. Перевірте резервну копію бази.",
   source_quest_selection_requires_approved_stage3_mapping: "Спершу підтвердьте зіставлення Quest доказом Stage 3.",
   source_candidate_pinned_context_mismatch: "Доказ кандидата змінився. Звірте його з поточним оригіналом.",
 });
@@ -81,14 +87,19 @@ function errorMessage(error) {
 function domain() { return el("module").value === "Spoken_Quest_UA" ? "quest" : "gossip"; }
 function domainName() { return domain() === "quest" ? "Quest" : "Gossip"; }
 
-async function whileLoading(work) {
-  loading += 1;
+function stopLoading(lane) {
+  loading.delete(lane);
+  el("loading-bar").hidden = loading.size === 0;
+}
+
+async function whileLoading(work, lane = Symbol()) {
+  const request = Symbol();
+  loading.set(lane, request);
   el("loading-bar").hidden = false;
   try {
     return await work();
   } finally {
-    loading -= 1;
-    el("loading-bar").hidden = loading === 0;
+    if (loading.get(lane) === request) stopLoading(lane);
   }
 }
 
@@ -101,12 +112,32 @@ async function call(action, payload) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.reason || result.error || "manager_request_failed");
+    if (!["list", "detail"].includes(action) && !payload.dry_run) recentLists.clear();
     return result;
-  });
+  }, action);
 }
 
 function metrics(summary, build) {
   const tally = key => summary[domain()][key];
+  if (domain() === "quest") {
+    const q = summary.quest;
+    const cards = [
+      ["Імпортовано", q.quest_imported ?? 0],
+      ["Готові до імпорту", q.ready ?? 0],
+      ["Проблемні", q.quest_problem ?? 0],
+    ];
+    el("metrics").className = "metrics quest-summary";
+    el("metrics").replaceChildren(...cards.map(([name, value]) => {
+      const card = make("div", undefined, "metric");
+      card.append(make("span", name), make("strong", number.format(value)));
+      return card;
+    }));
+    el("build-state").textContent = build ?
+      "Останній Quest ZIP: " + build.built_at + " UTC" :
+      "Quest ZIP ще не зібрано.";
+    return;
+  }
+  el("metrics").className = "metrics";
   const cells = [
     ["Усього записів", "total"], ["Імпортовано в ZIP", "included"], ["Не в ZIP", "not_included"],
     ["Конфлікти кандидатів", "conflicts"], ["Кілька перевірених оригіналів", "multiple_originals"],
@@ -135,14 +166,23 @@ function renderList(data) {
     const id = (item.type === "quest" || parts[0] === "gossip") ? parts[1] : item.id;
     tr.append(make("td", item.type === "quest" ? "Quest" : "Gossip"), make("td", id));
     tr.appendChild(make("td")).append(name);
-    tr.appendChild(make("td")).append(
-      badge(item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано", item.built ? "built" : ""));
+    tr.appendChild(make("td")).append(badge(item.type === "quest" ?
+      item.ready_to_import ? "Готовий до імпорту" : item.built ? "У ZIP" :
+      item.needs_choice ? "Оберіть переклад" : "Немає перекладу" :
+      item.built ? "У ZIP" : item.recorded ? "Лише в базі" : "Не імпортовано",
+      item.built && !item.ready_to_import ? "built" : ""));
     const statuses = tr.appendChild(make("td"));
-    statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
-    if (item.candidate_conflict) statuses.append(make("div", labels.conflict));
-    if (item.status === "multiple_originals") statuses.append(make("div", labels.multiple_originals));
-    if (item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
-    const problem = item.status !== "ready" || item.agent_warning;
+    if (item.type === "quest") {
+      statuses.append(badge(item.ready_to_import ? "Готовий до імпорту" :
+        item.built ? "Імпортовано" : item.needs_choice ? "Потрібен вибір" :
+        "Додайте переклад", item.built && !item.ready_to_import ? "built" : ""));
+    } else {
+      statuses.append(badge(translationLabels[item.translation_state] || labels[item.status], item.status));
+    }
+    if (item.type !== "quest" && item.candidate_conflict) statuses.append(make("div", labels.conflict));
+    if (item.type !== "quest" && item.status === "multiple_originals") statuses.append(make("div", labels.multiple_originals));
+    if (item.type !== "quest" && item.mapping_state) statuses.append(make("div", mappingLabels[item.mapping_state], "muted"));
+    const problem = item.type !== "quest" && (item.status !== "ready" || item.agent_warning);
     const flag = make("td", problem ? "⚑" : "—");
     flag.title = item.agent_warning ? "Є зауваження агента" : labels[item.status];
     if (problem) flag.setAttribute("aria-label", flag.title);
@@ -150,6 +190,11 @@ function renderList(data) {
     return tr;
   });
   el("rows").replaceChildren(...rows);
+  if (domain() === "quest") {
+    readyCount = Number(data.summary.quest?.ready || 0);
+    el("reimport").textContent = "Створити модуль";
+    el("reimport").disabled = busy || readyCount === 0;
+  }
   el("list-message").hidden = rows.length > 0;
   el("list-message").textContent = rows.length ? "" : "За цими фільтрами записів немає.";
   el("match-count").textContent = number.format(data.total) + " записів";
@@ -158,16 +203,25 @@ function renderList(data) {
   el("next").disabled = offset + pageSize >= data.total;
 }
 
-async function list() {
+async function list(restore = false) {
   const seq = ++listSeq;
+  const module = el("module").value;
+  const payload = {
+    query: el("query").value,
+    filter_by: domain() === "quest" ? el("quest-filter").value : el("filter").value,
+    status: el("translation-status").value, offset, limit: pageSize,
+  };
+  const key = JSON.stringify(payload);
+  const previous = recentLists.get(module);
+  if (restore && previous?.key === key) renderList(previous.result);
   el("list-message").hidden = false;
   el("list-message").textContent = "Оновлюємо список…";
   try {
-    const result = await call("list", {
-      query: el("query").value, filter_by: el("filter").value,
-      status: el("translation-status").value, offset, limit: pageSize,
-    });
-    if (seq === listSeq) renderList(result);
+    const result = await call("list", payload);
+    if (seq === listSeq) {
+      recentLists.set(module, {key, result});
+      renderList(result);
+    }
   } catch (error) {
     if (seq === listSeq) el("list-message").textContent = errorMessage(error);
   }
@@ -185,6 +239,100 @@ const eligibilityHelp = {
   format_blocked: "Формат або підстановки не відповідають оригіналу. Виправте текст у дозволеній чернетці.",
 };
 
+function simpleQuestControls(row) {
+  const panel = make("section");
+  const message = make("p");
+  message.setAttribute("role", "status");
+  panel.append(message);
+  const options = new Map();
+  for (const candidate of row.candidates) {
+    if (!options.has(candidate.sha256)) options.set(candidate.sha256, candidate);
+  }
+  const editable = Boolean(row.review_binding && row.originals.length);
+  const run = async (action, data) => {
+    if (busy) return;
+    busy = true;
+    message.textContent = "Зберігаємо переклад…";
+    for (const id of ["preview", "reimport", "module"]) el(id).disabled = true;
+    try {
+      const result = await call(action, {...data, identity: row.id,
+        binding: row.review_binding, confirm: true});
+      el("run-summary").hidden = true;
+      if (result.build !== "review_saved") throw new Error("manager_reimport_worker_invalid_response");
+      el("operation-status").textContent = "Збережено. Готовий до імпорту — натисніть «Створити модуль».";
+      await list();
+      if (selected === row.id) await detail(row.id);
+    } catch (error) {
+      message.textContent = errorMessage(error);
+    } finally {
+      busy = false;
+      for (const id of ["preview", "reimport", "module"]) el(id).disabled = false;
+      el("reimport").disabled = domain() === "quest" && readyCount === 0;
+    }
+  };
+  panel.append(make("h3", options.size > 1 ? "Оберіть переклад" :
+    options.size === 1 ? "Доступний переклад" : "Немає перекладу"));
+  const field = make("textarea");
+  field.maxLength = 60000;
+  field.setAttribute("aria-label", "Український переклад");
+  field.placeholder = "Введіть або відредагуйте український переклад…";
+  let select = null;
+  if (options.size) {
+    select = make("select");
+    select.setAttribute("aria-label", "Оберіть український переклад");
+    for (const candidate of options.values()) {
+      const item = make("option", candidate.provider + " · " + candidate.text.slice(0, 100));
+      item.value = candidate.sha256;
+      select.append(item);
+    }
+    const first = options.keys().next().value;
+    const initial = row.selected_sha256 && options.has(row.selected_sha256) ?
+      row.selected_sha256 : row.built?.text_sha256 && options.has(row.built.text_sha256) ?
+      row.built.text_sha256 : first;
+    select.value = initial;
+    const useCandidate = () => {
+      const chosen = options.get(select.value);
+      if (chosen) field.value = chosen.text;
+    };
+    select.addEventListener("change", useCandidate);
+    useCandidate();
+    panel.append(select);
+  }
+  const save = make("button", "Зберегти");
+  save.type = "button";
+  save.disabled = !editable;
+  save.addEventListener("click", () => {
+    const text = field.value;
+    if (!text.trim()) return;
+    const chosen = select && options.get(select.value);
+    if (chosen && chosen.text === text) {
+      // Preserve the selected candidate's source when its text is untouched.
+      run("choose_quest", {candidate: chosen.sha256});
+    } else {
+      // Any edited/pasted text is the user's manual translation.
+      run("save_quest", {text});
+    }
+  });
+  const codex = make("button", "Скопіювати запит для Codex");
+  codex.type = "button";
+  codex.addEventListener("click", async () => {
+    const prompt = "Translate these WoW: Forever Quest texts to natural Ukrainian. " +
+      "Keep in-game names and formatting readable when translating. " +
+      "Use Ukrainian Warcraft terminology, not Russian localization. " +
+      "One Ukrainian translation must work for ALL English variants. " +
+      "Return ONLY the Ukrainian translation:\n\n" + row.originals.join("\n\n---\n\n");
+    try {
+      await navigator.clipboard.writeText(prompt);
+      message.textContent = "Запит скопійовано. Вставте в Codex, а переклад — у поле.";
+    } catch (_) {
+      message.textContent = "Не вдалося скопіювати. Перевірте доступ до буфера обміну.";
+    }
+  });
+  panel.append(make("h3", "Український переклад"), field, save, codex);
+  if (!editable) panel.append(make("p", "Немає перевіреного англійського оригіналу для цього квесту."));
+  return panel;
+}
+
 function reviewControls(row) {
   const panel = make("section");
   const status = make("p");
@@ -198,7 +346,8 @@ function reviewControls(row) {
     status.textContent = action === "confirm_candidate" ?
       "Перевіряємо докази та збираємо ZIP…" : "Перевіряємо докази та зберігаємо запис…";
     try {
-      const result = await call(action, {...payload, identity: row.id, confirm: true});
+      const binding = row.type === "quest" && action !== "review_mapping" ? {binding: row.review_binding} : {};
+      const result = await call(action, {...payload, ...binding, identity: row.id, confirm: true});
       if (result.build !== "review_saved") renderResult(result);
       el("operation-status").textContent = action === "confirm_candidate" ?
         "Вибраний переклад перевірено в ZIP." : "Рішення збережено. Перевірте статус запису.";
@@ -215,7 +364,7 @@ function reviewControls(row) {
     (c.review_id && (c.eligibility === "selectable" || c.draft_editable)) ||
     (c.registration_key && c.eligibility === "register"));
   const canAdd = row.draft_available || row.type === "gossip" && row.review_queue === "gossip_translation";
-  if (row.originals.length === 1 && (candidates.length || canAdd) &&
+  if ((row.type === "quest" || row.originals.length === 1 && (candidates.length || canAdd)) &&
       !["invalid_context", "mapping_conflict", "mapping_rejected", "stale"].includes(row.mapping_state)) {
     const field = make("fieldset");
     const reviewer = make("input");
@@ -235,12 +384,13 @@ function reviewControls(row) {
     }
     const context = make("pre");
     const checks = {};
-    if (candidates.length) {
+    if (candidates.length || row.type === "quest") {
       field.append(select, context);
       for (const [key, label] of Object.entries({
         text: "Текст відповідає оригіналу", grammar: "Мову та форматування перевірено",
         ai: "Походження та використання ШІ перевірено", rights: "Права перевірено",
-        all_contexts: "Усі контексти перевірено",
+        all_contexts: row.type === "quest" ?
+          "Цей переклад підходить для всіх наведених оригіналів і контекстів" : "Усі контексти перевірено",
       })) {
         const input = make("input");
         input.type = "checkbox";
@@ -256,18 +406,20 @@ function reviewControls(row) {
     const approve = make("button", "Підтвердити переклад");
     const save = make("button", "Зберегти чернетку");
     const register = make("button", "Додати кандидат до журналу");
-    approve.type = save.type = register.type = "button";
+    const withdraw = make("button", "Відкликати схвалення Quest");
+    approve.type = save.type = register.type = withdraw.type = "button";
     const choice = () => candidates.find(c => (c.review_id || c.registration_key) === select.value);
     const update = () => {
       approve.disabled = choice()?.eligibility !== "selectable" || !reviewer.value.trim() ||
         Object.values(checks).some(input => !input.checked);
       register.disabled = choice()?.eligibility !== "register" || !reviewer.value.trim();
+      withdraw.disabled = !choice()?.runtime_approval || !reviewer.value.trim();
       save.disabled = !reviewer.value.trim() || !draft.value.trim() ||
         !(canAdd || choice()?.review_kind === "quest");
     };
     select.addEventListener("change", () => {
-      context.textContent = choice() ? row.originals[0] + "\n\n" + choice().text : "";
-      if (choice()?.review_kind === "quest") draft.value = choice().text;
+      context.textContent = choice() ? row.originals.join("\n\n") + "\n\n" + choice().text : "";
+      if (["quest", "runtime"].includes(choice()?.review_kind)) draft.value = choice().text;
       for (const input of Object.values(checks)) input.checked = false;
       update();
     });
@@ -279,14 +431,28 @@ function reviewControls(row) {
       }
     });
     save.addEventListener("click", () => run("save_translation",
-      {candidate: choice()?.review_kind === "quest" ? select.value : "", text: draft.value, reviewer: reviewer.value}));
+      {candidate: ["quest", "runtime"].includes(choice()?.review_kind) ? select.value : "",
+        text: draft.value, reviewer: reviewer.value}));
     register.addEventListener("click", () => run("register_candidate",
       {candidate: select.value, reviewer: reviewer.value}));
-    if (candidates.some(c => c.eligibility === "selectable")) field.append(approve);
-    if (candidates.some(c => c.eligibility === "register")) field.append(register);
-    if (canAdd || candidates.some(c => c.review_kind === "quest")) field.append(draft, save);
+    withdraw.addEventListener("click", () => {
+      if (!withdraw.disabled && window.confirm("Записати відкликання схвалення? Поточний ZIP зміниться під час нової збірки.")) {
+        run("withdraw_quest_approval", {candidate: select.value, reviewer: reviewer.value});
+      }
+    });
+    if (row.type === "quest" || candidates.some(c => c.eligibility === "selectable")) field.append(approve);
+    if (row.type === "quest" || candidates.some(c => c.eligibility === "register")) field.append(register);
+    if (row.type === "quest" && candidates.some(c => c.runtime_approval)) field.append(withdraw);
+    if (row.type === "quest" || canAdd || candidates.some(c => c.review_kind === "quest")) field.append(draft, save);
+    if (row.type === "quest" && !candidates.length) {
+      field.append(make("p", canAdd ? "Створіть власну чернетку або перевірте зіставлення Stage 3 для ClassicUA."
+        : "Для редагування потрібен перевірений оригінал для кожного контексту."));
+    }
     panel.append(field);
     update();
+  }
+  if (row.type === "quest" && ["invalid_context", "mapping_conflict", "mapping_rejected", "stale"].includes(row.mapping_state)) {
+    panel.append(make("p", "Перевірте стан зіставлення та докази джерела перед збереженням рішення."));
   }
   if (row.mapping_options?.length) panel.append(mappingControls(row.mapping_options, run));
   return panel;
@@ -366,6 +532,17 @@ function mappingControls(options, run) {
 }
 
 function renderDetail(row) {
+  if (row.type === "quest") {
+    const english = make("section");
+    english.append(make("h3", "Англійський оригінал"));
+    for (const text of row.originals) english.append(make("p", text, "original"));
+    const status = row.ready_to_import ? "Готовий до імпорту" :
+      row.built ? "У ZIP" : row.needs_choice ? "Оберіть переклад" :
+      row.candidates.length ? "Переклад знайдено" : "Немає перекладу";
+    el("selected").replaceChildren(make("h3", row.label), make("p", row.id, "muted"),
+      badge(status, row.built && !row.ready_to_import ? "built" : ""), english, simpleQuestControls(row));
+    return;
+  }
   const title = make("h3", row.label);
   const blocks = [title, make("p", row.id, "muted")];
   const identity = row.type === "quest" ?
@@ -374,6 +551,8 @@ function renderDetail(row) {
   const built = row.built ? "У ZIP · " + (routes[row.built.route] || row.built.route) + " · " + row.built.source :
     row.recorded ? "Записано в базі, до ZIP не ввійшло" : "Не імпортовано";
   blocks.push(badge(built, row.built ? "built" : ""), make("p", row.help));
+  if (row.approved_variant_count) blocks.push(make("p", "Спільний переклад схвалено для оригіналів: " + row.approved_variant_count));
+  if (row.type === "quest" && row.built) blocks.push(make("p", row.built.text_sha256, "muted"));
   blocks.push(make("p", [mappingLabels[row.mapping_state], translationLabels[row.translation_state]].filter(Boolean).join(" · ")));
   blocks.push(make("p", row.review_queue ? "Черга: " + queueLabels[row.review_queue] : "У черзі перевірки запису немає.", "muted"));
   const en = make("section");
@@ -381,6 +560,7 @@ function renderDetail(row) {
   if (row.original_variants?.length) {
     for (const variant of row.original_variants) {
       en.append(make("p", variant.text, "original"));
+      en.append(make("p", [variant.revision, variant.fingerprint].filter(Boolean).join(" · "), "muted"));
       if (variant.source_ids?.length) en.append(make("p", variant.source_ids.join(" · "), "muted"));
       for (const context of variant.contexts) {
         en.append(make("p", [variant.target_id, context.npc_id != null ? "NPC " + context.npc_id : "",
@@ -397,12 +577,15 @@ function renderDetail(row) {
   if (!row.candidates.length) uk.append(make("p", "Перекладу немає.", "muted"));
   for (const item of row.candidates) {
     const details = make("details", undefined, "candidate");
-    details.open = row.candidates.length === 1 || row.status === "conflict" ||
+    details.open = row.type === "quest" || row.candidates.length === 1 || row.status === "conflict" ||
       row.built?.text_sha256 === item.sha256 || Boolean(item.validation && item.validation !== "agent_verified");
     details.append(make("summary", item.provider + " · " + item.review),
       make("pre", item.text),
       make("p", [item.reference, item.revision].filter(Boolean).join(" · "), "muted"),
       make("p", eligibilityHelp[item.eligibility] || eligibilityHelp.source_review));
+    if (row.type === "quest" && row.built?.text_sha256 === item.sha256) {
+      details.append(badge("У ZIP", "built"));
+    }
     if (item.validation === "stale") details.append(make("p", "Оцінка агента застаріла.", "muted"));
     if (item.shared_bindings) details.append(make("p", "Спільний запис ClassicUA для Альянсу й Орди.", "muted"));
     if (item.checks) {
@@ -414,7 +597,9 @@ function renderDetail(row) {
   }
   const evidence = make("details");
   evidence.append(make("summary", "Контекст джерела"), make("pre", JSON.stringify(row.contexts, null, 2)));
-  blocks.push(en, uk, evidence);
+  blocks.push(en);
+  if (row.type === "quest") blocks.push(reviewControls(row));
+  blocks.push(uk, evidence);
   if (row.problem && problems[row.problem]) blocks.push(make("p", problems[row.problem]));
   if (row.unverified_alternatives?.length) {
     blocks.push(make("p", "Є збіг за обробленим текстом Spoken. Потрібна перевірка оригіналу в грі."));
@@ -422,7 +607,8 @@ function renderDetail(row) {
       blocks.push(make("p", item.hash + " · " + (item.scope === "common" ? "спільний запис" : "запис цього NPC"), "muted"));
     }
   }
-  el("selected").replaceChildren(...blocks, reviewControls(row));
+  if (row.type !== "quest") blocks.push(reviewControls(row));
+  el("selected").replaceChildren(...blocks);
 }
 
 async function detail(id, button) {
@@ -447,6 +633,20 @@ async function detail(id, button) {
 }
 
 function renderResult(result) {
+  if (domain() === "quest") {
+    const q = result.summary.quest;
+    const rows = [
+      make("p", "Імпортовано: " + number.format(q.quest_imported ?? q.included) +
+        " · Готові: " + number.format(q.ready ?? 0) +
+        " · Проблемні: " + number.format(q.quest_problem ?? 0)),
+    ];
+    if (result.artifact) rows.push(make("p", result.artifact, "muted"));
+    rows.push(make("p", "SHA-256 " + result.sha256, "muted"));
+    el("run-details").replaceChildren(...rows);
+    el("run-summary").hidden = false;
+    el("run-summary").open = true;
+    return;
+  }
   const rows = [];
   for (const [key, name] of [[domain(), domainName()]]) {
     const v = result.summary[key];
@@ -473,10 +673,15 @@ async function reimport(dryRun) {
   busy = true;
   for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = true;
   el("run-summary").hidden = true;
-  el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" : "Переімпорт і збірка тривають…";
+  el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" :
+    domain() === "quest" ? "Створюємо архів модуля Quest…" : "Переімпорт і збірка тривають…";
   try {
-    const result = await call("reimport", {reset: el("reset").checked, dry_run: dryRun, confirm: !dryRun});
-    el("operation-status").textContent = dryRun ? "Попередня збірка готова. Поточні записи й ZIP збережено." : "Нову локальну збірку створено.";
+    const result = await call(domain() === "quest" && !dryRun ? "import_ready" : "reimport",
+      {reset: domain() === "quest" ? false : el("reset").checked,
+        dry_run: dryRun, confirm: !dryRun});
+    el("operation-status").textContent = dryRun ? "Попередня збірка готова. Поточні записи й ZIP збережено." :
+      domain() === "quest" ? "Модуль Quest створено. Архів містить попередні переклади та всі готові зміни." :
+      "Нову локальну збірку створено.";
     renderResult(result);
     if (!dryRun) {
       offset = 0;
@@ -487,19 +692,30 @@ async function reimport(dryRun) {
   finally {
     busy = false;
     for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = false;
+    el("reimport").disabled = domain() === "quest" && readyCount === 0;
   }
 }
 
 let timer;
 function resetList() { offset = 0; clearTimeout(timer); list(); }
 el("query").addEventListener("input", () => {
+  listSeq++;
+  stopLoading("list");
   clearTimeout(timer);
   timer = setTimeout(resetList, 275);
 });
 el("filters").addEventListener("submit", event => { event.preventDefault(); resetList(); });
-for (const id of ["filter", "translation-status"]) el(id).addEventListener("change", resetList);
+for (const id of ["filter", "translation-status", "quest-filter"])
+  el(id).addEventListener("change", resetList);
 function refreshModuleControls() {
-  el("reimport").textContent = "Переімпортувати " + domainName();
+  el("reimport").textContent = domain() === "quest" ? "Створити модуль" : "Оновити " + domainName();
+  const simple = domain() === "quest";
+  for (const id of ["reset-control", "filter-control", "translation-status-control", "preview"])
+    el(id).hidden = simple;
+  el("quest-filter-control").hidden = !simple;
+  el("metrics").hidden = false;
+  el("build-state").hidden = false;
+  el("operation-heading").textContent = simple ? "Створення модуля Quest" : "Оновити переклади модуля";
   el("inventory-heading").textContent = "Переклади " + domainName();
   for (const option of document.querySelectorAll('option[value="multiple_originals"]')) {
     option.hidden = domain() !== "quest";
@@ -507,21 +723,29 @@ function refreshModuleControls() {
 }
 el("module").addEventListener("change", () => {
   detailSeq++;
+  stopLoading("detail");
   selected = null;
-  el("filter").value = el("translation-status").value = "all";
+  el("filter").value = el("translation-status").value = el("quest-filter").value = "all";
+  readyCount = 0;
   el("reset").checked = false;
   for (const id of ["metrics", "rows", "selected", "operation-status", "build-state", "match-count", "page"])
     el(id).replaceChildren();
   el("prev").disabled = el("next").disabled = true;
   el("run-summary").hidden = true;
   refreshModuleControls();
-  resetList();
+  offset = 0;
+  clearTimeout(timer);
+  list(true);
 });
 refreshModuleControls();
 el("prev").addEventListener("click", () => { offset = Math.max(0, offset - pageSize); list(); });
 el("next").addEventListener("click", () => { offset += pageSize; list(); });
 el("preview").addEventListener("click", () => reimport(true));
 el("reimport").addEventListener("click", () => {
+  if (domain() === "quest") {
+    reimport(false);
+    return;
+  }
   el("confirm").returnValue = "";
   el("confirm-text").textContent = el("reset").checked ?
     "Після успішної збірки тестові рішення та імпорти вибраного модуля буде замінено свіжим набором. Знімки джерел збережуться." :

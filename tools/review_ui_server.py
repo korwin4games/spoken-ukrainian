@@ -5,6 +5,7 @@ Needs clean exact pinned ClassicUA + Spoken checkouts. Reviewed translations
 persist only in private ignored build storage. No pack activation or publication.
 """
 import argparse
+import gzip
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
 import json
@@ -27,6 +28,7 @@ from adapters.translation_sources import load_source_policy
 from adapters.review_ui import LocalReviewState, guarded_decisions_path
 from adapters.spoken import PublicSource, build_index
 from adapters.spoken.text_index import index_verified_originals
+from tools.manager_timing import timing
 
 STATIC = ROOT / "tools/review_ui/static"
 MAX_REQUEST_BYTES = 262144
@@ -42,20 +44,30 @@ def _reason(exc):
 
 
 
-def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
-                local_reviews_path=None, translations_path=None, policy_path=None):
-    """Load exact audited checkouts with no network traffic."""
+def load_review_inputs(classicua_path, spoken_path, *, keep_lines=False):
+    """Load committed, hash-verified source data independently of the local ledger."""
     lock = json.loads((ROOT / "sources.lock.json").read_text(encoding="utf-8"))
     manifest = json.loads((ROOT / "tests/stage3_sources.json").read_text(encoding="utf-8"))
     if manifest["revision"] != lock["spoken"]["revision"]:
         raise ValueError("pinned_spoken_manifest_mismatch")
-    reader = PublicSource(spoken_path, manifest)
-    inventory = build_index(reader)
-    original_index = index_verified_originals(reader, inventory)
-    dataset, audit = audit_checkout(classicua_path, lock["classicua"]["files"])
-    source = from_audit(dataset, audit)
+    with timing("spoken_index"):
+        reader = PublicSource(spoken_path, manifest)
+        corpus = json.loads(gzip.decompress(reader.read("pipelines/quests/corpus/corpus.json.gz")))
+        inventory = build_index(reader, corpus=corpus)
+        original_index = index_verified_originals(reader, inventory, corpus=corpus)
+    with timing("classicua_audit"):
+        dataset, audit = audit_checkout(classicua_path, lock["classicua"]["files"])
+        source = from_audit(dataset, audit)
     if source.revision != lock["classicua"]["revision"]:
         raise ValueError("pinned_classicua_revision_mismatch")
+    return (dataset, source, inventory, original_index, corpus["lines"] if keep_lines else None)
+
+
+def build_state(classicua_path, spoken_path, decisions_path, reviews_path=None,
+                local_reviews_path=None, translations_path=None, policy_path=None, *, inputs=None):
+    """Read the current local ledger against verified source data."""
+    dataset, source, inventory, original_index, _ = (
+        load_review_inputs(classicua_path, spoken_path) if inputs is None else inputs)
     reviews = (
         load_reviews(json.loads(Path(reviews_path).read_text(encoding="utf-8")),
                      source_inventories={source.revision: source})
@@ -90,8 +102,8 @@ def create_handler(token, port, manager=None):
         "/manager.js": (STATIC / "manager.js", "text/javascript; charset=utf-8"),
         "/manager.css": (STATIC / "manager.css", "text/css; charset=utf-8"),
     }
-    actions = {"list", "detail", "reimport", "confirm_candidate", "save_translation", "review_mapping",
-               "register_candidate"}
+    actions = {"list", "detail", "reimport", "import_ready", "confirm_candidate", "save_translation", "review_mapping",
+               "register_candidate", "withdraw_quest_approval", "choose_quest", "save_quest"}
     class LocalHandler(BaseHTTPRequestHandler):
         def _event(self, event, outcome, reason=None):
             # Event and outcome are code constants, never request data.
@@ -150,7 +162,8 @@ def create_handler(token, port, manager=None):
                     params = parse_qs(parts.query, strict_parsing=True, max_num_fields=1)
                     if set(params) != {"module"} or len(params["module"]) != 1:
                         raise ValueError("manager_unknown_module")
-                    self._json(200, manager.action("stats", {"module": params["module"][0]}))
+                    with timing("api_response", action="stats"):
+                        self._json(200, manager.action("stats", {"module": params["module"][0]}))
                 except (ValueError, OSError, TypeError, KeyError) as exc:
                     self._json(400, {"error": _reason(exc)})
                 return
@@ -194,9 +207,10 @@ def create_handler(token, port, manager=None):
                     raise ValueError("invalid_review_request")
                 if manager is None:
                     raise ValueError("manager_unavailable")
-                result = manager.action(action, payload)
-                self._event(event, "succeeded")
-                self._json(200, result)
+                with timing("api_response", action=action):
+                    result = manager.action(action, payload)
+                    self._event(event, "succeeded")
+                    self._json(200, result)
             except (ValueError, TypeError, KeyError, UnicodeError, OSError) as exc:
                 reason = _reason(exc)
                 self._event(event, "failed", reason)
@@ -333,6 +347,8 @@ def main(argv=None):
             server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        manager.close()
     return 0
 
 
