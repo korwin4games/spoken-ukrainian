@@ -46,10 +46,14 @@ of the Quests tab and must be installed for Compendium Quest pages.
 
 ## Safety and intentionally omitted lines
 
-- Only unambiguous imported Quest ID/event values are eligible. The
-  exporter checks the *entire pinned English wording set* for the moment;
-  more than one original blocks the base `q:ID:event`. It does not guess
-  `:wN` or `:m/:f` translations without variant-specific proof.
+- Private Quest auto-import accepts **one distinct verified ClassicUA
+  translation per pinned Quest ID/event across every English wording**,
+  even when English text varies. The base `q:ID:event` Text Pack key
+  covers those variants; individual `:wN` and `:m/:f` keys are not
+  invented. No human approval is needed for local "Ready to import".
+  Changed source evidence, different IDs/events/factions, explicit
+  rejection and multiple conflicting Ukrainian texts remain blocked.
+  Public release approval is a separate gate.
 - A shared Gossip `g:...` key is exported only when **every** context using
   that key in the complete pinned corpus is within the safe editor scope,
   every distinct NPC/hash selection exists, all verified English originals
