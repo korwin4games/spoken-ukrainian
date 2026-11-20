@@ -662,8 +662,10 @@ def build_gossip(classicua, spoken, destination):
     units = []
     for row in view.rows.values():
         selection = row["selection"]
+        # A stale saved decision is not an eligible import, but should not
+        # prevent other ready Gossip records from entering the new ZIP.
         if row["status"] == "stale":
-            raise ValueError("manager_review_context_blocked")
+            continue
         if selection is None:
             continue
         npc, hashed = row["npc_id"], row["english_hash"]
