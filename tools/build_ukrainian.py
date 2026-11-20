@@ -593,7 +593,6 @@ def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE, 
     for required in (
             "## Title: Spoken Ukrainian: Quests\n",
             "## Dependencies: Spoken, Spoken_Ukrainian\n",
-            "## LoadOnDemand: 1\n",
             "## X-Spoken-Text: ukUA\n",
             "## X-Spoken-TextFormat: 1\n",
             "## X-Spoken-LanguageFont: NotoSans-Regular.ttf\n",
