@@ -10,6 +10,7 @@ from zipfile import ZipFile
 
 from adapters.spoken import literal_data
 from adapters.sqlite_translation_store import connection
+from tools.quest_source_compatibility import matching_snapshot_revision
 
 
 EVENTS = ("accept", "progress", "complete")
@@ -34,7 +35,7 @@ def previous_snapshot(db_path, archive, spoken_revision, classicua_revision):
                 for domain, key, source, route, fingerprint in db.execute(
                     """SELECT domain, unit_key, source, route, text_sha256
                        FROM build_import_units WHERE snapshot_id=?""", (snapshot_id,))}
-    if (spoken != spoken_revision or classicua != classicua_revision
+    if (not matching_snapshot_revision(spoken, spoken_revision) or classicua != classicua_revision
             or not archive.is_file() or archive.is_symlink()
             or sha256(archive.read_bytes()).hexdigest() != checksum):
         raise ValueError("manager_quest_existing_zip_changed")
