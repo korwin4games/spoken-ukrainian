@@ -59,6 +59,48 @@ class GossipSimpleUITests(TestCase):
         self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
                                    query="107874079")["total"], 1)
 
+    def test_save_gossip_reloads_as_ready_from_actual_sqlite(self):
+        """A chosen audit translation must persist, then leave Problematic."""
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from adapters.sqlite_translation_store import connection
+        from tools.gossip_simple import apply_choice, rows as current_rows
+
+        original = "Welcome, $n."
+        self.original["originalText"] = original
+        candidate = "Вітаю, {Ім'я}."
+        row = self.one(lookup={"byNpc": {NPC_ID: {TEXT_ID: candidate}}, "common": {}})
+        self.assertTrue(row["review_binding"])
+        with TemporaryDirectory() as temp:
+            db_path = Path(temp) / "gossip.sqlite3"
+            with connection(db_path) as sql:
+                sql.execute("BEGIN IMMEDIATE")
+                apply_choice("save_gossip", {
+                    "identity": row["id"], "binding": row["review_binding"],
+                    "text": candidate, "confirm": True,
+                }, row, self.state, db_path, db=sql)
+                sql.commit()
+                persisted = sql.execute("""SELECT text,source,reference FROM gossip_simple_choices
+                    WHERE identity=?""", (row["id"],)).fetchone()
+            self.assertEqual(persisted, (candidate, "manual", "local_selection"))
+            with patch("tools.gossip_simple.contexts", return_value=(
+                    {(NPC_ID, TEXT_ID): [self.original]}, set())), patch(
+                    "tools.build_ukrainian.local_gossip_texts",
+                    return_value={"byNpc": {}, "common": {}}):
+                updated = list(current_rows(self.state, [self.original], db_path, {}, {}))[0]
+            self.assertEqual(updated["status"], "ready")
+            self.assertTrue(updated["ready_to_import"])
+            self.assertTrue(updated["recorded"])
+            self.assertEqual(updated["selection"]["source"], "manual")
+            self.assertEqual(updated["selection"]["text"], candidate)
+            view = ModuleInventory([updated], None, {}, module=builder.GOSSIP_MODULE)
+            self.assertEqual(view.summary()["gossip"]["ready"], 1)
+            self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
+                                       filter_by="quest_problem")["total"], 0)
+            self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
+                                       filter_by="quest_ready")["total"], 1)
+
     def test_matching_auto_import_is_marked_imported_not_ready(self):
         units = {("gossip", f"npc:{NPC_ID}:{TEXT_ID}"): {
             "source": "classicua", "route": "pinned_unique",
