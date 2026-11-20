@@ -197,6 +197,24 @@ function simpleEditor(row) {
   for (const candidate of row.candidates) {
     if (!options.has(candidate.sha256)) options.set(candidate.sha256, candidate);
   }
+  // Audit alternatives are leads, not verified ClassicUA mappings. Offer the
+  // Ukrainian text for manual review, but never promote it through choose_gossip.
+  // English-only leads remain visible as disabled choices.
+  if (row.type === "gossip") {
+    for (const [index, item] of (row.unverified_alternatives || []).entries()) {
+      const text = typeof item.ukrainian === "string" ? item.ukrainian : "";
+      const label = [
+        "Аудит · не підтверджено",
+        matchNames[item.kind] || item.kind,
+        item.reference,
+        item.english?.slice(0, 65),
+        text ? text.slice(0, 100) : "Українського перекладу немає",
+      ].filter(Boolean).join(" · ");
+      options.set("audit:" + index, {
+        text, audit: true, disabled: !text.trim(), label,
+      });
+    }
+  }
   const editable = Boolean(row.review_binding && row.originals.length);
   const run = async (action, data) => {
     if (busy) return;
@@ -219,8 +237,9 @@ function simpleEditor(row) {
       el("reimport").disabled = domain() === "quest" && readyCount === 0;
     }
   };
-  panel.append(make("h3", options.size > 1 ? "Оберіть переклад" :
-    options.size === 1 ? "Доступний переклад" : "Перекладу немає"));
+  const selectableCount = [...options.values()].filter(candidate => !candidate.disabled).length;
+  panel.append(make("h3", selectableCount > 1 ? "Оберіть переклад" :
+    selectableCount === 1 ? "Доступний переклад" : "Перекладу немає"));
   const field = make("textarea");
   field.rows = 7;
   field.maxLength = 60000;
@@ -230,13 +249,15 @@ function simpleEditor(row) {
   if (options.size) {
     select = make("select");
     select.setAttribute("aria-label", "Оберіть український переклад");
-    for (const candidate of options.values()) {
-      const item = make("option", [candidate.provider, candidate.reference, candidate.text.slice(0, 100)]
-        .filter(Boolean).join(" · "));
-      item.value = candidate.sha256;
+    for (const [id, candidate] of options) {
+      const item = make("option", candidate.label ||
+        [candidate.provider, candidate.reference, candidate.text.slice(0, 100)]
+          .filter(Boolean).join(" · "));
+      item.value = id;
+      item.disabled = Boolean(candidate.disabled);
       select.append(item);
     }
-    const first = options.keys().next().value;
+    const first = [...options].find(([, candidate]) => !candidate.disabled)?.[0];
     const initial = row.selected_sha256 && options.has(row.selected_sha256) ?
       row.selected_sha256 : row.built?.text_sha256 && options.has(row.built.text_sha256) ?
       row.built.text_sha256 : first;
@@ -246,9 +267,19 @@ function simpleEditor(row) {
       if (chosen) field.value = chosen.text;
     };
     select.addEventListener("change", useCandidate);
-    if (row.type === "quest" || row.selected_sha256 || options.size === 1) useCandidate();
+    // Unlike a verified candidate, an audit lead always requires deliberate
+    // selection. Viewing the record never fills the Ukrainian field from audit.
+    const hasOnlyAudit = row.type === "gossip" && !row.candidates.length;
+    if (!hasOnlyAudit && (row.type === "quest" || row.selected_sha256 ||
+        (row.candidates.length === 1 && selectableCount === 1))) useCandidate();
     else select.selectedIndex = -1;
     panel.append(select);
+  }
+  if (row.type === "gossip" && row.unverified_alternatives?.length) {
+    panel.append(make("p",
+      "Кандидати з аудиту не підтверджують відповідність NPC. " +
+      "Оберіть наявний український текст і перевірте його перед збереженням. " +
+      "Варіанти без українського перекладу недоступні для вибору.", "muted"));
   }
   const save = make("button", "Зберегти");
   save.type = "button";
@@ -257,11 +288,13 @@ function simpleEditor(row) {
     const text = field.value;
     if (!text.trim()) return;
     const chosen = select && options.get(select.value);
-    if (chosen && chosen.text === text) {
-      // Preserve the selected candidate's source when its text is untouched.
+    if (chosen && chosen.text === text && !chosen.audit) {
+      // Only reviewed/eligible candidate entries may keep their source
+      // provenance through choose_gossip. Audit leads are manual choices.
       run("choose_" + row.type, {candidate: chosen.sha256});
     } else {
-      // Any edited/pasted text is the user's manual translation.
+      // Audit suggestions and edited/pasted text are explicit manual
+      // translations, revalidated for placeholders by the backend.
       run("save_" + row.type, {text});
     }
   });
