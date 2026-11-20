@@ -32,7 +32,7 @@ The installer verifies the ZIP's SHA-256 sidecar and exact contents, updates **o
 
 ## Local Spoken Ukrainian Quest test build
 
-The build produces two independently installable AddOns: **Spoken Ukrainian** (`Spoken_Ukrainian`) and the Quest module **Spoken Ukrainian: Quests** (`Spoken_Quest_UA`). Official `Spoken` and `Spoken_Quests` are unchanged. **Every build MUST auto-import current ClassicUA 1:1 Quest translations**; bad/missing pinned checkouts, import errors, or no unambiguous Quest translations fail the build.
+The build produces two independently installable AddOns: **Spoken Ukrainian** (`Spoken_Ukrainian`) and the Quest module **Spoken Ukrainian: Quests** (`Spoken_Quest_UA`). Official `Spoken` and `Spoken_Quests` are unchanged. **A full Quest rebuild runs the current ClassicUA 1:1 import**; bad/missing pinned checkouts, import errors, or no unambiguous Quest translations fail the build.
 
 ```sh
 uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoken ../spoken-wow
@@ -44,9 +44,9 @@ Unzip the private `dist/Spoken_Quest_UA_Local_Test.zip` directly into `Interface
 
 The independently installable `Spoken_Gossip_UA` translates native NPC greetings and replies. Build it with `--module Spoken_Gossip_UA` and install its separate ZIP. Either module can be enabled with `Spoken_Ukrainian`. Move the old `Spoken_Quests_UA` out of AddOns before installing. See the [Translation Manager](docs/TRANSLATION_MANAGER.md).
 
-**Gossip translation expansion:** the pinned Spoken/ClassicUA audit found **5,047** untranslated NPC wordings, deduplicated into **3,109 unique English texts** (1,938 repeated NPC occurrences; 418 shared-wording groups). Generate **78 private JSON translation batches** with `uv run --locked python tools/gossip_translation_review.py queue --classicua ../ClassicUA --spoken ../spoken-wow`. The existing local review server now includes **Gossip Translation Review · NPC**: propose a new Ukrainian version (pending), inspect all NPC contexts, explicitly approve/reject/defer and **separately import approved**. For this manual expansion workflow, only current explicitly imported human-reviewed hashes enter a local test ZIP, without replacing ClassicUA. One explicitly chosen batch can now be translated through `uv run --locked python tools/gossip_translate_codex.py --input build/gossip-batches/batch-0001.json --apply` (calls Codex once and may use model quota; does NOT approve or import). No translator API calls or published content happen automatically. [Workflow and Codex prompt](docs/GOSSIP_TRANSLATION_REVIEW.md).
 
-**ClassicUA Gossip machine import:** the separate provisional 1:1 workflow now persists audited NPC/hash and deduplicated common matches in SQLite, refreshes before every local test build, and exposes **Автоімпорт Gossip 1:1 · ClassicUA** with filters in Review UI. Machine imports remain unreviewed; manual decisions and source selections are preserved, and changed evidence becomes `pending_update`. Import statistics distinguish unique texts, NPC/hash occurrences, common fallbacks and actual ZIP contents. [Instructions, statuses and Forever tests](docs/GOSSIP_MACHINE_IMPORT.md).
+
+For either local module, start the [Translation Manager](docs/TRANSLATION_MANAGER.md) with the pinned source checkouts. Select Quest or Gossip, open a record, choose or enter a translation, and press **Зберегти**. Use **Створити модуль** for the selected ZIP. With WoW closed, enter the shared **WoW path** and press **Інсталювати** to build and install the selected module. The installer verifies the archive and gives the backup location. Gossip starts with fresh local selections. Review records remain historical, and uncertain audit matches are available for inspection.
 
 The [read-only Gossip mapping audit](docs/GOSSIP_MAPPING_AUDIT.md) reproduces 2,382 direct matches across 7,429 eligible NPC/wording pairs on both Spoken 3.9.0 and 3.10.1.
 

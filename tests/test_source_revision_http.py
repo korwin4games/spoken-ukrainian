@@ -95,7 +95,7 @@ class SourceReviewHTTPTests(unittest.TestCase):
                 with urlopen(host + "/manager.js", timeout=5) as response:
                     script = response.read().decode("utf-8")
                     self.assertNotIn(".innerHTML", script)
-                    self.assertIn("confirm_candidate", script)
+                    self.assertNotIn("confirm_candidate", script)
                 self.assertFalse(reviews.clear_selection("gossip", target, "human", trusted)["selected"])
                 self.assertEqual(reviews.active(trusted), [])
             finally:

@@ -103,7 +103,8 @@ def create_handler(token, port, manager=None):
         "/manager.css": (STATIC / "manager.css", "text/css; charset=utf-8"),
     }
     actions = {"list", "detail", "reimport", "import_ready", "confirm_candidate", "save_translation", "review_mapping",
-               "register_candidate", "withdraw_quest_approval", "choose_quest", "save_quest", "install"}
+               "register_candidate", "withdraw_quest_approval", "choose_quest", "save_quest",
+               "choose_gossip", "save_gossip", "install"}
     class LocalHandler(BaseHTTPRequestHandler):
         def _event(self, event, outcome, reason=None):
             # Event and outcome are code constants, never request data.

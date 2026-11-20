@@ -37,10 +37,8 @@
     <section class="operation" aria-labelledby="operation-heading">
       <div>
         <h2 id="operation-heading">Створення модуля Quest</h2>
-        <label class="check" id="reset-control"><input type="checkbox" id="reset"> Почати з чистих тестових даних</label>
       </div>
       <div class="actions">
-        <button type="button" id="preview">Попередній перегляд</button>
         <button type="button" id="reimport" class="primary">Створити модуль</button>
       </div>
       <div id="install-controls" class="install-controls">
@@ -64,43 +62,12 @@
           <label class="query">Пошук
             <input type="search" maxlength="200" id="query" placeholder="ID, назва, NPC або текст">
           </label>
-          <label id="quest-filter-control" hidden>Стан Quest
+          <label id="quest-filter-control">Стан
             <select id="quest-filter">
               <option value="all">Усі</option>
               <option value="quest_imported">Імпортовано</option>
               <option value="quest_ready">Готові до імпорту</option>
               <option value="quest_problem">Проблемні</option>
-            </select>
-          </label>
-          <label id="filter-control">Показати
-            <select id="filter">
-              <option value="all">Усі</option><option value="imported">Імпортовані в ZIP</option>
-              <option value="not_imported">Не в ZIP</option>
-              <option value="conflicts">Конфлікти кандидатів</option>
-              <option value="multiple_originals">Кілька перевірених оригіналів</option>
-            </select>
-          </label>
-          <label id="translation-status-control">Стан
-            <select id="translation-status">
-              <option value="all">Усі статуси</option>
-              <optgroup label="Зіставлення">
-                <option value="mapping_verified">Перевірено вручну</option>
-                <option value="mapping_provisional">Попереднє зіставлення</option>
-                <option value="mapping_pending">Потребує перевірки</option>
-                <option value="mapping_conflict">Неоднозначне зіставлення (усі причини)</option>
-                <option value="invalid_context">Непідтримуваний контекст</option>
-                <option value="multiple_originals">Кілька перевірених оригіналів</option>
-                <option value="mapping_rejected">Зіставлення відхилено або відкладено</option>
-              </optgroup>
-              <optgroup label="Переклад">
-                <option value="translation_available">Переклад доступний</option>
-                <option value="translation_missing">Немає перекладу</option>
-                <option value="translation_pending">Переклад на перевірці</option>
-                <option value="translation_approved">Переклад схвалено</option>
-                <option value="translation_rejected">Переклад відхилено або відкладено</option>
-              </optgroup>
-              <option value="ready">Готовий</option><option value="review">Потрібна перевірка</option>
-              <option value="stale">Докази застаріли</option>
             </select>
           </label>
         </form>
@@ -123,15 +90,5 @@
       </aside>
     </div>
   </main>
-  <dialog id="confirm" aria-labelledby="confirm-title">
-    <form method="dialog">
-      <h2 id="confirm-title">Переімпорт Quest + Gossip</h2>
-      <p id="confirm-text"></p>
-      <div class="actions">
-        <button type="submit" value="cancel" autofocus>Скасувати</button>
-        <button type="submit" value="commit" class="primary">Підтвердити</button>
-      </div>
-    </form>
-  </dialog>
 </body>
 </html>

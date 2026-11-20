@@ -173,26 +173,14 @@ uv run --locked python tools/version.py bump patch --dry-run
 
 ## Unified Translation Manager
 
-`translation_manager.py reimport` applies the same staged operation as the
-localhost manager. The supported modules are `Spoken_Quest_UA` and `Spoken_Gossip_UA`. The
-checkout flags name the clean pinned repositories; `--db` can select a private
-SQLite database. Use `--dry-run` to build an isolated preview, and `--confirm`
-to promote the validated state and ZIP. `--reset-test-data` clears only the
-selected module's test review/import histories and manual source choices.
-The summary distinguishes database records, effective Quest moments, Gossip
-occurrences and serialized common units. It reports mapping, translation and
-import states separately, with review queue coverage, agent warnings by
-assessed version and unverified Gossip alternatives by NPC/hash occurrence.
-The summary counts candidate conflicts (`conflicts`) and rows with multiple
-verified English originals (`multiple_originals`) separately.
-Use **Save translation** or **Save selection** for a Quest moment in the
-Manager. **Import all** applies only ready Quest moments. The Quest ZIP and
-Gossip ZIP have separate build heads. Use the
-[Manager example](TRANSLATION_MANAGER.md#приклад-перевірки-quest) for selecting
-between translations and testing the Quest Journal and font in WoW: Forever.
-`--json` includes detailed results
-and failure codes. Exit 0 indicates preview or successful promotion, 1 a
-failed operation, and 2 invalid CLI syntax. See the [manager guide](TRANSLATION_MANAGER.md).
+Use the [local manager](TRANSLATION_MANAGER.md) for routine editing.
+
+1. Select Quest or Gossip and open a verified English original.
+2. Choose, type or paste Ukrainian text. Save to SQLite. Copy the Codex prompt if you want to draft externally.
+3. Select **Створити модуль** to build the selected ZIP. Quest merges ready moments into its verified archive. Gossip uses current local selections.
+4. Close WoW, enter the game root in **WoW path**, and choose **Інсталювати**. The manager builds the selected module, then verifies and installs the ZIP with its shared core. Read the displayed destination and backup path.
+
+The `translation_manager.py reimport` command remains available for private full builds. Pass clean pinned source checkouts and `--confirm`. Use `--dry-run` for a preview, `--db` for a private SQLite path, and `--json` for structured results. `--reset-test-data` applies only to the separate Quest rebuild command. The older Gossip review and machine-import CLIs remain available for archival work.
 
 ```bash
 uv run --locked python tools/translation_manager.py reimport --module Spoken_Quest_UA --classicua ../ClassicUA --spoken ../spoken-wow --reset-test-data --dry-run --json

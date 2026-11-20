@@ -21,7 +21,7 @@ LEDGER_NAMES = frozenset({
     "gossip-machine-one-to-one.json",
 })
 DB_ENV = "SPOKEN_TRANSLATION_DB"
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def default_db_path():
@@ -248,6 +248,11 @@ def _initialize_schema(db):
             text_sha256 TEXT NOT NULL,
             source TEXT NOT NULL CHECK(source IN ('classicua', 'manual')),
             changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (9)")
+        db.execute("""CREATE TABLE IF NOT EXISTS gossip_simple_choices (
+            identity TEXT PRIMARY KEY, evidence TEXT NOT NULL, text TEXT NOT NULL,
+            text_sha256 TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('classicua', 'manual')),
+            reference TEXT NOT NULL)""")
         db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)", (SCHEMA_VERSION,))
         db.commit()
     except BaseException:
