@@ -14,6 +14,8 @@ If there are **different Ukrainian translations**, require a user choice; if no 
 
 For Gossip, a **single verified same-template** source can be auto-ready when the scoped NPC/hash, source evidence and all runtime placeholders match, including documented ClassicUA forms such as `{Ім'я}` for `$N`. A lone *unverified audit lead* is not sufficient by itself. Dropdown labels are shortened; full English originals, translation and file references remain in the record details.
 
+**Gossip format validation:** Ukrainian paragraph breaks count as rendered equivalents of Spoken `$B` line breaks; required player slots `$N/$C/$R/$G` still must match the verified English original exactly (including supported Ukrainian grammatical placeholders such as `{Ім'я:к}`). On failure, the editor explains whether a grammatical template, player token, gender branch or line-break is the issue. Failed saves never write SQLite.
+
 **Gossip audit suggestions:** the translation editor includes available
 Ukrainian text from unverified audit leads in a clearly marked dropdown.
 Selecting one fills the textarea **without saving or approving it**; clicking

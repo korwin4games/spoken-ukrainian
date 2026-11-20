@@ -27,7 +27,12 @@ const errors = {
   manager_install_legacy_addon: "Виявлено старий Spoken_Quests_UA. Перемістіть його з AddOns перед встановленням.",
   manager_install_rollback_incomplete: "Помилка встановлення: відновлення не завершено. Перевірте резервні копії вручну.",
   manager_install_failed: "Не вдалося встановити модуль. Перевірте доступ до папки гри та журнал термінала.",
-  manager_invalid_translation_format: "Переклад має неправильні або невідповідні оригіналу плейсхолдери ($N, $C, $R, $B, $G чи {Ім'я}/{Клас}/{Раса}). Перевірте текст і спробуйте знову.",
+  manager_invalid_translation_format: "Текст порожній, має небезпечні керівні символи чи заборонене форматування. Перевірте введення.",
+  manager_gossip_unsupported_grammar: "У перекладі є непідтримана змінна у фігурних дужках. Дозволено {Ім'я}, {Клас}, {Раса}, їхні підтримувані відмінки та {стать:чоловік:жінка}.",
+  manager_gossip_unsupported_runtime_token: "У перекладі є невідомий код на кшталт $X. Дозволені $N/$C/$R/$B/$G та підтримувані українські змінні.",
+  manager_gossip_missing_linebreak: "В оригіналі є перенесення $B. Додайте відповідну кількість нових рядків або $B у переклад.",
+  manager_gossip_placeholder_mismatch: "У перекладі не збігаються кількість або тип змінних із англійським оригіналом: $N (ім'я), $C (клас), $R (раса), $G (стать).",
+  manager_gossip_gender_invalid: "Некоректний шаблон статі: перевірте обидва варіанти $Gчоловік:жінка; або {стать:чоловік:жінка}.",
   manager_review_context_blocked: "Немає перевіреного контексту NPC/репліки або він змінився. Оновіть запис; зберігати цей переклад небезпечно.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
@@ -46,8 +51,6 @@ function badge(text, state) { return make("span", text, "badge " + state); }
 Object.assign(errors, {
   manager_invalid_review_request: "Перевірте вибраний запис і підтвердження.",
   manager_review_checks_required: "Підтвердьте всі п’ять перевірок.",
-  manager_review_context_blocked: "Цей контекст не можна безпечно зіставити з ігровим записом.",
-  manager_invalid_translation_format: "Введіть непорожній текст до 60 000 символів без NUL.",
   manager_candidate_unavailable: "Кандидат застарів, відхилений або відсутній. Оновіть запис.",
   manager_candidate_not_built: "Текст не ввійшов до ZIP. Перевірте конфлікти та чинні схвалення.",
   conflicting_quest_runtime_variants: "Спершу відкличте суперечливе чинне схвалення або вибір джерела.",
@@ -198,7 +201,7 @@ function simpleEditor(row) {
   const options = new Map();
   // Keep the native dropdown compact even when the audit source contains a
   // long English original, file path or full Ukrainian paragraph.
-  const excerpt = (value, limit = 35) => {
+  const excerpt = (value, limit = 20) => {
     const text = String(value || "").replace(/\s+/g, " ").trim();
     return text.length > limit ? text.slice(0, limit - 1).trimEnd() + "…" : text;
   };
@@ -216,7 +219,7 @@ function simpleEditor(row) {
       if (text && [...options.values()].some(candidate => candidate.text === text)) continue;
       const label = [
         "Аудит " + (index + 1),
-        excerpt(matchNames[item.kind] || item.kind, 20),
+        excerpt(matchNames[item.kind] || item.kind, 13),
         text ? excerpt(text) : "Українського перекладу немає",
       ].join(" · ");
       options.set("audit:" + index, {

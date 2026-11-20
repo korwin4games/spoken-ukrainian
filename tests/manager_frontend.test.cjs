@@ -171,8 +171,8 @@ test("Gossip audit alternatives populate the editor but save as manual choices",
   assert.ok(select);
   assert.equal(select.children.length, 3);
   assert.ok(select.children[0].textContent.includes("Аудит 1"));
-  assert.ok(select.children[1].textContent.includes("Подарунки за знаки любові."));
-  assert.ok(select.children.every(option => option.textContent.length <= 75));
+  assert.ok(select.children[1].textContent.includes("Подарунки за знаки…"));
+  assert.ok(select.children.every(option => option.textContent.length <= 56));
   assert.ok(select.children.every(option => !option.textContent.includes("entries/")));
   assert.equal(select.children[2].disabled, true);
   assert.match(select.children[2].textContent, /Українського перекладу немає/);
@@ -248,6 +248,43 @@ test("Gossip editor never claims Ready if reloaded status is still problematic",
   await flush();
   assert.match(b.el("operation-status").textContent, /не підтверджено/);
   assert.doesNotMatch(b.el("operation-status").textContent, /Готовий до імпорту — натисніть/);
+});
+
+test("Gossip Save shows precise server validation reason instead of stale NUL-only message", async () => {
+  const id = "gossip:295:934080707";
+  const row = {...fixture, type:"gossip", id, review_binding:"current-evidence",
+    originals:["Hello, $n."], candidates:[],
+    unverified_alternatives:[{kind:"same_template", ukrainian:"Вітаю.",
+      english:"Hello, <name>.", reference:"entries/gossip.lua:18"}]};
+  const b = browser((action, body) => {
+    if (action === "detail") return row;
+    if (action === "save_gossip") return {
+      error:"invalid_or_duplicate_review_decision",
+      reason:"manager_gossip_placeholder_mismatch",
+    };
+    return listing(body.module);
+  });
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  await b.run('detail("' + id + '")');
+  const nodes = b.el("selected").all();
+  const select = nodes.find(node => node.tag === "select");
+  select.value = "audit:0";
+  select.events.change();
+  nodes.find(node => node.textContent === "Зберегти").events.click();
+  await flush();
+  await flush();
+  assert.match(b.el("operation-status").textContent, /кількість або тип змінних/);
+  assert.doesNotMatch(b.el("operation-status").textContent, /до 60 000 символів/);
+  assert.equal(b.requests.filter(x => x.action === "save_gossip").length, 1);
+  assert.equal(b.run('errorMessage(new Error("manager_gossip_missing_linebreak"))')
+    .includes("$B"), true);
+  assert.match(b.run('errorMessage(new Error("manager_gossip_unsupported_grammar"))'),
+    /непідтримана змінна/);
+  assert.match(b.run('errorMessage(new Error("manager_invalid_translation_format"))'),
+    /керівні символи/);
 });
 
 test("Gossip same-template auto-ready candidate is not duplicated by its audit lead", async () => {

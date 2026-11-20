@@ -85,6 +85,11 @@ class FreshGossipBuildTests(unittest.TestCase):
         rendered = gossip_simple.runtime_text(original, "$N, $C, $R.$B$G Брате:Сестро;")
         self.assertIn("{Ім'я}".lower(), rendered.lower())
         self.assertIn("\n{стать:Брате:Сестро}", rendered)
-        for bad in ("Брате.", "$N, $C, $R.$B$G Брате: ;", "$N, $C, $R.$B$G $N:Сестро;"):
-            with self.assertRaisesRegex(ValueError, "manager_invalid_translation_format"):
+        for bad, reason in (
+            ("Брате.", "manager_gossip_missing_linebreak"),
+            ("$N, $C, $R.$B$G Брате: ;", "manager_gossip_gender_invalid"),
+            ("$N, $C, $R.$B$G $N:Сестро;", "manager_gossip_placeholder_mismatch"),
+        ):
+            with self.subTest(reason=reason), self.assertRaisesRegex(
+                    ValueError, "^" + reason + "$"):
                 gossip_simple.runtime_text(original, bad)

@@ -320,6 +320,41 @@ class GossipSimpleUITests(TestCase):
             with self.subTest(original=original, translation=translation), self.assertRaises(ValueError):
                 runtime_text(original, translation)
 
+    def test_gossip_layout_breaks_accept_rendered_newlines_but_preserve_player_slots(self):
+        from tools.gossip_simple import runtime_text
+
+        english = "Hello, $n.$B$BFind me by Stormwind Keep."
+        ukrainian = "Вітаю, {Ім'я:к}.\n\nЗнайди мене біля фортеці Штормовія."
+        self.assertEqual(runtime_text(english, ukrainian), ukrainian)
+        self.assertEqual(runtime_text("Hi, $n.$B$BSee you.",
+                                      "Привіт, $N.$B\nПобачимось."),
+                         "Привіт, {ім'я}.\n\nПобачимось.")
+        self.assertEqual(runtime_text("Hi, $n.", "Вітаю, {Ім'я:к}."),
+                         "Вітаю, {Ім'я:к}.")
+        # A literal paragraph break is not an extra player-dependent token.
+        self.assertEqual(runtime_text("Hello.", "Вітаю.\nПобачимось."),
+                         "Вітаю.\nПобачимось.")
+
+    def test_gossip_format_errors_are_safe_specific_codes(self):
+        from tools.gossip_simple import runtime_text
+
+        cases = (
+            ("Hi, $n.$B$BSee you.", "Привіт, {Ім'я}.\nПобачимось.",
+             "manager_gossip_missing_linebreak"),
+            ("Hi, $n.", "Вітаю.", "manager_gossip_placeholder_mismatch"),
+            ("Hi.", "Вітаю, {ім'я}.", "manager_gossip_placeholder_mismatch"),
+            ("Hi, $n.", "Вітаю, {ім'я:unknown}.",
+             "manager_gossip_unsupported_grammar"),
+            ("Hi.", "Вітаю, $X.", "manager_gossip_unsupported_runtime_token"),
+            ("Hi, $Gfriend:friend;", "Вітаю, $Gbad;",
+             "manager_gossip_gender_invalid"),
+            ("Hi.", "Вітаю. %s", "manager_invalid_translation_format"),
+        )
+        for original, text, reason in cases:
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(ValueError, "^" + reason + "$"):
+                    runtime_text(original, text)
+
     def test_real_stormwind_guard_template_becomes_ready(self):
         """Regression: NPC 68 / original hash 1978831227 from the reviewer screenshot."""
         import os
