@@ -9,6 +9,7 @@ from adapters.source_revision_store import sha
 from adapters.spoken.text_index import TextIndex
 from adapters.sqlite_translation_store import connection
 from tools.quest_simple import apply_choice, resolved
+from tools.quest_source_compatibility import LEGACY_REVISION, CURRENT_REVISION
 
 
 class SimpleQuestTests(TestCase):
@@ -63,6 +64,62 @@ class SimpleQuestTests(TestCase):
             self.assertEqual(resolved(state, db)[self.target]["text"], "Доброго дня.")
             state.inventory.revision = "c" * 40
             self.assertTrue(resolved(state, db)[self.target]["conflict"])
+
+    def test_390_choice_remains_ready_on_byte_identical_3101_corpus(self):
+        state = self.state(texts=("Вітаю.", "Доброго дня."))
+        state.inventory.revision = LEGACY_REVISION
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "choices.sqlite3"
+            row = self.row(state, ("Вітаю.", "Доброго дня."))
+            apply_choice("choose_quest", {
+                "identity": self.target, "binding": row["review_binding"],
+                "candidate": sha("Вітаю."), "confirm": True,
+            }, row, state, db)
+            with connection(db) as sql:
+                original = sql.execute("""SELECT evidence, text, text_sha256, source
+                    FROM quest_simple_choices WHERE moment=?""", (self.target,)).fetchone()
+            state.inventory.revision = CURRENT_REVISION
+            restored = resolved(state, db)[self.target]
+            self.assertEqual(restored["text"], "Вітаю.")
+            self.assertTrue(restored["selected"])
+            with connection(db) as sql:
+                self.assertEqual(sql.execute("""SELECT evidence, text, text_sha256, source
+                    FROM quest_simple_choices WHERE moment=?""", (self.target,)).fetchone(), original)
+
+            # Repeated explicit choice preserves its true provider rather than
+            # making a ClassicUA candidate appear to be a new manual translation.
+            updated = self.row(state, ("Вітаю.", "Доброго дня."))
+            apply_choice("choose_quest", {
+                "identity": self.target, "binding": updated["review_binding"],
+                "candidate": sha("Вітаю."), "confirm": True,
+            }, updated, state, db)
+            with connection(db) as sql:
+                actual = sql.execute("""SELECT evidence, text, text_sha256, source
+                    FROM quest_simple_choices WHERE moment=?""", (self.target,)).fetchone()
+            self.assertEqual(actual[0], updated["review_binding"])
+            self.assertEqual(actual[3], "classicua")
+
+    def test_migrated_choice_rejects_changed_original_context_and_classicua(self):
+        state = self.state(originals=("Hello.", "Greetings."), texts=("Вітаю.",))
+        state.inventory.revision = LEGACY_REVISION
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "choices.sqlite3"
+            row = self.row(state, ("Вітаю.",))
+            apply_choice("choose_quest", {
+                "identity": self.target, "binding": row["review_binding"],
+                "candidate": sha("Вітаю."), "confirm": True,
+            }, row, state, db)
+            state.inventory.revision = CURRENT_REVISION
+            self.assertEqual(resolved(state, db)[self.target]["text"], "Вітаю.")
+            state.source.revision = "c" * 40
+            self.assertTrue(resolved(state, db)[self.target]["conflict"])
+            state.source.revision = "b" * 40
+            state.inventory.contexts[self.target][0]["wording_sha256"] = digest("Changed original.")
+            # Missing/changed evidence is blocked, not silently migrated.
+            self.assertNotIn(self.target, resolved(state, db))
+            with connection(db) as sql:
+                self.assertEqual(sql.execute(
+                    "SELECT COUNT(*) FROM quest_simple_choices").fetchone()[0], 1)
 
     def test_save_raw_quest_text_without_language_or_placeholder_validation(self):
         state = self.state(originals=("Hello, $N.$BReturn.", "Greetings."), texts=())
