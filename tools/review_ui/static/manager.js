@@ -58,6 +58,18 @@ function errorMessage(error) {
 
 function domain() { return el("module").value === "Spoken_Quest_UA" ? "quest" : "gossip"; }
 function domainName() { return domain() === "quest" ? "Quest" : "Gossip"; }
+const matchNames = {
+  exact_npc: "Точний NPC", exact_common: "Точний !common",
+  whitespace_candidate: "Пробіли / перенесення",
+  same_template: "Той самий шаблон", one_token_edit: "Одне слово",
+  corpus_alternate_candidate: "TTS-текст", wrong_npc_scope: "Інший NPC",
+  other_family_candidate: "Інша категорія", glossary_candidate: "Глосарій",
+  dynamic_candidate: "Динамічний шаблон", reply_only_candidate: "Репліка гравця",
+  verified_alias_wording: "Псевдонім Spoken", hash_collision: "Колізія хешу",
+  ambiguous_npc_type: "Тип NPC неоднозначний",
+  missing_verified_original: "Немає оригіналу", no_evidence: "Без відповідності",
+};
+const matchText = kinds => (kinds || []).map(kind => matchNames[kind] || kind).join(" · ") || "—";
 
 function stopLoading(lane) {
   loading.delete(lane);
@@ -128,6 +140,7 @@ function renderList(data) {
     tr.appendChild(make("td")).append(make("span", item.needs_choice ? "Потрібен вибір" :
       item.status === "invalid" || item.status === "stale" ? "Перевірте контекст" : ""));
     tr.appendChild(make("td"));
+    tr.appendChild(make("td", gossip ? matchText(item.match_types) : "—", "muted"));
     return tr;
   });
   el("rows").replaceChildren(...rows);
@@ -146,7 +159,9 @@ async function list(restore = false) {
   const module = el("module").value;
   const payload = {
     query: el("query").value,
-    filter_by: el("quest-filter").value, offset, limit: pageSize,
+    filter_by: el("quest-filter").value,
+    ...(domain() === "gossip" ? {match_type: el("match-filter").value} : {}),
+    offset, limit: pageSize,
   };
   const key = JSON.stringify(payload);
   const previous = recentLists.get(module);
@@ -280,6 +295,13 @@ function renderDetail(row) {
     row.needs_choice ? "Проблемний · оберіть переклад" : "Проблемний";
   const blocks = [make("h3", row.label), make("p", row.npc_id ? "NPC " + row.npc_id + " · " + row.id : row.id, "muted"),
     badge(status, row.built && !row.ready_to_import ? "built" : ""), english, simpleEditor(row)];
+  if (row.type === "gossip") {
+    blocks.push(make("p", "Тип відповідності: " + matchText(row.match_types), "muted"));
+    if (row.selection?.auto) {
+      blocks.push(make("p", "Автоматично вибрано для локального тестування: " +
+        (matchNames[row.selection.match_type] || row.selection.match_type), "muted"));
+    }
+  }
   if (row.contexts?.length) {
     const context = make("details");
     context.append(make("summary", "Контекст"), make("pre", JSON.stringify(row.contexts, null, 2)));
@@ -287,7 +309,7 @@ function renderDetail(row) {
   }
   if (row.unverified_alternatives?.length) {
     const evidence = make("details");
-    evidence.append(make("summary", "Кандидати з аудиту · потребують перевірки"));
+    evidence.append(make("summary", "Кандидати з аудиту · додаткові докази"));
     for (const item of row.unverified_alternatives) {
       if (item.english) evidence.append(make("p", item.english, "original"));
       if (item.ukrainian) evidence.append(make("p", item.ukrainian));
@@ -392,10 +414,12 @@ el("query").addEventListener("input", () => {
 });
 el("filters").addEventListener("submit", event => { event.preventDefault(); resetList(); });
 el("quest-filter").addEventListener("change", resetList);
+el("match-filter").addEventListener("change", resetList);
 function refreshModuleControls() {
   el("inventory-heading").textContent = "Переклади " + domainName();
   el("operation-heading").textContent = "Створення модуля " + domainName();
   el("reimport").textContent = "Створити модуль";
+  el("match-filter-control").hidden = domain() !== "gossip";
 }
 el("module").addEventListener("change", () => {
   if (busy) return;
@@ -403,6 +427,7 @@ el("module").addEventListener("change", () => {
   stopLoading("detail");
   selected = null;
   el("quest-filter").value = "all";
+  el("match-filter").value = "all";
   readyCount = 0;
   for (const id of ["metrics", "rows", "selected", "operation-status", "install-status", "build-state", "match-count", "page"])
     el(id).replaceChildren();
