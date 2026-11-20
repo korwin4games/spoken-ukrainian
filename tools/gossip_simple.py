@@ -187,7 +187,8 @@ def rows(state, lines, db_path, units, audit=None):
                "status": "stale" if stale else status_for(
                    originals, choices, ready=ready or bool(built), conflict=conflict, unsupported=not binding),
                "mapping_state": "mapping_verified" if binding else "invalid_context",
-               "translation_state": translation_state(choices), "built": built, "recorded": bool(selected),
+               "translation_state": translation_state(choices), "built": built,
+               "recorded": identity in stored and selected is not None,
                "ready_to_import": ready, "needs_choice": conflict, "candidate_conflict": conflict,
                "unverified_alternatives": alternatives, "candidates": choices, "selection": selected,
                "selected_sha256": sha(selected["text"]) if selected else None}
