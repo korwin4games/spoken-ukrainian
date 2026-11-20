@@ -7,6 +7,7 @@
 ## X-Part-Of: Spoken Ukrainian
 ## X-Spoken-Text: ukUA
 ## X-Spoken-TextFormat: 1
+## X-Spoken-LanguageFont: NotoSans-Regular.ttf
 ## X-Spoken-LanguageName: Ukrainian
 ## X-Spoken-LanguageNative: Українська
 
