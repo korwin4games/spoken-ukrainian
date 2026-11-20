@@ -1,5 +1,24 @@
 # Spoken Ukrainian CLI
 
+## Quest selections across the Spoken 3.9.0 → 3.10.1 upgrade
+
+The audited Stage 3 source inventory is byte-identical across these two
+Spoken commits. Previously saved Quest choices and manual runtime approvals
+store evidence containing the old Spoken Git SHA. The manager now reads
+3.9.0 evidence as compatible **only if every other current evidence field
+matches**, including quest ID, all wording variants, contexts and ClassicUA
+revision. This is a read-only compatibility rule, not a migration that
+overwrites SQLite history or grants human approval.
+
+A checksum-verified 3.9.0 Quest ZIP may be used as the source of a new
+incremental 3.10.1 Text Pack build. The old ZIP is not considered already
+imported under the new pin: rebuild before installation. Any mismatch in the
+corpus inventory, source revision, context, ZIP bytes or its recorded
+provenance fails closed. Do not delete SQLite or use `--reset-test-data`
+to repair statuses. Count changes on an individual installation can only
+be measured using the user's local database.
+
+
 **Spoken 3.10.1 integration (PR #39, Draft):** the active audited pin is `spoken/v3.10.1`. Independent Quest/Gossip text-only ZIPs register through `Spoken:RegisterText`, retain native hooks and require no Ukrainian audio. See [source migration, build/install and WoW acceptance](SPOKEN_3101_TEXT_PACK.md). The manager's shared **Install** action first builds and verifies the selected module and its checksum, then uses the backup/rollback installer. Actual client acceptance is still pending.
 
 **Quest local UI:** For normal Quest translation selection, use the simplified [Translation Manager guide](TRANSLATION_MANAGER.md). Historic advanced review commands remain available for migration and diagnostics, but the Quest screen no longer requires reviewers or attestations.
