@@ -541,6 +541,11 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
                               "runtime_approval": "runtime:" + review["id"] in approvals})
         conflict = len({r["sha256"] for r in choices if r["review"] not in (
             "rejected", "deferred", "pending_update", "stale") and r.get("eligibility") != "stale"}) > 1
+        # A new automatic source candidate must not conceal a different manual
+        # draft or another admissible translation. An explicit stored local
+        # choice, however, resolves such a conflict for private ZIP builds.
+        if conflict and not (current_quick and current_quick.get("selected")):
+            quick_ready = False
         ready = quick_ready or (bool(approved) or
                                ready and not multiple and moment not in rejected_moments)
         queue = "quest_mapping" if any(quest_queue[t] for t in targets) else (
