@@ -576,8 +576,16 @@ def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE, 
         if ("## Dependencies: Spoken_Ukrainian\n" not in toc
                 or "## X-Spoken-Text: ukUA\n" not in toc
                 or "## X-Spoken-TextFormat: 1\n" not in toc
+                or "## X-Spoken-LanguageFont: NotoSans-Regular.ttf\n" not in toc
                 or "GossipTranslations.lua\nTextPack.lua\nGossipFrame.lua\n" not in toc):
             raise ValueError("missing_gossip_ukrainian_toc_contract")
+        # Keep the native Gossip addon independent from Quest, including its font.
+        # Reuse the audited/licensed font bytes instead of committing a duplicate.
+        for name in ("NotoSans-Regular.ttf", "OFL-NotoSans.txt"):
+            source = ROOT / "addons" / QUEST_MODULE / name
+            if source.is_symlink() or not source.is_file():
+                raise ValueError("unsafe_ukrainian_addon_template")
+            entries[f"{module}/{name}"] = source.read_bytes()
         entries[f"{module}/GossipTranslations.lua"] = gossip_lua
         entries[f"{module}/TextPack.lua"] = (
             text_pack_lua if text_pack_lua is not None else render_spoken_text_pack())
