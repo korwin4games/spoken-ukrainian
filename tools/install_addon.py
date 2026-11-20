@@ -22,10 +22,10 @@ DEFAULT_ARCHIVE = ROOT / "dist" / "Spoken_Quest_UA_Local_Test.zip"
 EXPECTED = {
     "Spoken_Ukrainian": {"Spoken_Ukrainian.toc", "Core.lua"},
     "Spoken_Quest_UA": {
-        "Spoken_Quest_UA.toc", "Translations.lua", "Module.lua", "NativeQuestFrame.lua",
+        "Spoken_Quest_UA.toc", "Translations.lua", "TextPack.lua", "Module.lua", "NativeQuestFrame.lua",
         "GossipQuestTitles.lua",
     },
-    "Spoken_Gossip_UA": {"Spoken_Gossip_UA.toc", "GossipTranslations.lua", "GossipFrame.lua"},
+    "Spoken_Gossip_UA": {"Spoken_Gossip_UA.toc", "GossipTranslations.lua", "TextPack.lua", "GossipFrame.lua"},
 }
 QUEST_RUNTIME_FILES = {"QuestFont.lua", "QuestJournal.lua", "NotoSans-Regular.ttf", "OFL-NotoSans.txt"}
 MAX_TOTAL_BYTES = 96 * 1024 * 1024
@@ -89,9 +89,13 @@ def validate_archive(archive: Path, *, expected_sha=None):
     if ("## Title: Spoken Ukrainian\n" not in base
             or "## Dependencies: Spoken\n" not in base
             or (module == "Spoken_Quest_UA" and (
-                "## Dependencies: Spoken, Spoken_Quests, Spoken_Ukrainian\n" not in toc
-                or "## X-SpokenQuests-Language: ukUA\n" not in toc))
-            or (module == "Spoken_Gossip_UA" and "## Dependencies: Spoken_Ukrainian\n" not in toc)):
+                "## Dependencies: Spoken, Spoken_Ukrainian\n" not in toc
+                or "## X-Spoken-Text: ukUA\n" not in toc
+                or "## X-Spoken-TextFormat: 1\n" not in toc))
+            or (module == "Spoken_Gossip_UA" and (
+                "## Dependencies: Spoken_Ukrainian\n" not in toc
+                or "## X-Spoken-Text: ukUA\n" not in toc
+                or "## X-Spoken-TextFormat: 1\n" not in toc))):
         raise InstallError("addon_manifest_mismatch")
     return result
 
