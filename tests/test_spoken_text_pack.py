@@ -30,12 +30,14 @@ class SpokenTextPackTests(unittest.TestCase):
         self.assertEqual(lines, {"q:42:accept": "Вітаю, $N!"})
 
     def test_gossip_shared_id_conflict_fails_closed(self):
+        from tools.gossip_coverage import classicua_hash
+
         shared = "g:" + "a" * 32
         unique = "g:" + "b" * 32
 
         def row(npc, key, english, selection):
             return {
-                "status": "ready", "npc_id": npc, "english_hash": npc,
+                "status": "ready", "npc_id": npc, "english_hash": classicua_hash(english),
                 "review_binding": "verified", "originals": [english],
                 "selection": {"text": selection} if selection else None,
                 "contexts": [{"lineId": key, "originalText": english, "npcType": "creature",
@@ -45,21 +47,36 @@ class SpokenTextPackTests(unittest.TestCase):
         rows = [row(42, shared, "Hello.", "Вітаю."),
                 row(43, shared, "Hello.", "Привіт."),
                 row(44, unique, "Welcome.", "Добрий день.")]
-        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+
+        def corpus():
+            return [{"source": "gossip", "lineId": row["contexts"][0]["lineId"],
+                     "npcId": row["npc_id"], "npcType": "creature",
+                     "originalText": row["contexts"][0]["originalText"],
+                     "voice": None, "playerGender": None} for row in rows]
+
+        # Without the *full verified corpus* there is no safe shared export.
+        self.assertEqual(gossip_payload(rows), {})
+        self.assertEqual(gossip_payload(rows, corpus_lines=corpus()),
+                         {unique: "Добрий день."})
 
         # A shared canonical ID is not safe if even one NPC has no selection.
         rows[1]["selection"] = None
-        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+        self.assertEqual(gossip_payload(rows, corpus_lines=corpus()),
+                         {unique: "Добрий день."})
         rows[1]["selection"] = {"text": "Вітаю."}
-        self.assertEqual(gossip_payload(rows), {shared: "Вітаю.", unique: "Добрий день."})
+        self.assertEqual(gossip_payload(rows, corpus_lines=corpus()),
+                         {shared: "Вітаю.", unique: "Добрий день."})
 
         # A different verified original cannot inherit the same translation.
         rows[1]["originals"] = ["Greetings."]
         rows[1]["contexts"][0]["originalText"] = "Greetings."
-        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+        rows[1]["english_hash"] = classicua_hash("Greetings.")
+        self.assertEqual(gossip_payload(rows, corpus_lines=corpus()),
+                         {unique: "Добрий день."})
 
         rows[1]["status"] = "stale"
-        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+        self.assertEqual(gossip_payload(rows, corpus_lines=corpus()),
+                         {unique: "Добрий день."})
 
     def test_gossip_complete_corpus_scoping_blocks_unlisted_contexts(self):
         from tools.gossip_coverage import classicua_hash
@@ -103,6 +120,19 @@ class SpokenTextPackTests(unittest.TestCase):
                       "{стать:хто:що;$N}", "Невідоме {плейсхолдер}."):
             with self.subTest(value=value):
                 self.assertIsNone(text_pack_words(value))
+
+    def test_only_upstream_canonical_ids_can_be_rendered(self):
+        good = {"q:783:accept": "Текст.", "q:783:accept:w2:m": "Варіант.",
+                "g:" + "A" * 32 + ":f": "Репліка.",
+                "g:enUS-AB12CD": "Репліка 2."}
+        lua = render_spoken_text_pack(lines=good).decode("utf-8")
+        for key in good:
+            self.assertIn(key, lua)
+        for key in ("q:783:accept:invalid", "q:783:accept:wX",
+                    "q:783:accept:w2:x", "g:broken", "g:" + "a" * 32 + ":x"):
+            with self.subTest(key=key), self.assertRaisesRegex(
+                    ValueError, "invalid_spoken_text_pack_id"):
+                render_spoken_text_pack(lines={key: "Текст."})
 
     def test_text_pack_registers_only_with_supported_spoken_api(self):
         data = render_spoken_text_pack(
