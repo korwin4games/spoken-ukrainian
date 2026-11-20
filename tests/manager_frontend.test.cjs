@@ -58,6 +58,23 @@ const fixture = {
     review_id: "candidate", review_kind: "quest", eligibility: "selectable"}],
 };
 
+test("Shared status filter and module heading follow Quest and Gossip", async () => {
+  const html = readFileSync("tools/review_ui/static/manager.html", "utf8");
+  assert.match(html, /<label id="quest-filter-control">Стан/);
+  const b = browser((action, body) => listing(body.module));
+  await flush();
+  assert.equal(b.el("operation-heading").textContent, "Створення модуля Quest");
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  assert.equal(b.el("operation-heading").textContent, "Створення модуля Gossip");
+  b.el("quest-filter").value = "quest_ready";
+  b.el("quest-filter").events.change();
+  await flush();
+  assert.equal(b.requests.at(-1).module, gossip);
+  assert.equal(b.requests.at(-1).filter_by, "quest_ready");
+});
+
 test("Gossip selects through the shared editor and does not build on save", async () => {
   const row = {...fixture, type: "gossip", id: "gossip:42:4", npc_id: 42, review_binding: "pin",
     candidates: [{text: "Вітаю.", sha256: "a", provider: "classicua"},
