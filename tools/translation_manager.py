@@ -670,7 +670,7 @@ class ManagerUI:
 
         if action not in ("list", "detail", "stats"):
             raise ValueError("manager_invalid_action")
-        allowed = ({"module", "query", "kind", "filter_by", "status", "offset", "limit"}
+        allowed = ({"module", "query", "kind", "filter_by", "status", "match_type", "offset", "limit"}
                    if action == "list" else {"module", "identity"} if action == "detail" else {"module"})
         if set(payload) - allowed:
             raise ValueError("manager_invalid_options")
