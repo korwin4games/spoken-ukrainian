@@ -79,8 +79,10 @@ def audit_match_types(match):
             ("verified_alias_wording", "alternatives")):
         for entry in match.get(field, ()):
             add(entry.get("test", kind) if kind == "same_template" else kind)
+    if match.get("category") and match["category"] != "no_evidence":
+        add(match["category"])
     if not types:
-        add(match.get("category") or "no_evidence")
+        add("no_evidence")
     return types
 
 
