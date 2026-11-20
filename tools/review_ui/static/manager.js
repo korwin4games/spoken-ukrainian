@@ -209,6 +209,9 @@ function simpleEditor(row) {
   if (row.type === "gossip") {
     for (const [index, item] of (row.unverified_alternatives || []).entries()) {
       const text = typeof item.ukrainian === "string" ? item.ukrainian : "";
+      // A same-template audit lead may already have passed all validation
+      // and become a verified option. Do not show the same text twice.
+      if (text && [...options.values()].some(candidate => candidate.text === text)) continue;
       const label = [
         "Аудит " + (index + 1),
         excerpt(matchNames[item.kind] || item.kind, 20),
