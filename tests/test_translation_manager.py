@@ -246,6 +246,15 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(detail["translation_state"], "translation_available")
         self.assertEqual(catalog.page(filter_by="quest_ready")["total"], 1)
         self.assertEqual(catalog.page(filter_by="quest_problem")["total"], 0)
+        # The same auto-ready decision must flow into the *built* Quest
+        # preview and the Spoken Compendium text pack across all wordings.
+        from tools.spoken_text_pack import quest_payload, quest_source_moments
+        from adapters.sqlite_translation_store import enable_sqlite
+        with enable_sqlite(self.db):
+            preview, _, _ = builder.current_quest_texts(state)
+        self.assertEqual(preview[8]["progress"]["text"], "Вигаданий переклад.")
+        _, lines = quest_payload(preview, source_moments=quest_source_moments(state))
+        self.assertEqual(lines["q:8:progress"], "Вигаданий переклад.")
         self.assertEqual(catalog.page(status="mapping_pending")["total"], 1)
         self.assertTrue(detail["draft_available"])
         self.assertFalse(detail["built"])
