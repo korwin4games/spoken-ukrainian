@@ -6,6 +6,7 @@ from adapters.crosswalk import digest, quest_moment
 from adapters.source_revision_store import CHECKS, SourceReviewStore, sha
 from adapters.sqlite_translation_store import connection
 from adapters.translation_approvals import status
+from tools.quest_source_compatibility import matching_evidence
 
 
 def candidate_key(choice):
@@ -110,7 +111,7 @@ def approved(state, db_path, skipped):
     for r in approvals:
         moment = r["moment"]
         evidence, originals = binding(state, moment, targets.get(moment, ()))
-        if moment in blocked or not evidence or evidence != r["evidence"]:
+        if moment in blocked or not evidence or not matching_evidence(r["evidence"], evidence):
             continue
         kind, _, identity = r["candidate"].partition(":")
         source = "manual"
