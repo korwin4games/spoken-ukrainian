@@ -89,6 +89,9 @@ class SimpleQuestTests(TestCase):
         self.assertNotIn(self.target, resolved(state, None))
         state.source.units["quest:horde:42:accept"].effective_sha256 = sha("Вітаю.")
         self.assertEqual(resolved(state, None)[self.target]["text"], "Вітаю.")
+        state.policy.stores = lambda provider: False
+        self.assertNotIn(self.target, resolved(state, None))
+        state.policy.stores = lambda provider: True
         state.blocked_quest_moments = lambda: {self.target}
         self.assertNotIn(self.target, resolved(state, None))
 
