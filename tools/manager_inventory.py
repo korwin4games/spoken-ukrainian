@@ -435,6 +435,7 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
     runtime_history = defaultdict(list)
     runtime_approved = {}
     from tools.quest_simple import resolved as simple_resolved, selections as simple_selections
+    from tools.quest_source_compatibility import matching_evidence, matching_selection
     local_choices = simple_selections(db_path)
     quick_resolved = simple_resolved(state, db_path)
     for review in quest_runtime_review.history(db_path):
@@ -507,7 +508,7 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
                            (not built or built["text_sha256"] != sha(current_quick["text"])))
         quick_conflict = bool(current_quick and current_quick.get("conflict"))
         quick = local_choices.get(moment)
-        if quick and binding and quick[0] == digest(binding):
+        if quick and binding and matching_selection(quick[0], binding):
             if not any(c["sha256"] == quick[2] for c in choices):
                 choices.append(review_candidate(quick[1], quick[3], "local", state.inventory.revision, "local"))
             recorded = True
@@ -523,7 +524,7 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
         for review in runtime_history[moment]:
             if review["decision"] != "pending":
                 continue
-            current = binding is not None and review["evidence"] == binding
+            current = binding is not None and matching_evidence(review["evidence"], binding)
             decision = ("stale" if not current else "approved" if approved and
                         approved["candidate"] == "runtime:" + review["id"] else "pending")
             choices.append(review_candidate(review["text"], "manual", moment, state.inventory.revision, decision)
@@ -553,7 +554,7 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
                     review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
                     draft_available=bool(binding) and moment not in rejected_moments,
                     ready_to_import=quick_ready, needs_choice=quick_conflict,
-                    selected_sha256=quick[2] if quick and binding and quick[0] == digest(binding) else None,
+                    selected_sha256=quick[2] if quick and binding and matching_selection(quick[0], binding) else None,
                     review_binding=digest(binding) if binding else None,
                     approved_variant_count=len(english) if approved and multiple else 0,
                     quest_id=quest_id, event=event, contexts=[c for t in targets for c in state.inventory.contexts[t]]))
