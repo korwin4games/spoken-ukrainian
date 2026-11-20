@@ -172,6 +172,8 @@ test("Install button submits selected module and WoW root without a rebuild", as
   assert.match(b.el("install-status").textContent, /Встановлено: Spoken_Ukrainian, Spoken_Quest_UA/);
   assert.match(b.el("install-status").textContent, /Резервна копія:/);
   assert.match(b.el("install-status").textContent, /Перезапустіть WoW/);
+  await b.run("reimport(true)");
+  assert.equal(b.el("install-status").textContent, "");
   assert.equal(b.el("install").disabled, false);
   assert.equal(b.el("wow-path").disabled, false);
 });
@@ -190,6 +192,7 @@ test("Install failure displays actionable guidance without touching the module U
   b.el("module").value = gossip;
   b.el("module").events.change();
   await flush();
+  assert.equal(b.el("install-status").textContent, "");
   b.el("install").events.click();
   await flush();
   assert.equal(b.requests.at(-1).module, gossip);
