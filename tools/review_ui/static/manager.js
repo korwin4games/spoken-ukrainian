@@ -194,6 +194,12 @@ function simpleEditor(row) {
   message.setAttribute("role", "status");
   panel.append(message);
   const options = new Map();
+  // Keep the native dropdown compact even when the audit source contains a
+  // long English original, file path or full Ukrainian paragraph.
+  const excerpt = (value, limit = 35) => {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    return text.length > limit ? text.slice(0, limit - 1).trimEnd() + "…" : text;
+  };
   for (const candidate of row.candidates) {
     if (!options.has(candidate.sha256)) options.set(candidate.sha256, candidate);
   }
@@ -204,14 +210,13 @@ function simpleEditor(row) {
     for (const [index, item] of (row.unverified_alternatives || []).entries()) {
       const text = typeof item.ukrainian === "string" ? item.ukrainian : "";
       const label = [
-        "Аудит · не підтверджено",
-        matchNames[item.kind] || item.kind,
-        item.reference,
-        item.english?.slice(0, 65),
-        text ? text.slice(0, 100) : "Українського перекладу немає",
-      ].filter(Boolean).join(" · ");
+        "Аудит " + (index + 1),
+        excerpt(matchNames[item.kind] || item.kind, 20),
+        text ? excerpt(text) : "Українського перекладу немає",
+      ].join(" · ");
       options.set("audit:" + index, {
         text, audit: true, disabled: !text.trim(), label,
+        title: [item.kind, item.reference, item.english, text].filter(Boolean).join(" · "),
       });
     }
   }
@@ -249,12 +254,16 @@ function simpleEditor(row) {
   if (options.size) {
     select = make("select");
     select.setAttribute("aria-label", "Оберіть український переклад");
+    let optionNumber = 0;
     for (const [id, candidate] of options) {
+      optionNumber += 1;
       const item = make("option", candidate.label ||
-        [candidate.provider, candidate.reference, candidate.text.slice(0, 100)]
-          .filter(Boolean).join(" · "));
+        [optionNumber + ". " + (candidate.provider || "Переклад"),
+          excerpt(candidate.text)].filter(Boolean).join(" · "));
       item.value = id;
       item.disabled = Boolean(candidate.disabled);
+      item.setAttribute("title", candidate.title ||
+        [candidate.provider, candidate.reference, candidate.text].filter(Boolean).join(" · "));
       select.append(item);
     }
     const first = [...options].find(([, candidate]) => !candidate.disabled)?.[0];
