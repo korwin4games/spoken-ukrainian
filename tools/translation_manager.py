@@ -6,7 +6,8 @@ from contextlib import contextmanager, nullcontext
 from hashlib import sha256
 import json
 import os
-from pathlib import Path
+import re
+from pathlib import Path, PureWindowsPath
 import shutil
 import sqlite3
 import subprocess
@@ -115,6 +116,35 @@ def file_stamp(path):
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise ValueError("manager_unsafe_archive_path")
     return sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
+def wow_addons_destination(wow_path, *, platform=None):
+    """Build the exact Forever AddOns path from a WoW installation root.
+
+    Use PureWindowsPath so Windows path behavior can also be unit-tested on
+    Linux. The installer itself only accesses the local host filesystem.
+    """
+    if (type(wow_path) is not str or not wow_path.strip()
+            or len(wow_path) > 2048 or any(c in wow_path for c in "\x00\r\n")):
+        raise ValueError("manager_install_invalid_wow_path")
+    root_text = wow_path.strip().rstrip("\\/")
+    if not root_text:
+        raise ValueError("manager_install_invalid_wow_path")
+    platform = os.name if platform is None else platform
+    if platform == "nt":
+        root = PureWindowsPath(root_text)
+        if (not root.is_absolute() or root.drive.startswith("\\\\")
+                or ".." in root.parts
+                or root.name.lower() in ("_forever_", "interface", "addons")):
+            raise ValueError("manager_install_invalid_wow_path")
+        return str(root / "_forever_" / "Interface" / "AddOns")
+    if re.match(r"^[a-zA-Z]:[\\/]", root_text) or root_text.startswith("\\\\"):
+        raise ValueError("manager_install_windows_path_on_non_windows")
+    root = Path(root_text).expanduser()
+    if (not root.is_absolute() or ".." in root.parts
+            or root.name.lower() in ("_forever_", "interface", "addons")):
+        raise ValueError("manager_install_invalid_wow_path")
+    return str(root / "_forever_" / "Interface" / "AddOns")
 
 
 def verify_quest_zip(archive, identity, text_hash):
@@ -423,6 +453,9 @@ class ManagerUI:
         module = payload.get("module")
         if type(module) is not str or module not in MODULE_DOMAINS:
             raise ValueError("manager_unknown_module")
+        if action == "install":
+            with timing("api", module, action):
+                return self._install_module(module, payload)
         mutations = ("confirm_candidate", "choose_quest", "save_quest", *REVIEW_ONLY)
         if action in ("choose_quest", "save_quest"):
             with timing("api", module, action):
@@ -445,6 +478,58 @@ class ManagerUI:
                 return self._browse(action, module, payload)
             except sqlite3.Error:
                 raise ValueError("manager_state_changed_retry_reimport") from None
+
+    def _install_module(self, module, payload):
+        """Install the last tracked, checksum-verified ZIP using the existing installer."""
+        from zipfile import BadZipFile
+        from tools.build_ukrainian import DIST
+        from tools.install_addon import InstallError, install
+
+        if set(payload) != {"module", "wow_path"}:
+            raise ValueError("manager_invalid_options")
+        target = Path(wow_addons_destination(payload["wow_path"]))
+        # Refuse symlink/junction redirection in the explicitly supplied game
+        # root, _forever_, Interface, and AddOns components.
+        for part in (target.parents[2], target.parents[1], target.parents[0], target):
+            if part.is_symlink() or getattr(part, "is_junction", lambda: False)():
+                raise ValueError("manager_install_unsafe_wow_path")
+        if not target.is_dir():
+            raise ValueError("manager_install_addons_directory_missing")
+        with manager_lock(DIST):
+            archive = ARCHIVES[module]
+            with connection(self.db_path) as db:
+                latest = db.execute("""SELECT s.artifact_sha256
+                    FROM module_build_heads h JOIN build_import_snapshots s
+                    ON s.id=h.snapshot_id
+                    WHERE h.module=? AND s.module=?""", (module, module)).fetchone()
+            if latest is None:
+                raise ValueError("manager_install_module_not_built")
+            if file_stamp(archive) != latest[0]:
+                raise ValueError("manager_install_archive_outdated")
+            try:
+                installed = install(archive, target, expected_module=module)
+            except (InstallError, BadZipFile, OSError, UnicodeError) as exc:
+                reason = str(exc)
+                if reason.startswith("install_failed_rollback_incomplete"):
+                    code = "manager_install_rollback_incomplete"
+                elif reason.startswith("official_dependency_missing_"):
+                    code = "manager_install_dependencies_missing"
+                elif reason.startswith("Legacy Spoken_Quests_UA"):
+                    code = "manager_install_legacy_addon"
+                elif reason.startswith("addons_must_be_existing_"):
+                    code = "manager_install_addons_directory_missing"
+                elif reason.startswith(("archive_checksum_mismatch", "invalid_sha256_sidecar",
+                                        "missing_sha256_sidecar", "missing_or_unsafe_zip",
+                                        "unexpected_zip_members", "unsafe_or_unsupported_zip_member",
+                                        "archive_module_mismatch", "addon_manifest_mismatch")):
+                    code = "manager_install_invalid_archive"
+                else:
+                    code = "manager_install_failed"
+                raise ValueError(code) from None
+        return {"module": module, "installed": installed["installed"],
+                "replaced": installed["replaced"], "backup": str(installed["backup"])
+                if installed["backup"] is not None else None,
+                "addons": str(target)}
 
     def _catalog_stamp(self, module):
         with timing("sqlite_generation", module):
