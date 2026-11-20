@@ -75,6 +75,47 @@ test("Shared status filter and module heading follow Quest and Gossip", async ()
   assert.equal(b.requests.at(-1).filter_by, "quest_ready");
 });
 
+test("Gossip table shows separate NPC ID and English text hash ID", async () => {
+  const html = readFileSync("tools/review_ui/static/manager.html", "utf8");
+  assert.match(html, /<th scope="col">npcID<\/th><th scope="col">ID<\/th>/);
+  const b = browser((action, body) => listing(body.module));
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  const row = {
+    id:"gossip:68:107874079", type:"gossip", npc_id:68, english_hash:107874079,
+    label:"Innkeeper", ready_to_import:true, status:"ready", built:null,
+  };
+  b.run("renderList(" + JSON.stringify({items:[row], total:1, build:null,
+    summary:{gossip:{total:1, ready:1, quest_imported:0, quest_problem:0}}}) + ")");
+  const columns = b.el("rows").children[0].children;
+  assert.deepEqual(columns.slice(0, 3).map(x => x.textContent),
+    ["Gossip", "68", "107874079"]);
+  assert.equal(columns[4].children[0].textContent, "Готовий до імпорту");
+  assert.equal(b.el("metrics").children[1].children[1].textContent, "1");
+  b.run("renderList(" + JSON.stringify({items:[{...row, built:{source:"classicua"},
+    ready_to_import:false}], total:1, build:{built_at:"2026-11-20"},
+    summary:{gossip:{total:1, ready:0, quest_imported:1, quest_problem:0}}}) + ")");
+  assert.equal(b.el("rows").children[0].children[4].children[0].textContent, "Імпортовано");
+  assert.match(b.el("build-state").textContent, /Останній Gossip ZIP/);
+  b.run("renderDetail(" + JSON.stringify({...row, built:{source:"classicua"},
+    ready_to_import:false, review_binding:"pinned-binding", originals:["Hello."],
+    candidates:[], help:"Переклад включений"}) + ")");
+  assert.equal(b.el("selected").all().find(x => x.textContent === "Імпортовано")?.textContent,
+    "Імпортовано");
+
+  b.el("module").value = quest;
+  b.el("module").events.change();
+  await flush();
+  b.run("renderList(" + JSON.stringify({items:[{
+    id:"q:42:accept", type:"quest", label:"Quest", ready_to_import:true, built:null,
+  }], total:1, build:null,
+    summary:{quest:{total:1, ready:1, quest_imported:0, quest_problem:0}}}) + ")");
+  assert.deepEqual(b.el("rows").children[0].children.slice(0,3)
+    .map(x => x.textContent), ["Quest", "—", "42"]);
+});
+
 test("Gossip selects through the shared editor and does not build on save", async () => {
   const row = {...fixture, type: "gossip", id: "gossip:42:4", npc_id: 42, review_binding: "pin",
     candidates: [{text: "Вітаю.", sha256: "a", provider: "classicua"},

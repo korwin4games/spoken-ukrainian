@@ -662,14 +662,17 @@ def build_gossip(classicua, spoken, destination):
     units = []
     for row in view.rows.values():
         selection = row["selection"]
+        # A stale saved decision is not an eligible import, but should not
+        # prevent other ready Gossip records from entering the new ZIP.
         if row["status"] == "stale":
-            raise ValueError("manager_review_context_blocked")
+            continue
         if selection is None:
             continue
         npc, hashed = row["npc_id"], row["english_hash"]
         gossip["byNpc"].setdefault(npc, {})[hashed] = selection["rendered"]
         units.append({"domain": "gossip", "unit": f"npc:{npc}:{hashed}", "entity": str(npc),
-                      "source": selection["source"], "route": "user_selected",
+                      "source": selection["source"],
+                      "route": "pinned_unique" if selection.get("auto") else "user_selected",
                       "text_sha256": sha(selection["rendered"])})
     forms = read_classicua_inflections(classicua, view.state.source.files)
     entries = template_entries(None, render_gossip_lua(gossip, inflections=forms), module=GOSSIP_MODULE)

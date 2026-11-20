@@ -103,8 +103,8 @@ function metrics(summary, build) {
       return card;
     }));
     el("build-state").textContent = build ?
-      "Останній Quest ZIP: " + build.built_at + " UTC" :
-      "Quest ZIP ще не зібрано.";
+      "Останній " + domainName() + " ZIP: " + build.built_at + " UTC" :
+      domainName() + " ZIP ще не зібрано.";
 }
 
 function renderList(data) {
@@ -117,10 +117,13 @@ function renderList(data) {
     name.setAttribute("aria-pressed", String(selected === item.id));
     name.addEventListener("click", () => detail(item.id, name));
     const parts = item.id.split(":");
-    const id = (item.type === "quest" || parts[0] === "gossip") ? parts[1] : item.id;
-    tr.append(make("td", item.type === "quest" ? "Quest" : "Gossip"), make("td", id));
+    const gossip = item.type === "gossip";
+    const npcID = gossip ? String(item.npc_id ?? parts[1]) : "—";
+    const id = gossip ? String(item.english_hash ?? parts[2]) : parts[1] ?? item.id;
+    tr.append(make("td", gossip ? "Gossip" : "Quest"),
+      make("td", npcID), make("td", id));
     tr.appendChild(make("td")).append(name);
-    const status = item.ready_to_import ? "Готовий до імпорту" : item.built ? "У ZIP" : "Проблемний";
+    const status = item.ready_to_import ? "Готовий до імпорту" : item.built ? "Імпортовано" : "Проблемний";
     tr.appendChild(make("td")).append(badge(status, item.built && !item.ready_to_import ? "built" : ""));
     tr.appendChild(make("td")).append(make("span", item.needs_choice ? "Потрібен вибір" :
       item.status === "invalid" || item.status === "stale" ? "Перевірте контекст" : ""));
@@ -273,7 +276,7 @@ function renderDetail(row) {
     }
     english.append(context);
   }
-  const status = row.ready_to_import ? "Готовий до імпорту" : row.built ? "У ZIP" :
+  const status = row.ready_to_import ? "Готовий до імпорту" : row.built ? "Імпортовано" :
     row.needs_choice ? "Проблемний · оберіть переклад" : "Проблемний";
   const blocks = [make("h3", row.label), make("p", row.npc_id ? "NPC " + row.npc_id + " · " + row.id : row.id, "muted"),
     badge(status, row.built && !row.ready_to_import ? "built" : ""), english, simpleEditor(row)];

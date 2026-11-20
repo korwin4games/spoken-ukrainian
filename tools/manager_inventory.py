@@ -19,7 +19,7 @@ from tools import quest_runtime_review
 
 
 STATUS_HELP = {
-    "ready": "Переклад пройшов перевірки для локального імпорту. Запустіть переімпорт модуля.",
+    "ready": "Переклад готовий до включення в локальний модуль. Натисніть «Створити модуль».",
     "missing": "Перекладу для цього контексту немає. Додайте чернетку, якщо підтверджено контекст запису.",
     "review": "Для цього перекладу бракує чинної перевірки, дозволу або підтвердженого зіставлення.",
     "conflict": "Є неоднозначні варіанти. Звірте оригінали й джерела перед підтвердженням кандидата.",
@@ -35,7 +35,7 @@ TRANSLATION_STATES = {"translation_available", "translation_missing", "translati
 
 
 def quest_bucket(row):
-    """Exactly one UI bucket per Quest, independent of old review statuses."""
+    """Exactly one UI bucket per Quest or Gossip, independent of review statuses."""
     if row.get("ready_to_import"):
         return "quest_ready"
     if row.get("built"):
@@ -140,7 +140,7 @@ class ModuleInventory:
                 items.append({k: row[k] for k in ("id", "type", "label", "status", "built", "recorded",
                     "mapping_state", "translation_state", "import_state", "review_queue",
                     "agent_warning", "unverified_alternatives", "candidate_conflict",
-                    "ready_to_import", "needs_choice") if k in row})
+                    "ready_to_import", "needs_choice", "npc_id", "english_hash") if k in row})
             total += 1
         return {"module": module, "summary": self.summary(), "build": self.build,
                 "total": total, "items": items}
@@ -295,7 +295,8 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
 
         with connection(db_path) as db:
             units, build = latest_units(db, archive, state.inventory.revision, state.source.revision, module)
-        current_units = {key: value for key, value in units.items() if value["route"] == "user_selected"}
+        current_units = {key: value for key, value in units.items()
+                         if value["route"] in ("user_selected", "pinned_unique")}
         audit = audit_catalog(classicua, spoken)
         return ModuleInventory(gossip_rows(state, lines, db_path, current_units, audit),
                                build if not units or current_units else None, current_units, module, state)

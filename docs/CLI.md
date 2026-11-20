@@ -209,3 +209,11 @@ search, switch to Gossip, repeat, then switch back and forth. Use `api` for
 server dispatch latency and `api_response` to include response serialization
 and writing. The first visit to each module is a catalog miss. A first visit
 to Gossip after Quest can already reuse the shared sources.
+
+
+### Gossip ready records and separate IDs
+
+The Gossip manager exposes **npcID** (NPC identifier) and **ID** (the 32-bit English-text hash used by the runtime lookup) separately. For example, `gossip:68:107874079` is shown as npcID `68` and ID `107874079`.
+
+A unique, runtime-safe, exact-hash ClassicUA candidate with verified context is automatically **Ready to import**; it is included when the module ZIP is created, without a separate Save click. Its build provenance is `pinned_unique`. Existing matching auto-imports are shown as Imported. Different candidates, stale manual choices, unsupported variables or unverified contexts remain problematic; fuzzy/near matches are never auto-imported.
+
