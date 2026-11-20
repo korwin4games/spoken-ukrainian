@@ -7,7 +7,7 @@ from collections import defaultdict
 import re
 
 QUEST_PARTS = ("accept", "progress", "complete")
-CODE = re.compile(r"\\{([^{}]+)\\}")
+CODE = re.compile(r"\{([^{}]+)\}")
 PLAYER_CODES = {
     "ім'я": "$N",
     "клас": "$C",
@@ -95,7 +95,7 @@ def render_spoken_text_pack(titles=None, lines=None):
         for key, value in sorted(values.items(), key=lambda item: str(item[0])):
             if type(key) is int:
                 serialized = f"[{key}]"
-            elif type(key) is str and re.fullmatch(r"[qgf]:[A-Za-z0-9_:\\-]+", key):
+            elif type(key) is str and re.fullmatch(r"[qgf]:[A-Za-z0-9_:-]+", key):
                 serialized = "[" + lua_quote(key) + "]"
             else:
                 raise ValueError("invalid_spoken_text_pack_id")
@@ -103,7 +103,7 @@ def render_spoken_text_pack(titles=None, lines=None):
                 raise ValueError("invalid_spoken_text_pack_value")
             sections.append(f"        {serialized} = {lua_quote(value)},")
         sections.append("    },")
-    return ("-- GENERATED private local-test text pack. No voice files, no human approval.\\n"
-            "if SpokenUkrainian and SpokenUkrainian.RegisterTextPack then\\n"
-            "    SpokenUkrainian:RegisterTextPack(\\\"quests\\\", {\\n"
-            + "\\n".join(sections) + "\\n    })\\nend\\n").encode("utf-8")
+    return ("-- GENERATED private local-test text pack. No voice files, no human approval.\n"
+            "if SpokenUkrainian and SpokenUkrainian.RegisterTextPack then\n"
+            "    SpokenUkrainian:RegisterTextPack(\"quests\", {\n"
+            + "\n".join(sections) + "\n    })\nend\n").encode("utf-8")
