@@ -145,15 +145,26 @@ def safe_audit_candidates(match, originals, npc, state, lookup):
 
 
 def runtime_text(original, text):
+    forms = inventory(text)
     if (not usable_text(text) or re.search(
             r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\|[cCrRhHtTaA]|%(?:\d+\$)?[sdif]", text)
-            or any(form.status != "supported" for form in inventory(text))):
+            or any(form.status != "supported" for form in forms)):
         raise ValueError("manager_invalid_translation_format")
     expected = Counter(t.lower() for t in TOKENS.findall(original))
     actual = Counter(t.lower() for t in TOKENS.findall(text))
+    # Pinned ClassicUA uses supported Ukrainian placeholders such as {Ім'я}
+    # instead of Spoken's $N. Both denote the same player-name slot; keep
+    # the original grammatical token for expansion by the addon at runtime.
+    for form in forms:
+        marker = {"player_name": "$n", "player_class": "$c",
+                  "player_race": "$r", "player_gender": "$g"}.get(form.category)
+        if marker is None:
+            raise ValueError("manager_invalid_translation_format")
+        actual[marker] += 1
     if expected != actual or any(t[1] not in (*RUNTIME_CODES, "g") for t in actual):
         raise ValueError("manager_invalid_translation_format")
-    if len(GENDER.findall(text)) != actual["$g"] or any(
+    if (len(GENDER.findall(text)) + sum(f.category == "player_gender" for f in forms)
+            != actual["$g"] or any(
             not branch.strip() for pair in GENDER.findall(text) for branch in pair):
         raise ValueError("manager_invalid_translation_format")
     if any(TOKENS.search(branch) for pair in GENDER.findall(text) for branch in pair):
