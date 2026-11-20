@@ -92,6 +92,13 @@ class InstallAddonTests(TestCase):
         self.assertEqual(set(result["installed"]), {"Spoken_Ukrainian", builder.GOSSIP_MODULE})
         self.assertFalse((self.addons / builder.QUEST_MODULE).exists())
 
+    def test_selected_module_must_match_archive_before_installation(self):
+        with self.assertRaisesRegex(install_addon.InstallError, "archive_module_mismatch"):
+            install_addon.install(self.archive, self.addons,
+                                  expected_module=builder.GOSSIP_MODULE)
+        self.assertFalse((self.addons / "Spoken_Ukrainian").exists())
+        self.assertFalse((self.addons / "Spoken_Gossip_UA").exists())
+
     def test_corrupt_checksum_refuses_write(self):
         with self.archive.open("ab") as stream:
             stream.write(b"corrupted after build")
