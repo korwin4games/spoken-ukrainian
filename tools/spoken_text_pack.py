@@ -8,8 +8,8 @@ from collections import defaultdict
 import re
 
 QUEST_PARTS = ("accept", "progress", "complete")
-QUEST_ID = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::.*)?\Z")
-GOSSIP_ID = re.compile(r"g:(?:[0-9a-f]{32}|b[0-9]+-[A-Za-z0-9_-]+|[a-z]{2}[A-Z]{2}-[0-9a-f]+)\Z")
+QUEST_ID = re.compile(r"q:([1-9][0-9]*):(accept|progress|complete)(?::w[0-9]+)?(?::[mf])?\Z")
+GOSSIP_ID = re.compile(r"g:(?:[0-9A-Fa-f]{32}|b[0-9]+-[A-Za-z0-9_-]+|[A-Za-z]{2}[A-Z]{2}-[0-9A-Fa-f]+)(?::[mf])?\Z")
 CODE = re.compile(r"\{([^{}]+)\}")
 TOKEN = re.compile(r"\$[A-Za-z]")
 GENDER_TOKEN = re.compile(r"\$G([^:;{}]+):([^:;{}]+);")
@@ -128,6 +128,11 @@ def gossip_payload(rows, *, corpus_lines=None):
     A verified native NPC/hash selection is not automatically a global Spoken
     translation. In particular, a second untranslated NPC must block the key.
     """
+    # Missing source context must never turn an NPC-scoped translation into
+    # an unchecked global Spoken line. This matters for callers using a
+    # synthetic/incomplete inventory or future build paths.
+    if corpus_lines is None:
+        return {}
     grouped = defaultdict(list)
     for row in rows:
         for context in row.get("contexts", ()):
