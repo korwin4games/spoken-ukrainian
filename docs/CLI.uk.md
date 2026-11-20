@@ -62,6 +62,12 @@ uv run --locked python tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE" --poli
 uv run --locked python tools/gossip_coverage.py --classicua "$CLASSICUA_SOURCE" --spoken "$SPOKEN_SOURCE"
 ```
 
+[Аудит зіставлень Gossip](GOSSIP_MAPPING_AUDIT.uk.md) порівнює історичну ревізію Spoken з окремо перевіреною 3.10.1 і записує приватні докази в `build/`.
+
+```bash
+uv run --locked python tools/gossip_mapping_audit.py --classicua "$CLASSICUA_SOURCE" --spoken-390 "$SPOKEN_SOURCE" --spoken-3101 build/spoken-3.10.1
+```
+
 ## Ідентичність квестів, перевірка і машинний імпорт
 
 Workbench записує чергу з метаданими в JSON і таблицю CSV. Доступні `--faction alliance|horde`, `--offset`, `--limit`, `--output`, `--worksheet-output` і необов’язковий `--reviews`. З `--decisions` повний набір `--source-id --target-id --decision --reason --reviewer` записує відхилення чи відкладення; `--help` показує точні коди причин. Замість цього `--approve-request` перевіряє незалежно підготовлений Stage 3 JoinProof від двох людей. Застаріле рішення, доказ чи невідповідну ідентичність буде відхилено. Див. [опис workbench](STAGE_4B_REVIEW_WORKBENCH.md).

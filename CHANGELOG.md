@@ -6,6 +6,7 @@ Dated version sections describe project baselines; they do not imply that a Git 
 or GitHub Release has been published.
 
 ## [Unreleased]
+- Reproduce the historical Gossip matching counts against independently pinned Spoken 3.9.0 and 3.10.1, with verified ClassicUA comment provenance and private canonical-ID evidence.
 - Cache Quest and Gossip catalogs independently, reuse verified source indexes, and add opt-in Translation Manager timings.
 - Let Quest reviewers compare and register candidates, draft directly against verified context, and confirm a translation across all verified originals. Verify the selected text in the Quest ZIP before applying the decision.
 - Translate supported Forever Quest Journal widgets and use an OFL-licensed Ukrainian-capable font in Quest surfaces.

@@ -48,6 +48,8 @@ The independently installable `Spoken_Gossip_UA` translates native NPC greetings
 
 **ClassicUA Gossip machine import:** the separate provisional 1:1 workflow now persists audited NPC/hash and deduplicated common matches in SQLite, refreshes before every local test build, and exposes **Автоімпорт Gossip 1:1 · ClassicUA** with filters in Review UI. Machine imports remain unreviewed; manual decisions and source selections are preserved, and changed evidence becomes `pending_update`. Import statistics distinguish unique texts, NPC/hash occurrences, common fallbacks and actual ZIP contents. [Instructions, statuses and Forever tests](docs/GOSSIP_MACHINE_IMPORT.md).
 
+The [read-only Gossip mapping audit](docs/GOSSIP_MAPPING_AUDIT.md) reproduces 2,382 direct matches across 7,429 eligible NPC/wording pairs on both Spoken 3.9.0 and 3.10.1.
+
 **Durable translation storage:** the Quest and Gossip executable tools use a private, persistent SQLite database by default (`~/.local/share/spoken-ukrainian/translations.sqlite3` or `$XDG_DATA_HOME`). Existing ignored JSON ledgers are migrated non-destructively on first use; subsequent builds reuse saved translations and review history. Previously approved Gossip wording or a saved unambiguous pending proposal may prefill a new context's **pending draft** without bypassing human review. [Database setup, migration, backup and safeguards](docs/SQLITE_TRANSLATION_STORE.md).
 
 Inspect the configured database before backing it up. For a **new store only**, explicitly initialize it with `init`; if existing reviews are missing, locate or restore their database first.

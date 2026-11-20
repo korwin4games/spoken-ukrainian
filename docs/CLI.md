@@ -62,6 +62,12 @@ uv run --locked python tools/stage4_coverage.py --spoken "$SPOKEN_SOURCE" --poli
 uv run --locked python tools/gossip_coverage.py --classicua "$CLASSICUA_SOURCE" --spoken "$SPOKEN_SOURCE"
 ```
 
+The [Gossip mapping audit](GOSSIP_MAPPING_AUDIT.md) compares the historical Spoken pin with a separately verified 3.10.1 baseline and writes private evidence under `build/`.
+
+```bash
+uv run --locked python tools/gossip_mapping_audit.py --classicua "$CLASSICUA_SOURCE" --spoken-390 "$SPOKEN_SOURCE" --spoken-3101 build/spoken-3.10.1
+```
+
 ## Quest identity, review and machine import
 
 The workbench writes a metadata JSON queue and a CSV worksheet. Use `--faction alliance|horde`, `--offset`, `--limit`, `--output`, `--worksheet-output` and optional `--reviews`. With `--decisions`, a complete `--source-id --target-id --decision --reason --reviewer` records a rejection/deferral; `--help` lists exact reason codes. Alternatively `--approve-request` validates an independently supplied two-human Stage 3 JoinProof. A stale decision/proof or mismatched identity is refused. See [workbench](STAGE_4B_REVIEW_WORKBENCH.md).

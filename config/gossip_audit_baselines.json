@@ -1,0 +1,21 @@
+{
+  "3.9.0": {
+    "version": "3.9.0",
+    "revision": "3c896874e27ec9e07d51a3578c0b9fa8545c9ac7",
+    "files": {
+      "pipelines/quests/corpus/corpus.json.gz": "54eec482fc73aac7b15ba4ef08c86ed4eeff99d824c375f8f376c9d06fc3b802",
+      "pipelines/quests/corpus/gossip_aliases.json": "f7a8c651640c2f2c2ceabd247aa608d0206ca70afc63232685eb30de88da1342",
+      "addons/Spoken/Spoken.toc": "4f69a3fe64b633e5368b83870a7fd2c5d52a10a25643f103d67a62232339c8e5"
+    }
+  },
+  "3.10.1": {
+    "version": "3.10.1",
+    "tag": "spoken/v3.10.1",
+    "revision": "db5669b0a39815dd38568f0e871f4ced82bc9229",
+    "files": {
+      "pipelines/quests/corpus/corpus.json.gz": "54eec482fc73aac7b15ba4ef08c86ed4eeff99d824c375f8f376c9d06fc3b802",
+      "pipelines/quests/corpus/gossip_aliases.json": "f7a8c651640c2f2c2ceabd247aa608d0206ca70afc63232685eb30de88da1342",
+      "addons/Spoken/Spoken.toc": "3b55742fa343a8c67abb76bbfaf2e4ddc29d5a3bc2c79ab5d55943883362760f"
+    }
+  }
+}
