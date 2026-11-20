@@ -145,30 +145,44 @@ def safe_audit_candidates(match, originals, npc, state, lookup):
 
 
 def runtime_text(original, text):
+    """Validate player-dependent placeholders and equivalent line breaks.
+
+    Spoken $B is formatting, not a player-dependent token. ClassicUA may use
+    literal paragraph breaks instead. Every original break must survive,
+    while name/class/race/gender still require an exact count and type match.
+    """
     forms = inventory(text)
     if (not usable_text(text) or re.search(
-            r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\|[cCrRhHtTaA]|%(?:\d+\$)?[sdif]", text)
-            or any(form.status != "supported" for form in forms)):
+            r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\|[cCrRhHtTaA]|%(?:\d+\$)?[sdif]", text)):
         raise ValueError("manager_invalid_translation_format")
+    if any(form.status != "supported" for form in forms):
+        raise ValueError("manager_gossip_unsupported_grammar")
     expected = Counter(t.lower() for t in TOKENS.findall(original))
     actual = Counter(t.lower() for t in TOKENS.findall(text))
-    # Pinned ClassicUA uses supported Ukrainian placeholders such as {Ім'я}
-    # instead of Spoken's $N. Both denote the same player-name slot; keep
-    # the original grammatical token for expansion by the addon at runtime.
+    # The addon expands ClassicUA grammatical forms after loading the text.
     for form in forms:
         marker = {"player_name": "$n", "player_class": "$c",
                   "player_race": "$r", "player_gender": "$g"}.get(form.category)
         if marker is None:
-            raise ValueError("manager_invalid_translation_format")
+            raise ValueError("manager_gossip_unsupported_grammar")
         actual[marker] += 1
-    if expected != actual or any(t[1] not in (*RUNTIME_CODES, "g") for t in actual):
-        raise ValueError("manager_invalid_translation_format")
+    if any(token[1] not in (*RUNTIME_CODES, "g") for token in actual):
+        raise ValueError("manager_gossip_unsupported_runtime_token")
+
+    # A Ukrainian newline is the rendered equivalent of $B. Preserve at
+    # least as many breaks as the source, without requiring identical layout.
+    expected_breaks = expected.pop("$b", 0)
+    actual_breaks = actual.pop("$b", 0) + len(re.findall(r"\r\n|\r|\n", text))
+    if actual_breaks < expected_breaks:
+        raise ValueError("manager_gossip_missing_linebreak")
+    if expected != actual:
+        raise ValueError("manager_gossip_placeholder_mismatch")
     if (len(GENDER.findall(text)) + sum(f.category == "player_gender" for f in forms)
             != actual["$g"] or any(
                 not branch.strip() for pair in GENDER.findall(text) for branch in pair)):
-        raise ValueError("manager_invalid_translation_format")
+        raise ValueError("manager_gossip_gender_invalid")
     if any(TOKENS.search(branch) for pair in GENDER.findall(text) for branch in pair):
-        raise ValueError("manager_invalid_translation_format")
+        raise ValueError("manager_gossip_gender_invalid")
     text = GENDER.sub(lambda m: "{стать:" + m[1].strip() + ":" + m[2].strip() + "}", text)
     return TOKENS.sub(lambda m: {"$C": "{Клас}", "$R": "{Раса}"}.get(
         m[0], RUNTIME_CODES[m[0][1].lower()]), text)
