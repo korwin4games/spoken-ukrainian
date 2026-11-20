@@ -154,8 +154,12 @@ jobs:
           quest = stats["module_builds"]["Spoken_Quest_UA"]
           gossip = stats["module_builds"]["Spoken_Gossip_UA"]
           assert quest["categories"]["quests"] > 0 and quest["categories"]["gossip"] == 0
-          # A fresh Gossip database emits an empty module until a local choice is saved.
-          assert gossip["categories"]["gossip"] == 0 and gossip["categories"]["quests"] == 0
+          # A fresh Gossip database now auto-includes unique verified NPC/hash
+          # matches. Do not mistake them for manually reviewed translations.
+          assert gossip["categories"]["gossip"] > 0 and gossip["categories"]["quests"] == 0
+          assert any(r["category"] == "gossip" and r["source"] == "classicua"
+                     and r["route"] == "pinned_unique" and r["text_records"] > 0
+                     for r in gossip["rows"])
           assert quest["artifact_sha256"] != gossip["artifact_sha256"]
           assert all(r["text_records"] > 0 and r["source"] for build in (quest, gossip) for r in build["rows"])
           assert stats["recorded_imports"]["total_text_records"] >= 0
