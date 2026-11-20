@@ -55,6 +55,7 @@ jobs:
         with:
           repository: rusty-key/spoken-wow
           ref: ${{ steps.spoken.outputs.revision }}
+          fetch-depth: 0 # Include historical 3.9.0 commit for immutable Stage 1/2B characterization.
           path: spoken-wow
           persist-credentials: false
 
