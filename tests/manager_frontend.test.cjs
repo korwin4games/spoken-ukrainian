@@ -149,6 +149,73 @@ test("obsolete search and detail requests do not keep the loading indicator acti
   assert.equal(b.el("metrics").children[0].children[1].textContent, "70");
 });
 
+test("Install button submits selected module and WoW root without a rebuild", async () => {
+  const b = browser((action, body) => {
+    if (action === "install") return {
+      module: quest, installed: ["Spoken_Ukrainian", quest],
+      replaced: [quest],
+      backup: "D:\\Games\\World of Warcraft\\_forever_\\Interface\\AddOns\\.spoken-ukrainian-backups\\old",
+      addons: "D:\\Games\\World of Warcraft\\_forever_\\Interface\\AddOns",
+    };
+    return listing(body.module);
+  });
+  await flush();
+  b.el("wow-path").value = "D:\\Games\\World of Warcraft\\";
+  b.el("install").events.click();
+  await flush();
+  const installs = b.requests.filter(request => request.action === "install");
+  assert.equal(installs.length, 1);
+  assert.equal(installs[0].module, quest);
+  assert.equal(installs[0].wow_path, "D:\\Games\\World of Warcraft\\");
+  assert.equal(b.requests.some(request =>
+    ["reimport", "import_ready"].includes(request.action)), false);
+  assert.match(b.el("install-status").textContent, /Встановлено: Spoken_Ukrainian, Spoken_Quest_UA/);
+  assert.match(b.el("install-status").textContent, /Резервна копія:/);
+  assert.match(b.el("install-status").textContent, /Перезапустіть WoW/);
+  await b.run("reimport(true)");
+  assert.equal(b.el("install-status").textContent, "");
+  assert.equal(b.el("install").disabled, false);
+  assert.equal(b.el("wow-path").disabled, false);
+});
+
+test("Install failure displays actionable guidance without touching the module UI", async () => {
+  const b = browser((action, body) => action === "install" ?
+    {error: "invalid_or_duplicate_review_decision",
+     reason: "manager_install_module_not_built"} : listing(body.module));
+  await flush();
+  b.el("wow-path").value = "D:\\Games\\World of Warcraft";
+  b.el("install").events.click();
+  await flush();
+  assert.match(b.el("install-status").textContent, /Створити модуль/);
+  assert.equal(b.el("install").disabled, false);
+  assert.equal(b.el("reimport").disabled, false);
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  assert.equal(b.el("install-status").textContent, "");
+  b.el("install").events.click();
+  await flush();
+  assert.equal(b.requests.at(-1).module, gossip);
+});
+
+test("Quest translation editor uses a full-width multi-line field with actions below", async () => {
+  const row = {...fixture, review_binding: "pinned-binding",
+    candidates: [{text: "Вітаю.", provider: "classicua", sha256: "choice-a"}]};
+  const b = browser((action, body) => action === "detail" ? row : listing(body.module));
+  await flush();
+  b.run("renderDetail(" + JSON.stringify(row) + ")");
+  const section = b.el("selected").all().find(x => x.tag === "section" && x.className === "quest-editor");
+  assert.ok(section);
+  const field = section.all().find(x => x.tag === "textarea");
+  assert.equal(field.rows, 7);
+  assert.equal(field.value, "Вітаю.");
+  const actions = section.all().find(x => x.className === "quest-editor-actions");
+  assert.ok(actions);
+  assert.deepEqual(actions.children.map(x => x.textContent),
+    ["Зберегти", "Скопіювати запит для Codex"]);
+  assert.ok(section.children.indexOf(field) < section.children.indexOf(actions));
+});
+
 test("Quest selection shows all candidates without reviewer forms or checkboxes", async () => {
   const choices = [
     {text:"Вітаю.", provider:"classicua", sha256:"choice-a", eligibility:"mapping_required"},

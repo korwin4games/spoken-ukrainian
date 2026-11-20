@@ -120,9 +120,11 @@ def validate_addons_dir(addons: Path, modules=("Spoken_Quest_UA",)):
     return addons
 
 
-def install(archive: Path, addons: Path, *, dry_run=False):
+def install(archive: Path, addons: Path, *, dry_run=False, expected_module=None):
     entries = validate_archive(Path(archive))
     expected_names = tuple(dict.fromkeys(member.split("/")[0] for member in entries))
+    if expected_module is not None and expected_module not in expected_names:
+        raise InstallError("archive_module_mismatch")
     addons = validate_addons_dir(Path(addons), expected_names)
     replaced = [name for name in expected_names if (addons / name).exists()]
     if dry_run:

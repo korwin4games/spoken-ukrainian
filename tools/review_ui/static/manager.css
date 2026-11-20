@@ -71,6 +71,14 @@ button.primary { background: var(--mint); color: #13261a; border-color: transpar
   border: 1px solid #455a49; border-radius: .75rem; flex-wrap: wrap;
 }
 .operation .check { margin-top: .25rem; }
+.install-controls {
+  display: flex; align-items: end; flex-wrap: wrap; gap: .65rem;
+  flex-basis: 100%; min-width: 0;
+}
+.install-controls label { flex: 1 1 21rem; min-width: 0; }
+.install-controls input { display: block; width: 100%; min-width: 0; }
+.install-controls button { flex: 0 0 auto; }
+
 .status-line, #run-summary { flex-basis: 100%; }
 .status-line:empty { display: none; }
 .status-line, #list-message, .muted { color: var(--muted); }
@@ -98,6 +106,23 @@ td:first-child, th:first-child { padding-left: 1rem; }
 .badge.review, .badge.stale { color: var(--gold); background: #423827; }
 #selected { margin-top: .6rem; }
 #selected section, #selected details, #selected p { margin-top: .65rem; }
+/* The Quest editor should use the inspector width and keep actions below the text. */
+#selected .quest-editor { width: 100%; min-width: 0; }
+#selected .quest-editor select {
+  display: block; width: 100%; min-width: 0; max-width: 100%;
+  text-overflow: ellipsis;
+}
+#selected .quest-editor textarea {
+  display: block; width: 100%; max-width: 100%; min-width: 0;
+  min-height: 11rem; padding: .55rem .65rem;
+  resize: vertical; color: var(--text); background: #222d25;
+  border: 1px solid var(--line); border-radius: .55rem;
+  font: inherit; line-height: 1.5;
+}
+#selected .quest-editor-actions {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: .5rem; margin-top: .65rem;
+}
 #selected pre, #selected .original { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin-block: .3rem; }
 .candidate { border-left: 2px solid var(--line); padding-inline-start: .65rem; }
 dialog { padding: 1.4rem; color: var(--text); max-width: min(31rem, 100% - 1.5rem); }
