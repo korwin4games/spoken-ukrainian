@@ -564,6 +564,8 @@ class ManagerTests(unittest.TestCase):
         with urlopen(url + "/", timeout=5) as response:
             body = response.read().decode()
         self.assertEqual(body.count("Створити модуль"), 1)
+        self.assertIn(r'value="D:\Games\World of Warcraft"', body)
+        self.assertEqual(body.count('id="install"'), 1)
         self.assertNotIn('/advanced', body)
         with self.assertRaises(HTTPError) as missing:
             urlopen(url + "/advanced", timeout=5)
@@ -581,6 +583,12 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             post("reimport", {"module": MODULE, "confirm": True}, token="wrong")
         self.assertEqual(error.exception.code, 403)
+        with self.assertRaises(HTTPError) as invalid:
+            post("install", {"module": MODULE, "wow_path": str(self.root)})
+        self.assertEqual(invalid.exception.code, 400)
+        with self.assertRaises(HTTPError) as forbidden:
+            post("install", {"module": MODULE, "wow_path": str(self.root)}, token="wrong")
+        self.assertEqual(forbidden.exception.code, 403)
 
         def run_cli(args, **kwargs):
             result = io.StringIO()
