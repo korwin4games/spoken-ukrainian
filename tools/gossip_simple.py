@@ -97,6 +97,13 @@ def safe_audit_candidates(match, originals, npc, state, lookup):
     from tools.gossip_candidate_tables import template
     from tools.gossip_coverage import classicua_hash
 
+    # A single runtime NPC/hash must not collapse variants with different
+    # placeholder capitalization into one automatically rendered translation.
+    # Uppercase $C/$R render differently from their lowercase forms.
+    if not originals or len({tuple(sorted(Counter(TOKENS.findall(original)).items()))
+                             for original in originals}) != 1:
+        return []
+
     sources = {}
     for kind, values in (
             ("whitespace_candidate", match.get("whitespace_candidates", ())),
@@ -214,7 +221,8 @@ def rows(state, lines, db_path, units, audit=None):
                 choices.append(review_candidate(text, "classicua", ref, state.source.revision, "candidate")
                                | {"match_type": "exact_common" if scope == "!common" else "exact_npc"})
         ambiguous_audit = False
-        if binding and not choices and match:
+        auto_context_safe = match.get("category") != "ambiguous_npc_type"
+        if binding and auto_context_safe and not choices and match:
             matching = safe_audit_candidates(match, originals, npc, state, lookup)
             if len(matching) == 1:
                 (scope, source_hash), (kind, leaf, value) = matching[0]
@@ -247,10 +255,10 @@ def rows(state, lines, db_path, units, audit=None):
                 if unit and unit["route"] == "user_selected" and unit["text_sha256"] == sha(rendered):
                     built = unit | {"text_sha256": fingerprint}
             stale = not current
-        # A single safe exact-hash ClassicUA translation needs no manual
-        # selection. Two different valid translations still require a choice.
+        # A single safe, unambiguous ClassicUA translation needs no manual
+        # selection. Ambiguous NPC types or explicit choices require review.
         # A stale explicit user choice must never be silently overwritten.
-        if identity not in stored and binding:
+        if identity not in stored and binding and auto_context_safe:
             unique = {candidate["sha256"]: candidate for candidate in choices}
             if len(unique) == 1:
                 candidate = next(iter(unique.values()))
