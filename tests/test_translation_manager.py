@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 from hashlib import sha256
 from http.server import ThreadingHTTPServer
 import io
+import os
 import json
 import sqlite3
 from pathlib import Path
