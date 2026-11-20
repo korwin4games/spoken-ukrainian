@@ -265,3 +265,50 @@ class GossipSimpleUITests(TestCase):
         self.assertIsNone(row["selection"])
         self.assertFalse(row["ready_to_import"])
         self.assertTrue(row["candidate_conflict"])
+
+    def test_ambiguous_npc_type_blocks_unreviewed_exact_auto_selection(self):
+        audit = {(NPC_ID, TEXT_ID): {
+            "category": "ambiguous_npc_type",
+            "exact_hash_sources": [{"scope": NPC_ID}]}}
+        row = self.one(audit=audit)
+        self.assertFalse(row["ready_to_import"])
+        self.assertIsNone(row["selection"])
+        self.assertIn("ambiguous_npc_type", row["match_types"])
+        self.assertEqual(row["status"], "review")
+        self.assertEqual(len(row["candidates"]), 1)
+
+    def test_ambiguous_npc_type_preserves_explicit_manual_choice(self):
+        from adapters.crosswalk import digest
+
+        fields = ("lineId", "npcType", "race", "gender", "playerGender", "voice", "originalText")
+        binding = digest({"spoken": self.state.inventory.revision,
+                          "classicua": self.state.source.revision,
+                          "identity": IDENTITY,
+                          "contexts": [{key: self.original.get(key) for key in fields}]})
+        stored = {IDENTITY: (binding, "Ручний.", sha("Ручний."), "manual", "local_selection")}
+        audit = {(NPC_ID, TEXT_ID): {"category": "ambiguous_npc_type",
+                                    "exact_hash_sources": [{"scope": NPC_ID}]}}
+        row = self.one(audit=audit, stored=stored)
+        self.assertEqual(row["selection"]["source"], "manual")
+        self.assertEqual(row["selection"]["text"], "Ручний.")
+        self.assertTrue(row["ready_to_import"])
+
+    def test_template_variants_with_different_placeholder_casing_are_not_auto_selected(self):
+        from adapters.crosswalk import digest
+        from tools.gossip_coverage import classicua_hash
+        from tools.gossip_simple import safe_audit_candidates
+
+        originals = ("Greetings, $C!", "Greetings, $c!")
+        english = "Greetings, <class>!"
+        source_hash = classicua_hash(english)
+        self.state.source.files["classic/gossip.lua"] = "c" * 64
+        self.state.dataset.records["gossip"]["!common"].fields[(source_hash,)] = SimpleNamespace(
+            origin=SimpleNamespace(file="classic/gossip.lua", line=19))
+        source = {"scope": "!common", "hash": source_hash, "english": english,
+                  "file": "classic/gossip.lua", "file_sha256": "c" * 64,
+                  "revision": self.state.source.revision, "value_line": 19, "effective": True}
+        matching = safe_audit_candidates(
+            {"template_candidates": [{"test": "same_template", "source": source}]},
+            originals, NPC_ID, self.state, {
+                "byNpc": {}, "common": {source_hash: "Вітаю, $C!"}})
+        self.assertEqual(matching, [])
