@@ -99,6 +99,11 @@ test("Gossip table shows separate NPC ID and English text hash ID", async () => 
     summary:{gossip:{total:1, ready:0, quest_imported:1, quest_problem:0}}}) + ")");
   assert.equal(b.el("rows").children[0].children[4].children[0].textContent, "Імпортовано");
   assert.match(b.el("build-state").textContent, /Останній Gossip ZIP/);
+  b.run("renderDetail(" + JSON.stringify({...row, built:{source:"classicua"},
+    ready_to_import:false, review_binding:"pinned-binding", originals:["Hello."],
+    candidates:[], help:"Переклад включений"}) + ")");
+  assert.equal(b.el("selected").all().find(x => x.textContent === "Імпортовано")?.textContent,
+    "Імпортовано");
 
   b.el("module").value = quest;
   b.el("module").events.change();
