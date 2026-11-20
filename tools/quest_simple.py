@@ -17,6 +17,9 @@ def pinned_options(state):
     # Match only the pinned Quest ID/event. Stage 3 hint/reviewer status is
     # not required for *private test* content; it is not a public mapping
     # approval. The English wordings may differ across the same moment.
+    can_store = getattr(state.policy, "stores", None)
+    if callable(can_store) and not can_store("classicua"):
+        return {}  # Respect the configured provider/rights policy.
     views, _ = state.dataset.faction_views(
         include_ai=state.policy.allows_ai_transations("classicua"))
     result = defaultdict(list)
