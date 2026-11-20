@@ -14,32 +14,43 @@ from tools.quest_source_compatibility import matching_selection
 
 def pinned_options(state):
     """Current ClassicUA text matched by exact Quest ID/event and pinned source hash."""
-    hints = defaultdict(set)
-    for hint in state._hints:
-        if hint.get("status") == "excluded" or hint.get("reason") == "faction_eligibility_conflict":
-            continue
-        for target in hint.get("candidates", ()):
-            hints[target].add(hint["source_id"])
+    # Match only the pinned Quest ID/event. Stage 3 hint/reviewer status is
+    # not required for *private test* content; it is not a public mapping
+    # approval. The English wordings may differ across the same moment.
     views, _ = state.dataset.faction_views(
         include_ai=state.policy.allows_ai_transations("classicua"))
     result = defaultdict(list)
     for target, item in state.inventory.targets.items():
         if item.family != "quest":
             continue
-        parts = quest_moment(target).split(":")
-        if len(parts) != 3 or parts[2] not in ("accept", "progress", "complete"):
+        moment = quest_moment(target)
+        parts = moment.split(":")
+        if (len(parts) != 3 or parts[0] != "q" or not parts[1].isdigit()
+                or parts[2] not in EVENT_POSITION):
             continue
-        for source_id in hints[target]:
-            source = source_id.split(":")
-            if (len(source) != 4 or source[0] != "quest" or source[2] != parts[1]
-                    or source[3] != parts[2]):
+        quest_id, event = int(parts[1]), parts[2]
+        contexts = state.inventory.contexts.get(target, ())
+        # The only valid relaxed match is a canonical Quest ID + event with
+        # matching faction. Unknown/neutral Spoken factions can share either.
+        if (not contexts or any(
+                c.get("quest_id", quest_id) != quest_id
+                or c.get("source", event) != event for c in contexts)):
+            continue
+        factions = {c.get("faction") for c in contexts
+                    if c.get("faction") not in (None, "unknown", "both", "neutral")}
+        for faction in ("horde", "alliance"):
+            if factions and faction not in factions:
                 continue
+            source_id = f"quest:{faction}:{quest_id}:{event}"
             unit = state.source.units.get(source_id)
-            if unit is None or unit.ai and not state.policy.allows_ai_transations("classicua"):
+            if (unit is None or unit.ai
+                    and not state.policy.allows_ai_transations("classicua")):
                 continue
-            record = views.get(source[1], {}).get(int(source[2]))
-            field = record.fields.get((EVENT_POSITION[source[3]],)) if record else None
+            record = views.get(faction, {}).get(quest_id)
+            field = record.fields.get((EVENT_POSITION[event],)) if record else None
             text = field.node.value if field else None
+            # Preserve provenance: the effective source field must match the
+            # pinned ClassicUA unit; never use translation/name similarity.
             if type(text) is not str or not text.strip() or sha(text) != unit.effective_sha256:
                 continue
             support = {}
@@ -47,7 +58,7 @@ def pinned_options(state):
                 leaf = record.fields.get((pos,))
                 if leaf and type(leaf.node.value) is str and leaf.node.value.strip():
                     support[key] = leaf.node.value
-            result[quest_moment(target)].append((text, support))
+            result[moment].append((text, support))
     return result
 
 
