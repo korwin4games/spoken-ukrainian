@@ -190,6 +190,60 @@ class GossipSimpleUITests(TestCase):
         self.assertIn("[!common]", row["selection"]["reference"])
         self.assertEqual(row["selection"]["rendered"], "Вітаю, {ім'я}!")
 
+    def test_same_template_supports_classicua_name_grammar(self):
+        row = self.fuzzy(
+            "The Sentinels need your help. $n, speak to their leader.",
+            "The Sentinels need your help. <name>, speak to their leader.",
+            "Стражам потрібна допомога. {Ім'я}, поговори з їхнім ватажком.")
+        self.assertEqual(row["status"], "ready")
+        self.assertTrue(row["ready_to_import"])
+        self.assertTrue(row["selection"]["auto"])
+        self.assertIn("{Ім'я}", row["selection"]["rendered"])
+        self.assertEqual(row["selection"]["match_type"], "same_template")
+
+    def test_classicua_grammar_does_not_hide_missing_or_extra_slots(self):
+        from tools.gossip_simple import runtime_text
+        self.assertEqual(runtime_text("Hello, $n.", "Вітаю, {Ім'я}."),
+                         "Вітаю, {Ім'я}.")
+        self.assertEqual(runtime_text("Hello, $C.", "Вітаю, {Клас}."),
+                         "Вітаю, {Клас}.")
+        self.assertEqual(runtime_text("Hello, $Gfriend:friend;", "Вітаю, {стать:друже:подруго}."),
+                         "Вітаю, {стать:друже:подруго}.")
+        for original, translation in (
+            ("Hello, $n.", "Вітаю."),
+            ("Hello.", "Вітаю, {ім'я}."),
+            ("Hello, $n.", "Вітаю, {Ім'я} та $n."),
+            ("Hello, $n.", "Вітаю, {ім'я:unknown}."),
+            ("Hello, $c.", "Вітаю, {раса}."),
+            ("Hello, $b.", "Вітаю."),
+        ):
+            with self.subTest(original=original, translation=translation), self.assertRaises(ValueError):
+                runtime_text(original, translation)
+
+    def test_real_stormwind_guard_template_becomes_ready(self):
+        """Regression: NPC 68 / original hash 1978831227 from the reviewer screenshot."""
+        import os
+        from tempfile import TemporaryDirectory
+        from tools.manager_inventory import load_inventory
+
+        classicua = Path(os.environ.get("CLASSICUA_SOURCE", "../ClassicUA"))
+        spoken = Path(os.environ.get("SPOKEN_SOURCE", "../spoken-wow"))
+        if not (classicua / ".git").exists() or not (spoken / ".git").exists():
+            self.skipTest("Requires pinned ClassicUA and Spoken Git checkouts")
+        with TemporaryDirectory() as temp:
+            view = load_inventory(classicua, spoken, Path(temp) / "review.sqlite3",
+                                  Path(temp) / "Gossip.zip", module=builder.GOSSIP_MODULE)
+            row = view.rows.get("gossip:68:1978831227")
+            self.assertIsNotNone(row, "Missing pinned Stormwind guard Gossip record")
+            self.assertTrue(row["ready_to_import"], {
+                "status": row["status"], "match_types": row["match_types"],
+                "choices": [(c["sha256"], c.get("match_type")) for c in row["candidates"]],
+                "audit": [(a["kind"], a.get("scope"), bool(a.get("ukrainian")))
+                          for a in row["unverified_alternatives"]],
+                "originals": row["originals"],
+            })
+            self.assertEqual(row["selection"]["match_type"], "same_template")
+
     def test_whitespace_auto_selected_with_spoken_runtime_hash(self):
         row = self.fuzzy("Welcome.\nHave a seat.", "Welcome.  Have a seat.",
                          "Ласкаво просимо.", kind="whitespace_candidate")
