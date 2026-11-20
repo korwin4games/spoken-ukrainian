@@ -191,7 +191,7 @@ class GossipSimpleUITests(TestCase):
         self.assertEqual(row["selection"]["rendered"], "Вітаю, {ім'я}!")
 
     def test_whitespace_auto_selected_with_spoken_runtime_hash(self):
-        row = self.fuzzy("Welcome.\\nHave a seat.", "Welcome.  Have a seat.",
+        row = self.fuzzy("Welcome.\nHave a seat.", "Welcome.  Have a seat.",
                          "Ласкаво просимо.", kind="whitespace_candidate")
         self.assertEqual(row["status"], "ready")
         self.assertEqual(row["selection"]["match_type"], "whitespace_candidate")
@@ -245,8 +245,8 @@ class GossipSimpleUITests(TestCase):
         self.assertFalse(row["ready_to_import"])
 
     def test_ambiguous_whitespace_source_records_are_not_auto_selected(self):
-        original = "Welcome.\\nHave a seat."
-        english = ("Welcome.  Have a seat.", "Welcome.\\nHave a seat.")
+        original = "Welcome.\nHave a seat."
+        english = ("Welcome.  Have a seat.", "Welcome.\nHave a seat.")
         from tools.gossip_coverage import classicua_hash
         self.original["originalText"] = original
         srcs, lookup = [], {"byNpc": {}, "common": {}}
