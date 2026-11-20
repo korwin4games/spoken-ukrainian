@@ -140,7 +140,10 @@ def rows(state, lines, db_path, units, audit=None):
                 source == "manual" or any(c["sha256"] == fingerprint and c["reference"] == ref for c in choices))
             if current:
                 try:
-                    rendered = runtime_text(originals[0], text)
+                    # Persisted choices must still fit every verified wording
+                    # sharing this NPC/hash runtime identity.
+                    for original in originals:
+                        rendered = runtime_text(original, text)
                 except ValueError:
                     current = False
             if current:
