@@ -99,7 +99,7 @@ class SpokenTextPackTests(unittest.TestCase):
         full.append({**full[0], "npcType": "gameobject", "npcId": 0})
         self.assertEqual(gossip_payload([row], corpus_lines=full), {})
 
-    def test_quest_base_id_requires_one_verified_original(self):
+    def test_quest_base_id_covers_multiple_verified_originals(self):
         preview = {
             42: {"title": "Завдання", "accept": {"text": "Вітаю."}},
             43: {"accept": {"text": "Привіт."}},
@@ -109,7 +109,14 @@ class SpokenTextPackTests(unittest.TestCase):
         titles, lines = quest_payload(preview, source_moments=moments,
                                       faction_titles={"horde": {43: "Назва"}})
         self.assertEqual(titles, {42: "Завдання", 43: "Назва"})
-        self.assertEqual(lines, {"q:42:accept": "Вітаю."})
+        self.assertEqual(lines, {
+            "q:42:accept": "Вітаю.",
+            "q:43:accept": "Привіт.",
+        })
+        _, missing = quest_payload(
+            {44: {"accept": {"text": "Без оригіналу."}}},
+            source_moments=moments)
+        self.assertEqual(missing, {})  # No unverified Quest moments.
         # Faction-specific title disagreement must not be globally exported.
         titles, _ = quest_payload(preview, source_moments=moments,
                                   faction_titles={"horde": {42: "Інша назва"}})
