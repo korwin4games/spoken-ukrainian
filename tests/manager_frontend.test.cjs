@@ -94,6 +94,11 @@ test("Gossip table shows separate NPC ID and English text hash ID", async () => 
     ["Gossip", "68", "107874079"]);
   assert.equal(columns[4].children[0].textContent, "Готовий до імпорту");
   assert.equal(b.el("metrics").children[1].children[1].textContent, "1");
+  b.run("renderList(" + JSON.stringify({items:[{...row, built:{source:"classicua"},
+    ready_to_import:false}], total:1, build:{built_at:"2026-11-20"},
+    summary:{gossip:{total:1, ready:0, quest_imported:1, quest_problem:0}}}) + ")");
+  assert.equal(b.el("rows").children[0].children[4].children[0].textContent, "Імпортовано");
+  assert.match(b.el("build-state").textContent, /Останній Gossip ZIP/);
 
   b.el("module").value = quest;
   b.el("module").events.change();
