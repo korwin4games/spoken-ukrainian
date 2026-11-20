@@ -1,4 +1,5 @@
 """Pinned Quest ID/event selections without reviewer forms."""
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -45,6 +46,19 @@ class SimpleQuestTests(TestCase):
         return {"id": self.target, "type": "quest", "review_binding": digest(evidence),
                 "original_variants": [{"target_id": self.target}], "originals": originals,
                 "candidates": [{"text": text, "sha256": sha(text)} for text in texts]}
+
+    def test_real_pinned_quest17_automatically_eligible_in_private_pack(self):
+        """Uldaman Reagent Run: regression of reported problematic UI record."""
+        from tools.build_ukrainian import local_test_state
+        classicua = Path(os.environ.get("CLASSICUA_SOURCE", "../ClassicUA"))
+        spoken = Path(os.environ.get("SPOKEN_SOURCE", "../spoken-wow"))
+        if not (classicua / ".git").exists() or not (spoken / ".git").exists():
+            self.skipTest("Requires the pinned ClassicUA and Spoken Git checkouts")
+        state = local_test_state(classicua, spoken)
+        row = resolved(state, None).get("q:17:accept")
+        self.assertIsNotNone(row, "Quest 17 accept has no unique pinned ClassicUA selection")
+        self.assertTrue(row.get("text"), "Quest 17 accept is not importable")
+        self.assertFalse(row["selected"], "Unreviewed unique candidate must remain automatic")
 
     def test_one_translation_is_automatic_for_two_originals(self):
         state = self.state()
