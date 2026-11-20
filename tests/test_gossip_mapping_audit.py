@@ -10,7 +10,7 @@ from zipfile import ZipFile
 from tools.build_ukrainian import render_gossip_lua
 from tools.gossip_mapping_audit import (
     ALIAS_PATH, CORPUS_PATH, TOC_PATH, audit, classicua_hash, dynamic_code,
-    dynamic_match, replies, source_comments, spoken_baseline, zip_inventory,
+    dynamic_match, prepared_reason, replies, source_comments, spoken_baseline, zip_inventory,
 )
 
 
@@ -25,6 +25,25 @@ def nonzero(counts):
 
 
 class GossipMappingAuditTests(unittest.TestCase):
+    def test_layout_candidates_preserve_both_sources_and_do_not_count_as_direct(self):
+        sources = {}
+        for english in ("A\nB", "A\n\nB"):
+            digest = classicua_hash(english)
+            sources[7, digest] = {"hash": digest, "scope": 7, "english": english}
+        counts, _, pairs = audit([row("a", "A B"), row("b", "A B", npc=8)], {}, sources,
+                                 {}, {}, {}, {"byNpc": {}, "common": {}}, [])
+        self.assertEqual(nonzero(counts), {"whitespace_candidate": 1, "no_evidence": 1})
+        self.assertEqual(len(pairs[0]["whitespace_candidates"]), 2)
+        self.assertEqual(counts["context_detail"]["by_category"]["all_unmatched"]["originals"], 1)
+        self.assertEqual(counts["context_detail"]["source_records_by_lookup_result"],
+                         {"original_absent_from_corpus": 2})
+
+    def test_recording_field_transform_requires_exact_result_and_gender(self):
+        self.assertEqual(prepared_reason("A$B$BB", "A\n\nB", None), "line_breaks_only")
+        self.assertEqual(prepared_reason("$G one:two;", "one", "m"), "player_gender_branch_only")
+        self.assertEqual(prepared_reason("$G one:two;", "one", "f"), "other_preparation")
+        self.assertEqual(prepared_reason("Dear $R", "Dear Traveler", None), "tts_race_substitution_only")
+
     def test_comment_parity_and_provenance(self):
         self.assertEqual(classicua_hash("  ABC\u00a0 "), 2837061266)
         digest = classicua_hash("Hello.\n\nWelcome.")

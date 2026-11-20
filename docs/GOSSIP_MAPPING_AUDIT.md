@@ -47,7 +47,8 @@ The following categories are mutually exclusive and identical for both pins. Det
 | Spoken corpus `text` matches a scoped or common comment exactly after normalization, while `originalText` differs | 166 |
 | Exact English overlap in ClassicUA Chat, without a Gossip lookup in scope | 8 |
 | Exact Gossip wording exists under another NPC ID only | 4 |
-| None of the audited routes returned a candidate | 4,868 |
+| Only paragraph/whitespace comparison found a scoped source | 13 |
+| None of the audited routes returned a candidate | 4,855 |
 | Same-context alternate original backed by a published Spoken alias | 0 |
 | ClassicUA dynamic code pattern hit | 0 |
 | ClassicUA reply-only article/period alternative | 0 |
@@ -58,6 +59,24 @@ The following categories are mutually exclusive and identical for both pins. Det
 The 166 alternate-field matches have exact text evidence. Their role as displayed English needs separate verification because Spoken exports prepared recording text independently of original wording. Spoken publishes 454 alias stems, which can represent shared BroadcastText/voice or merged recordings. The corpus carries zero explicit BroadcastText IDs and the alias artifact supplies stem links without numeric BroadcastText IDs or per-edge reasons. The audit checks same-NPC/type alias targets with independently stored originals and keeps links involving missing or localized stems in the raw alias artifact.
 
 The cross-family scan covers verified chat comment originals from loaded declarations and explicit English keys/fields in the restricted ClassicUA dataset, plus the loaded `misc`, item and spell dictionaries. Chat hits are wording overlaps, including possible superseded declarations. Glossary checks cover these terms and audited object, zone, NPC and quest terms. Runtime-global strings, English bodies absent from source records, unexported BroadcastText data, and actual menu-option text are outside this denominator. Native replies have their own lookup path and require a separate context inventory before they can contribute any coverage claim. Exact source wording evidence does not establish an independent Stage 3 mapping, Ukrainian voice, or live-client acceptance.
+
+## What the unmatched pairs represent
+
+The 5,047 pairs contain 5,199 corpus rows, 3,109 normalized originals, 3,884 canonical IDs and 1,698 NPCs. The 2,382 direct pairs contain 2,400 rows, 216 originals, 663 IDs and 481 NPCs. A single `!common` record serves as many as 191 NPCs. Only five of the 213 matching common records serve a single NPC.
+
+The 166 prepared-field candidates cover nine originals and 71 NPCs. The following comparison uses the pinned Spoken preprocessing rules in `pipelines/quests/tts_cli/tts_utils.py`. Each counted transform reproduces the normalized source comment from the corpus original.
+
+| Transformation | Pairs | Originals | NPCs | Distinct canonical IDs with a matching prepared row |
+| --- | ---: | ---: | ---: | ---: |
+| Replace `$B` or `$b` with newline | 159 | 7 | 69 | 48 |
+| Select player-gender branch of `$G` | 5 | 1 | 5 | 3 |
+| Substitute Spoken's generic recording word for `$R` | 2 | 1 | 2 | 2 |
+
+Of the 159 newline matches, 157 use common records and two use NPC-specific records. All five gender pairs contain both male and female player rows. Only the male rows match. For NPC 11441 the matched ID is `g:70ab7d05479cb1f2de07f476fc11f631:m`, linked to `entries/classic/gossip.lua:544`; its `:f` sibling has no matching prepared text. The two race substitutions depend on Spoken's recording convention.
+
+A second lookup rendered line breaks on both sides and compared runs of whitespace as one space, retaining punctuation, word order, and all in-scope source alternatives. It found 13 further pairs among the previous 4,868 without a candidate. NPCs 68 and 1976 share six common source records (12 pairs). NPC 911 contributes one scoped candidate, `g:8493fe09c36205db0684a4321f2d5dcf` at `entries/classic/gossip.lua:948`. The original hashes still differ, so all 13 stay outside direct coverage.
+
+Reading the lookup in reverse explains the 211 unused ClassicUA records. For 210, the normalized comment original is absent from the entire Spoken Gossip corpus, including objects. The remaining record at `entries/sod/gossip.lua:199` is scoped to NPC 243023. Four other NPCs use that exact wording. All eight Chat overlaps belong to NPC 14849, and the glossary overlap for NPC 259011 points to `entries/forever/spell.lua:514`. These are candidates for context inspection.
 
 ## Recommended implementation PRs
 

@@ -29,12 +29,83 @@ COMMENT = re.compile(r"\s*-- ?(.*)")
 LINE_ID = re.compile(r"g:[a-f0-9]{32}(?::[mf])?")
 DIRECT = ("exact_npc", "exact_common")
 CANDIDATES = ("verified_alias_wording", "dynamic_candidate", "corpus_alternate_candidate",
-              "reply_only_candidate", "glossary_candidate", "other_family_candidate", "wrong_npc_scope")
+              "reply_only_candidate", "glossary_candidate", "other_family_candidate", "wrong_npc_scope",
+              "whitespace_candidate")
 UNRESOLVED = ("missing_verified_original", "hash_collision", "ambiguous_npc_type", "no_evidence")
 
 
 def wording(text):
     return normalized(text).translate(str.maketrans("ЇЄІҐ", "їєіґ"))
+
+
+def prepared_reason(original, prepared, player_gender):
+    """Explain an exact prepared-field hit using individual upstream TTS transforms."""
+    clean = wording(prepared)
+    if wording(re.sub(r"\$[Bb]", "\n", original)) == clean:
+        return "line_breaks_only"
+    if player_gender in ("m", "f"):
+        branch = 1 if player_gender == "m" else 2
+        expanded = re.sub(r"\$[Gg]\s*([^:;]+?)\s*:\s*([^:;]+?)\s*;",
+                          lambda match: match[branch], original)
+        if wording(expanded) == clean:
+            return "player_gender_branch_only"
+    if wording(re.sub(r"\$[Rr]", "traveler", original)) == clean:
+        return "tts_race_substitution_only"
+    return "other_preparation"
+
+
+def layout_wording(text):
+    """Candidate lookup only. ClassicUA's runtime hash preserves paragraph breaks."""
+    return " ".join(wording(re.sub(r"\$[Bb]", "\n", text)).split())
+
+
+def context_detail(rows, mapping, effective):
+    """Count contexts behind each primary category and reverse-check unused source records."""
+    indexed = {row["corpus_index"]: row for row in rows}
+    originals = defaultdict(set)
+    for row in rows:
+        originals[wording(row["originalText"])].add((row["npcType"], row["npcId"]))
+    groups = defaultdict(list)
+    winners = Counter()
+    transformations = Counter()
+    for entry in mapping:
+        groups[entry["category"]].append(entry)
+        groups["all_direct" if entry["category"] in DIRECT else "all_unmatched"].append(entry)
+        if entry["category"] in DIRECT:
+            source = entry["exact_hash_sources"][0]
+            winners[source["scope"], source["hash"]] += 1
+        reasons = {hit["transformation"] for hit in entry["corpus_alternate"]}
+        if reasons:
+            transformations["+".join(sorted(reasons))] += 1
+    counts = {}
+    for category, pairs in groups.items():
+        indices = [i for pair in pairs for i in pair["corpus_indices"]]
+        counts[category] = {
+            "pairs": len(pairs), "rows": len(indices),
+            "npcs": len({pair["npc_id"] for pair in pairs}),
+            "canonical_ids": len({indexed[i]["lineId"] for i in indices}),
+            "originals": len({wording(indexed[i]["originalText"]) for i in indices}),
+        }
+    reverse = Counter()
+    for key, source in effective.items():
+        contexts = originals[wording(source["english"])]
+        if key in winners:
+            reason = "direct_winner"
+        elif not contexts:
+            reason = "original_absent_from_corpus"
+        elif all(kind not in ("creature", "vehicle") for kind, _ in contexts):
+            reason = "only_unsupported_context"
+        elif key[0] != "!common" and all(npc != key[0] for kind, npc in contexts
+                                         if kind in ("creature", "vehicle")):
+            reason = "original_only_outside_npc_scope"
+        else:
+            reason = "in_scope_without_direct_win"
+        reverse[reason] += 1
+    common = [count for (scope, _), count in winners.items() if scope == "!common"]
+    return {"by_category": counts, "prepared_transformations_by_pair": dict(transformations),
+            "source_records_by_lookup_result": dict(reverse),
+            "common_max_npcs_per_record": max(common, default=0),
+            "common_records_used_by_one_npc": common.count(1)}
 
 
 def source_comments(text, path):
@@ -271,8 +342,10 @@ def audit(lines, aliases, effective, dynamic, other, glossary, lookup, substitut
     for (_, digest), declaration in effective.items():
         wordings_by_hash[digest].add(wording(declaration["english"]))
     scoped_sources = defaultdict(list)
-    for (_, digest), declaration in effective.items():
+    by_layout = defaultdict(list)
+    for (scope, digest), declaration in effective.items():
         scoped_sources[digest].append(declaration)
+        by_layout[scope, layout_wording(declaration["english"])].append(declaration)
 
     mapping = []
     for (npc, digest), members in sorted(groups.items()):
@@ -284,6 +357,7 @@ def audit(lines, aliases, effective, dynamic, other, glossary, lookup, substitut
         ids = sorted({row["lineId"] for row in members})
         alternative, codes, reply, overlaps, terms = [], [], [], [], []
         edited_text = []
+        layout_hits = []
         if not original or any(not wording(row["originalText"]) for row in members):
             category = "missing_verified_original"
         elif len(clean) > 1:
@@ -300,7 +374,10 @@ def audit(lines, aliases, effective, dynamic, other, glossary, lookup, substitut
                 for scope in scopes:
                     source = effective.get((scope, classicua_hash(alternate)))
                     if source and wording(source["english"]) == wording(alternate):
-                        edited_text.append({"canonical_id": row["lineId"], "source": source})
+                        edited_text.append({"canonical_id": row["lineId"], "corpus_index": row["corpus_index"],
+                                            "transformation": prepared_reason(
+                                                row["originalText"], alternate, row["playerGender"]),
+                                            "source": source})
             for line_id in ids:
                 for alias in aliases.get(line_id.split(":")[1], []):
                     for row in by_stem.get(alias, []):
@@ -321,11 +398,15 @@ def audit(lines, aliases, effective, dynamic, other, glossary, lookup, substitut
                     if source and wording(source["english"]) == variant:
                         reply.append(source)
             overlaps, terms = other.get(original, []), glossary.get(original, [])
+            layout = layout_wording(original)
+            if layout:
+                layout_hits = [hit for scope in scopes for hit in by_layout.get((scope, layout), ())]
             category = next((name for name, evidence in (
                 ("verified_alias_wording", alternative), ("dynamic_candidate", codes),
                 ("corpus_alternate_candidate", edited_text),
                 ("reply_only_candidate", reply), ("glossary_candidate", terms),
-                ("other_family_candidate", overlaps), ("wrong_npc_scope", wrong_scope))
+                ("other_family_candidate", overlaps), ("wrong_npc_scope", wrong_scope),
+                ("whitespace_candidate", layout_hits))
                 if evidence), "no_evidence")
         historical_route = ("npc" if digest in lookup["byNpc"].get(npc, {}) else
                             "common" if digest in lookup["common"] else "unmatched")
@@ -335,6 +416,7 @@ def audit(lines, aliases, effective, dynamic, other, glossary, lookup, substitut
                         "exact_hash_sources": sources, "alternatives": alternative,
                         "corpus_alternate": edited_text,
                         "wrong_npc_scope": wrong_scope,
+                        "whitespace_candidates": layout_hits,
                         "dynamic": codes, "reply_only": reply, "glossary": terms,
                         "other_families": overlaps})
     summary, _ = audit_gossip_rows(lines, lookup)
@@ -345,6 +427,7 @@ def audit(lines, aliases, effective, dynamic, other, glossary, lookup, substitut
             "untranslated_distinct_npc_wordings"]:
         raise ValueError("Historical and evidence denominators diverged")
     measures = {
+        "context_detail": context_detail(rows, mapping, effective),
         "historical": summary,
         "categories": {name: totals[name] for name in DIRECT + CANDIDATES + UNRESOLVED},
         "historically_unmatched_categories": {name: missing[name] for name in DIRECT + CANDIDATES + UNRESOLVED},
