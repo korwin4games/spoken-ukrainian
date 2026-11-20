@@ -43,7 +43,15 @@
         <button type="button" id="preview">Попередній перегляд</button>
         <button type="button" id="reimport" class="primary">Створити модуль</button>
       </div>
+      <div id="install-controls" class="install-controls">
+        <label for="wow-path">WoW path
+          <input type="text" id="wow-path" value="D:\Games\World of Warcraft"
+                 maxlength="2048" autocomplete="off" spellcheck="false">
+        </label>
+        <button type="button" id="install">Інсталювати</button>
+      </div>
       <p id="operation-status" class="status-line" role="status"></p>
+      <p id="install-status" class="status-line" role="status" aria-live="polite"></p>
       <details id="run-summary" hidden><summary>Результат операції</summary><div id="run-details"></div></details>
     </section>
     <div class="workspace">
