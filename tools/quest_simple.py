@@ -9,6 +9,7 @@ from adapters.crosswalk import digest, quest_moment
 from adapters.source_revision_store import sha
 from adapters.sqlite_translation_store import connection
 from tools.quest_runtime_review import binding
+from tools.quest_source_compatibility import matching_selection
 
 
 def pinned_options(state):
@@ -94,7 +95,7 @@ def resolved(state, db_path):
             continue
         if selection:
             old, text, fingerprint, source = selection
-            if old == digest(evidence) and sha(text) == fingerprint and usable_text(text):
+            if matching_selection(old, evidence) and sha(text) == fingerprint and usable_text(text):
                 result[moment] = {"text": text, "source": source, "selected": True}
                 continue
             result[moment] = {"conflict": True}
@@ -142,7 +143,7 @@ def apply_choice(action, payload, row, state, db_path, *, revalidate_inputs=True
         prior = (db.execute("""SELECT evidence, text, text_sha256, source
             FROM quest_simple_choices WHERE moment=?""", (row["id"],)).fetchone()
             if db is not None else selections(db_path).get(row["id"]))
-        if prior and prior[0] == payload["binding"] and prior[1] == text:
+        if prior and matching_selection(prior[0], evidence) and prior[1] == text:
             source = prior[3]
         elif any(c["text"] == text and c.get("provider") == "classicua" for c in row["candidates"]):
             source = "classicua"
