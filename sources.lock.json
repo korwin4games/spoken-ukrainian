@@ -1,18 +1,18 @@
 {
   "spoken": {
     "repository": "https://github.com/rusty-key/spoken-wow",
-    "revision": "3c896874e27ec9e07d51a3578c0b9fa8545c9ac7",
-    "version": "3.9.0",
+    "revision": "db5669b0a39815dd38568f0e871f4ced82bc9229",
+    "version": "3.10.1",
     "files": {
-      "addons/Spoken/Languages.lua": "7712ff9ff2a3c3b10a7266f90c12befe76963c015948ab12ab26597ae330a66a",
-      "addons/Spoken/UI/Options.lua": "1abd947f43b8a62081393288f0fb88b1ae43a2502ede9bcca5ebf6d29d39dc2d",
-      "addons/Spoken/API.lua": "650bf98827ae464185c6ee33ff1214e5f17e5651ad918ac40a96af99d6b963b7",
-      "addons/Spoken/Spoken.toc": "4f69a3fe64b633e5368b83870a7fd2c5d52a10a25643f103d67a62232339c8e5",
-      "addons/Spoken_Places/Language.lua": "3e6197c5a4e79230d3b60f37159f15b79efb8d325a2e94d94a4b674ed1c4f96b",
-      "addons/Spoken_Places/Core.lua": "83e19f89ec6ffdff1df432de954d44c0cdb220eb07880ca794a200b462e45ee5",
-      "addons/Spoken_Places/Audio.lua": "6b49240d855182215960b7cd95eaf5dd24d925859868c8d711cfbd1a21f1ec06",
+      "addons/Spoken/Languages.lua": "2343dae65f1a98f1b2c4df0ad990e3b8dff41a0451f181b1d0d1b800dfb940a0",
+      "addons/Spoken/UI/Options.lua": "ee2c498ad8bc873f6636d0ff11856251fdf479625db86f252d9097d241f5d2b5",
+      "addons/Spoken/API.lua": "cb0bb759802ba71e14a226964ad6899779fbcb09fdb043d500895a32d4db80a0",
+      "addons/Spoken/Spoken.toc": "3b55742fa343a8c67abb76bbfaf2e4ddc29d5a3bc2c79ab5d55943883362760f",
+      "addons/Spoken_Places/Language.lua": "7d0792a42613477df60a2732c08639e45210e459b518744f0c64eb3f6a3df2cd",
+      "addons/Spoken_Places/Core.lua": "db3e89956153734d2c4898f917ad99e378af89a81efd8cdbc040a9104bf53b71",
+      "addons/Spoken_Places/Audio.lua": "2560817305ecdf2d8c01f85dbf408f3030b462f33c3af64c7741e6211202cf8e",
       "addons/Spoken_Places/Data/Languages.lua": "984d7cda37d8f2076052a2765f57e3332601ff28e966795b0c81d338397766ae",
-      "addons/Spoken_Places/Spoken_Places.toc": "7a5addb162c8d75dcb2f83dd050607cf60ede58d3e3ecb39e8e1aeafddf9a796",
+      "addons/Spoken_Places/Spoken_Places.toc": "f1594ba05a5e247dbf99b5611333166c055baa925ae7a8a6392b4a7dcdfb0112",
       "pipelines/places/tools/seed/zones.json": "683cd35c0d10cf27e50e6b9b896d18b8804f41cffb8990a65c3866d573aaacf4",
       "pipelines/places/tools/seed/forever-places.json": "b8c722cdbe0f40eb999718df9adaae207a860acfb37be5f01c395bb665252581"
     }
