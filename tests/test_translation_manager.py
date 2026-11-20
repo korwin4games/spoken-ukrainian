@@ -191,6 +191,49 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid_filters"):
             self.view.page(module="Spoken_Readables")
 
+    def test_coverage_buckets_are_exclusive_and_use_all_module_rows(self):
+        quest = ModuleInventory([
+            row("q:1:accept", "quest", "Already built and newly ready", "ready",
+                built=True, english="Hello.") | {"ready_to_import": True},
+            row("q:2:accept", "quest", "Already included", "ready",
+                built=True, english="Goodbye."),
+            row("q:3:accept", "quest", "Only ready", "ready",
+                english="Welcome.") | {"ready_to_import": True},
+            row("q:4:accept", "quest", "Problem", "missing", english="Missing."),
+        ], None, {})
+        total = quest.summary()["quest"]
+        self.assertEqual((total["total"], total["ready"], total["quest_imported"],
+                          total["quest_problem"]), (4, 2, 1, 1))
+        self.assertEqual(total["covered"], 3)
+        self.assertEqual(total["coverage_percent"], 75.0)
+        self.assertEqual(total["covered"] + total["quest_problem"], total["total"])
+        # Page filtering and pagination must never change overall coverage.
+        page = quest.page(filter_by="quest_problem", limit=1)
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["summary"]["quest"]["coverage_percent"], 75.0)
+
+        gossip = ModuleInventory([
+            row("gossip:3:1", "gossip", "Greeting", "ready",
+                english="Hello.") | {"ready_to_import": True},
+            row("gossip:3:2", "gossip", "Reply", "ready",
+                english="Welcome.", built=True),
+            row("gossip:4:3", "gossip", "Missing", "missing",
+                english="No translation."),
+        ], None, {}, builder.GOSSIP_MODULE)
+        summary = gossip.summary()["gossip"]
+        self.assertEqual((summary["ready"], summary["quest_imported"],
+                          summary["quest_problem"], summary["covered"]), (1, 1, 1, 2))
+        self.assertEqual(summary["coverage_percent"], 66.7)
+        filtered = gossip.page(module=builder.GOSSIP_MODULE,
+                              filter_by="quest_ready", limit=1)
+        self.assertEqual(filtered["total"], 1)
+        self.assertEqual(filtered["summary"]["gossip"]["covered"], 2)
+
+        empty = ModuleInventory([], None, {}, builder.GOSSIP_MODULE).summary()["gossip"]
+        self.assertEqual(empty["total"], 0)
+        self.assertEqual(empty["covered"], 0)
+        self.assertIsNone(empty["coverage_percent"])
+
     def test_candidate_conflicts_and_multiple_originals_have_separate_statistics_and_filters(self):
         conflict = self.view.rows["q:43:progress"]
         conflict.update(mapping_state="mapping_conflict",
