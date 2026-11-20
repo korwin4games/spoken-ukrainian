@@ -101,7 +101,7 @@ def resolved(state, db_path):
         evidence, originals = binding(state, moment, targets)
         if not evidence:
             continue
-        alternatives = {text for text, _ in options[moment] if usable_text(text)}
+        alternatives = {text for text, _ in options.get(moment, ()) if usable_text(text)}
         selection = stored.get(moment)
         # A prior explicit rejection still prevents *automatic* re-import.
         # A new user choice is explicit and can replace it in this local pack.
