@@ -71,6 +71,14 @@ button.primary { background: var(--mint); color: #13261a; border-color: transpar
   border: 1px solid #455a49; border-radius: .75rem; flex-wrap: wrap;
 }
 .operation .check { margin-top: .25rem; }
+.install-controls {
+  display: flex; align-items: end; flex-wrap: wrap; gap: .65rem;
+  flex-basis: 100%; min-width: 0;
+}
+.install-controls label { flex: 1 1 21rem; min-width: 0; }
+.install-controls input { display: block; width: 100%; min-width: 0; }
+.install-controls button { flex: 0 0 auto; }
+
 .status-line, #run-summary { flex-basis: 100%; }
 .status-line:empty { display: none; }
 .status-line, #list-message, .muted { color: var(--muted); }
