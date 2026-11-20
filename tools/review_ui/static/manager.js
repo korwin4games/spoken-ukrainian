@@ -201,7 +201,7 @@ function simpleEditor(row) {
   const options = new Map();
   // Keep the native dropdown compact even when the audit source contains a
   // long English original, file path or full Ukrainian paragraph.
-  const excerpt = (value, limit = 35) => {
+  const excerpt = (value, limit = 20) => {
     const text = String(value || "").replace(/\s+/g, " ").trim();
     return text.length > limit ? text.slice(0, limit - 1).trimEnd() + "…" : text;
   };
@@ -219,7 +219,7 @@ function simpleEditor(row) {
       if (text && [...options.values()].some(candidate => candidate.text === text)) continue;
       const label = [
         "Аудит " + (index + 1),
-        excerpt(matchNames[item.kind] || item.kind, 20),
+        excerpt(matchNames[item.kind] || item.kind, 13),
         text ? excerpt(text) : "Українського перекладу немає",
       ].join(" · ");
       options.set("audit:" + index, {
