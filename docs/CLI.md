@@ -1,5 +1,7 @@
 # Spoken Ukrainian CLI
 
+**Spoken 3.10.1 integration (PR #39, Draft):** the active audited pin is `spoken/v3.10.1`. Independent Quest/Gossip text-only ZIPs register through `Spoken:RegisterText`, retain native hooks and require no Ukrainian audio. See [source migration, build/install and WoW acceptance](SPOKEN_3101_TEXT_PACK.md). The manager's shared **Install** action first builds and verifies the selected module and its checksum, then uses the backup/rollback installer. Actual client acceptance is still pending.
+
 **Quest local UI:** For normal Quest translation selection, use the simplified [Translation Manager guide](TRANSLATION_MANAGER.md). Historic advanced review commands remain available for migration and diagnostics, but the Quest screen no longer requires reviewers or attestations.
 
 [Українська](CLI.uk.md)
