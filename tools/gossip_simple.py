@@ -165,7 +165,7 @@ def runtime_text(original, text):
         raise ValueError("manager_invalid_translation_format")
     if (len(GENDER.findall(text)) + sum(f.category == "player_gender" for f in forms)
             != actual["$g"] or any(
-            not branch.strip() for pair in GENDER.findall(text) for branch in pair):
+                not branch.strip() for pair in GENDER.findall(text) for branch in pair)):
         raise ValueError("manager_invalid_translation_format")
     if any(TOKENS.search(branch) for pair in GENDER.findall(text) for branch in pair):
         raise ValueError("manager_invalid_translation_format")
