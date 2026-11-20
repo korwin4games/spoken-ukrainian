@@ -1,5 +1,9 @@
 # Instructions for coding agents
 
+## Quest and Gossip coverage KPI (Translation Manager)
+
+The manager must show **Покриття перекладом** for both Quest and Gossip. Use the complete *module inventory*, not the current search/filter/page. Every item belongs to exactly one UI bucket: ready-to-import takes precedence over already-built, then imported, then problematic. Coverage = (ready + imported) / total × 100, with no double counting. Show both percentage (one decimal maximum) and covered/total counts; an empty inventory displays a dash instead of a misleading 0%. Quest items are ID/event moments, while Gossip items are NPC/hash wordings. This is coverage of the manager's indexed Spoken module inventory, **not** a claim about all WoW quests, every upstream Spoken line, or verified in-game translation quality. Keep backend summary and visible UI metrics consistent with independent module selection and unfiltered counts.
+
 ## Owner-approved Quest auto-import policy — private WoW: Forever testing
 
 This **newest Quest-specific decision overrides older Stage 3 / Stage 4 human-approval prerequisites for *local test ZIPs and Translation Manager ready status only***. Do not weaken the separate Gossip NPC/hash safety rules, approved-translation ledger semantics, mapping audit history, rights for publication or public release gates.
