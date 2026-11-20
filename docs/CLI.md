@@ -137,6 +137,16 @@ uv run --locked python tools/translation_agent.py import-verified --classicua "$
 
 ## Local build, installation and validation
 
+### Installation from Translation Manager
+
+The **WoW path** field defaults to D:\Games\World of Warcraft. After **Create module**, click **Інсталювати** (Install). The server strips trailing separators and appends \_forever_\Interface\AddOns to the game root. With the default value, the target is D:\Games\World of Warcraft\_forever_\Interface\AddOns.
+
+The button installs the last SQLite-tracked, SHA-256-verified ZIP for the selected Quest or Gossip module. It does not rebuild the ZIP. It reuses the existing tools/install_addon.py implementation: validate manifest and dependencies, back up existing Ukrainian addon folders into AddOns\.spoken-ukrainian-backups, safely extract and replace the private folders, and roll back on failure. The UI displays the backup path. Restart WoW afterward.
+
+The WoW root and AddOns folder must exist on the computer hosting Translation Manager. Windows paths require Windows; do not add _forever_ or Interface\AddOns to the input.
+
+
+
 `build_ukrainian.py` revalidates pinned checkouts and automatically refreshes Quest and Gossip machine imports, then checks existing agent imports before creating the private deterministic ZIP and SHA-256 under `dist/`. Missing/dirty sources, stale human evidence and a build without safe Quest moments can stop the command. `install_addon.py` accepts an exact WoW Forever `--addons` directory and optional `--archive`; use `--dry-run` for its plan. The real install writes the two private addon folders and preserves official Spoken. On unsafe paths/archives, exit without installing. See [local build and game checks](QUEST_LOCAL_TEST_BUILD.md).
 
 `build.py` takes no options and builds the separate historical diagnostic archive and checksum. The tests exercise pinned entries and Lua simulations. `version.py show` displays the project version, `check [--tag vX.Y.Z]` validates metadata/tag alignment, and `bump patch|minor|major --dry-run` previews a change. A real bump writes VERSION and requires synchronized metadata, lock and changelog. The first stable major requires `--approve-stable`. See [version policy](VERSIONING.md).
