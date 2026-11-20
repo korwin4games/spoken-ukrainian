@@ -3,7 +3,6 @@
 ## Notes: Local testing only. Ukrainian Quest translation preview; no recorded audio and no Spoken caption override.
 ## Version: 0.1.0-test
 ## Dependencies: Spoken, Spoken_Ukrainian
-## LoadOnDemand: 1
 ## Group: Spoken
 ## X-Part-Of: Spoken Ukrainian
 ## X-Spoken-Text: ukUA
