@@ -241,6 +241,7 @@ const eligibilityHelp = {
 
 function simpleQuestControls(row) {
   const panel = make("section");
+  panel.className = "quest-editor";
   const message = make("p");
   message.setAttribute("role", "status");
   panel.append(message);
@@ -273,6 +274,7 @@ function simpleQuestControls(row) {
   panel.append(make("h3", options.size > 1 ? "Оберіть переклад" :
     options.size === 1 ? "Доступний переклад" : "Немає перекладу"));
   const field = make("textarea");
+  field.rows = 7;
   field.maxLength = 60000;
   field.setAttribute("aria-label", "Український переклад");
   field.placeholder = "Введіть або відредагуйте український переклад…";
@@ -328,7 +330,9 @@ function simpleQuestControls(row) {
       message.textContent = "Не вдалося скопіювати. Перевірте доступ до буфера обміну.";
     }
   });
-  panel.append(make("h3", "Український переклад"), field, save, codex);
+  const actions = make("div", undefined, "quest-editor-actions");
+  actions.append(save, codex);
+  panel.append(make("h3", "Український переклад"), field, actions);
   if (!editable) panel.append(make("p", "Немає перевіреного англійського оригіналу для цього квесту."));
   return panel;
 }
