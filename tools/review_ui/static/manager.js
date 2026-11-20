@@ -27,6 +27,8 @@ const errors = {
   manager_install_legacy_addon: "Виявлено старий Spoken_Quests_UA. Перемістіть його з AddOns перед встановленням.",
   manager_install_rollback_incomplete: "Помилка встановлення: відновлення не завершено. Перевірте резервні копії вручну.",
   manager_install_failed: "Не вдалося встановити модуль. Перевірте доступ до папки гри та журнал термінала.",
+  manager_invalid_translation_format: "Переклад має неправильні або невідповідні оригіналу плейсхолдери ($N, $C, $R, $B, $G чи {Ім'я}/{Клас}/{Раса}). Перевірте текст і спробуйте знову.",
+  manager_review_context_blocked: "Немає перевіреного контексту NPC/репліки або він змінився. Оновіть запис; зберігати цей переклад небезпечно.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
 let readyCount = 0;
@@ -234,11 +236,22 @@ function simpleEditor(row) {
         binding: row.review_binding, confirm: true});
       el("run-summary").hidden = true;
       if (result.build !== "review_saved") throw new Error("manager_reimport_worker_invalid_response");
-      el("operation-status").textContent = "Збережено. Готовий до імпорту — натисніть «Створити модуль».";
       await list();
-      if (selected === row.id) await detail(row.id);
+      const updated = selected === row.id ? await detail(row.id) : null;
+      if (updated?.ready_to_import) {
+        el("operation-status").textContent =
+          "Збережено. Готовий до імпорту — натисніть «Створити модуль».";
+      } else if (updated?.built) {
+        el("operation-status").textContent = "Збережено. Переклад уже імпортовано.";
+      } else {
+        el("operation-status").textContent =
+          "Переклад збережено, але статус «Готовий до імпорту» не підтверджено. " +
+          "Перевірте оновлений запис і контекст NPC.";
+      }
     } catch (error) {
-      message.textContent = errorMessage(error);
+      const messageText = errorMessage(error);
+      message.textContent = messageText;
+      el("operation-status").textContent = "Не вдалося зберегти: " + messageText;
     } finally {
       busy = false;
       for (const id of ["reimport", "module", "install", "wow-path"]) el(id).disabled = false;
@@ -389,6 +402,7 @@ async function detail(id, button) {
       el("inspector-heading").tabIndex = -1;
       el("inspector-heading").focus();
     }
+    return row;
   } catch (error) {
     if (seq === detailSeq) el("selected").replaceChildren(make("p", errorMessage(error)));
   }
