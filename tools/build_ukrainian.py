@@ -691,9 +691,10 @@ def build_gossip(classicua, spoken, destination):
     forms = read_classicua_inflections(classicua, view.state.source.files)
     from tools.spoken_text_pack import gossip_payload, render_spoken_text_pack
 
-    from tools.gossip_coverage import read_pinned_corpus
-    text_lines = gossip_payload(
-        view.rows.values(), corpus_lines=read_pinned_corpus(spoken, view.state.inventory.revision))
+    # Inventory has already validated and loaded the full pinned corpus.
+    # Synthetic test inventories intentionally have no corpus and export no
+    # additional proof beyond their own scoped rows.
+    text_lines = gossip_payload(view.rows.values(), corpus_lines=getattr(view, "corpus_lines", None))
     entries = template_entries(
         None, render_gossip_lua(gossip, inflections=forms), module=GOSSIP_MODULE,
         text_pack_lua=render_spoken_text_pack(lines=text_lines))
