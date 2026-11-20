@@ -58,9 +58,57 @@ const fixture = {
     review_id: "candidate", review_kind: "quest", eligibility: "selectable"}],
 };
 
+test("Gossip selects through the shared editor and does not build on save", async () => {
+  const row = {...fixture, type: "gossip", id: "gossip:42:4", npc_id: 42, review_binding: "pin",
+    candidates: [{text: "Вітаю.", sha256: "a", provider: "classicua"},
+                 {text: "Привіт.", sha256: "b", provider: "classicua"}]};
+  const b = browser((action, body) => action === "detail" ? row : action === "choose_gossip" ?
+    {module: gossip, build: "review_saved"} : listing(body.module));
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  await b.run('detail("gossip:42:4")');
+  const nodes = b.el("selected").all();
+  const field = nodes.find(node => node.tag === "textarea");
+  const options = nodes.find(node => node.tag === "select");
+  assert.equal(field.value, "");
+  options.value = "b";
+  options.events.change();
+  assert.equal(field.value, "Привіт.");
+  nodes.find(node => node.textContent === "Зберегти").events.click();
+  await flush();
+  assert.equal(b.requests.find(request => request.action === "choose_gossip").candidate, "b");
+  assert.equal(b.requests.some(request => request.action === "import_ready"), false);
+});
+
+test("Gossip uses the selected module and retains the shared path during operation", async () => {
+  let complete;
+  const pending = new Promise(resolve => { complete = resolve; });
+  const b = browser((action, body) => action === "install" ? pending :
+    action === "import_ready" ? {module: gossip, sha256: "digest", summary: {gossip: {included: 1}}} :
+    listing(body.module));
+  await flush();
+  b.el("wow-path").value = "D:\\Games\\Custom WoW\\";
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  await b.run("reimport()");
+  assert.equal(b.requests.find(r => r.action === "import_ready").module, gossip);
+  b.el("install").events.click();
+  b.el("install").events.click();
+  await flush();
+  assert.equal(b.requests.filter(r => r.action === "install").length, 1);
+  assert.equal(b.requests.find(r => r.action === "install").wow_path, b.el("wow-path").value);
+  assert.equal(b.el("module").disabled, true);
+  complete({module: gossip, installed: [gossip], replaced: [], addons: "fixture"});
+  await flush();
+  assert.equal(b.el("module").disabled, false);
+});
+
 function listing(module) {
   return {items: [], total: 100, build: null, summary: module === quest ?
-    {quest: {total: 100, ready: 1}} : {gossip: {total: 70}}};
+    {quest: {total: 100, ready: 1}} : {gossip: {total: 70, quest_imported: 0, quest_problem: 70}}};
 }
 
 test("worker timeout shows Ukrainian recovery instructions and no success summary", async () => {
@@ -120,8 +168,8 @@ test("switching module clears detail, resets pagination, and ignores stale respo
   assert.equal(b.requests.at(-1).module, gossip);
   assert.equal(b.requests.at(-1).offset, 0);
   assert.equal(b.el("selected").childElementCount, 0);
-  assert.equal(b.el("metrics").children[0].children[1].textContent, "70");
-  assert.match(b.el("reimport").textContent, /Gossip/);
+  assert.equal(b.el("metrics").children[2].children[1].textContent, "70");
+  assert.equal(b.el("reimport").textContent, "Створити модуль");
 });
 
 test("obsolete search and detail requests do not keep the loading indicator active", async () => {
@@ -146,10 +194,10 @@ test("obsolete search and detail requests do not keep the loading indicator acti
   resolveDetail(fixture);
   await Promise.all([oldList, oldDetail]);
   assert.equal(b.el("selected").childElementCount, 0);
-  assert.equal(b.el("metrics").children[0].children[1].textContent, "70");
+  assert.equal(b.el("metrics").children[2].children[1].textContent, "70");
 });
 
-test("Install button submits selected module and WoW root without a rebuild", async () => {
+test("Install submits a single selected-module build-and-install request", async () => {
   const b = browser((action, body) => {
     if (action === "install") return {
       module: quest, installed: ["Spoken_Ukrainian", quest],
@@ -294,7 +342,7 @@ test("Quest bulk button imports all ready records and skips confirmation modal",
   assert.equal(imports[0].module, quest);
   assert.equal(imports[0].confirm, true);
   assert.equal(b.el("operation-status").textContent,
-    "Модуль Quest створено. Архів містить попередні переклади та всі готові зміни.");
+    "Модуль створено.");
 });
 
 test("Quest summary and filters show only imported, ready and problematic buckets", async () => {
@@ -306,8 +354,6 @@ test("Quest summary and filters show only imported, ready and problematic bucket
     } : listing(body.module);
   });
   await flush();
-  assert.equal(b.el("quest-filter-control").hidden, false);
-  assert.equal(b.el("filter-control").hidden, true);
   assert.equal(b.el("metrics").children.length, 3);
   assert.deepEqual(b.el("metrics").children.map(x => x.children[0].textContent),
     ["Імпортовано", "Готові до імпорту", "Проблемні"]);
@@ -321,8 +367,7 @@ test("Quest summary and filters show only imported, ready and problematic bucket
   b.el("module").value = gossip;
   b.el("module").events.change();
   await flush();
-  assert.equal(b.el("quest-filter-control").hidden, true);
-  assert.equal(b.el("filter-control").hidden, false);
+  assert.equal(b.el("quest-filter").value, "all");
 });
 
 test("Quest missing translation can be entered without reviewer identity", async () => {

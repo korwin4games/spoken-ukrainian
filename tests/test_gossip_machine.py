@@ -191,7 +191,7 @@ class GossipMachineTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'conflict'):
                 stale.run(rows)
         with connection(self.db) as db:
-            self.assertEqual(db.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0], 9)
+            self.assertEqual(db.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0], 10)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM ledger_documents').fetchone()[0], 1)
 
     def test_changed_revision_pending_update_and_revert_stays_pending(self):
@@ -283,60 +283,6 @@ class GossipMachineTests(unittest.TestCase):
         self.assertFalse(reused['new_snapshot'])
         self.assertEqual(latest_successful_build(self.db)['snapshot_id'], first['snapshot_id'])
 
-    def test_actual_zip_and_statistics_repeated_build_idempotent(self):
-        state = self.state
-        state.translation_action = Mock(return_value={'report': {'total_spoken_records': 1,
-            'machine_one_to_one_imported': 1, 'human_reviewed_imported_total': 0}})
-        state.machine_imports = SimpleNamespace(file=SimpleNamespace(data={'versions': [], 'imports': []}))
-        state.translations = state.machine_imports
-        # Preview provenance uses an explicit selected Quest version.
-        def preview(_state, selected):
-            selected.append({'target_id': 'q:1:accept', 'provider': 'manual', 'ukrainian_text': 'Квест.'})
-            return {1: {'accept': {'text': 'Квест.', 'reviewed': True}}}, 1, 0
-        # A second NPC/hash is intentionally ambiguous and must not be serialized.
-        lines = [corpus(), corpus(43, 'Untranslated example.'), corpus(44, 'Unknown.', npcType='object'),
-                 corpus(45, 'Reviewed greeting.')]
-        with enable_sqlite(self.db):
-            groups, _ = discover_groups(lines, builder.local_gossip_texts(state), SP, REV)
-            group = next(g for g in groups if g['contexts'][0]['npc_id'] == 45)
-            manual = GossipReviews(groups, SP, REV, self.allowed / 'gossip-translation-reviews.json', self.allowed)
-            manual.propose([{k: group[k] for k in ('group_id', 'english_sha256', 'context_sha256')} |
-                            {'ukrainian_text': 'Ручний перевірений текст.'}], 'manual')
-            manual.decide(manual.file.data['versions'][0]['id'], 'approved', 'human', {k: True for k in CHECKS})
-            manual.import_approved()
-            human_history = deepcopy(manual.file.data)
-        write_zip = builder.write_zip
-        with enable_sqlite(self.db), patch.object(builder, 'validate_source_paths'), patch.object(
-                builder, 'build_state', return_value=state), patch.object(builder, 'current_quest_texts', side_effect=preview), patch.object(
-                builder, 'unknown_faction_import_counts', return_value={}), patch.object(builder, 'read_classicua_inflections', return_value={}), patch.object(
-                builder, 'local_gossip_titles', return_value={}), patch.object(builder, 'import_reason_for_quest', return_value={}), patch(
-                'tools.gossip_coverage.read_pinned_corpus', return_value=lines), patch(
-                'tools.gossip_translation_review.load_reviewed_gossip',
-                side_effect=lambda state, existing, spoken: manual.imported_by_npc(existing)), patch.object(
-                builder, 'DIST', self.root / 'dist'), patch.object(builder, 'write_zip',
-                    side_effect=lambda entries, destination: write_zip(entries, self.root / 'dist/test.zip')):
-            first = builder.build('/unused/ua', '/unused/spoken', module=builder.GOSSIP_MODULE)
-            with ZipFile(first['artifact']) as archive:
-                text = archive.read('Spoken_Gossip_UA/GossipTranslations.lua').decode('utf-8')
-                self.assertIn(UK, text)
-                self.assertIn('[42]', text)
-                self.assertNotIn('[43]', text)
-                self.assertNotIn('[44]', text)
-                self.assertIn('Ручний перевірений текст.', text)
-                self.assertIn('[45]', text)
-            again = builder.build('/unused/ua', '/unused/spoken', module=builder.GOSSIP_MODULE)
-            self.assertEqual(first['sha256'], again['sha256'])
-            self.assertFalse(again['import_inventory']['new_snapshot'])
-            report = latest_successful_build(self.db, builder.GOSSIP_MODULE)
-            self.assertEqual(report['categories']['gossip'], 2)
-            gossip = next(r for r in report['rows'] if r['category'] == 'gossip' and r['source'] == 'classicua')
-            self.assertEqual(gossip['route'], 'machine_1to1')
-            self.assertEqual(gossip['unique_translation_texts'], 1)
-            recorded = read_recorded_imports(self.db)['recorded_imports']
-            self.assertEqual(recorded['categories']['gossip'], 2)
-            self.assertEqual(recorded['gossip_counts']['reviewed_english_groups'], 1)
-            self.assertEqual(report['gossip_counts']['distinct_npc_ids'], 2)
-            self.assertEqual(manual.file.data, human_history)
 
     def test_ui_post_authentication_filter_and_refresh(self):
         from tools.translation_manager import ManagerUI

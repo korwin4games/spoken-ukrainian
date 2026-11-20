@@ -36,7 +36,7 @@ class InstallError(ValueError):
     """Invalid/untrusted input or blocked installation."""
 
 
-def validate_archive(archive: Path):
+def validate_archive(archive: Path, *, expected_sha=None):
     """Return verified members only. Never extract a ZIP using extractall()."""
     archive = archive.expanduser().absolute()
     checksum = archive.with_suffix(".zip.sha256")
@@ -51,7 +51,7 @@ def validate_archive(archive: Path):
         raise InstallError("invalid_sha256_sidecar")
     archive_bytes = archive.read_bytes()
     actual = sha256(archive_bytes).hexdigest()
-    if actual != match.group(1):
+    if actual != match.group(1) or expected_sha is not None and actual != expected_sha:
         raise InstallError("archive_checksum_mismatch")
 
     with ZipFile(BytesIO(archive_bytes)) as z:
@@ -120,8 +120,8 @@ def validate_addons_dir(addons: Path, modules=("Spoken_Quest_UA",)):
     return addons
 
 
-def install(archive: Path, addons: Path, *, dry_run=False, expected_module=None):
-    entries = validate_archive(Path(archive))
+def install(archive: Path, addons: Path, *, dry_run=False, expected_module=None, expected_sha=None):
+    entries = validate_archive(Path(archive), expected_sha=expected_sha)
     expected_names = tuple(dict.fromkeys(member.split("/")[0] for member in entries))
     if expected_module is not None and expected_module not in expected_names:
         raise InstallError("archive_module_mismatch")

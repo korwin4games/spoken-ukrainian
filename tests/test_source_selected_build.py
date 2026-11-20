@@ -1,118 +1,90 @@
-"""Runtime build bridge: active source choices override only exact pinned NPC text."""
+"""The supported Gossip build reads current local choices and preserves legacy records."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
+from zipfile import ZipFile
 import unittest
 
-from adapters.sqlite_translation_store import enable_sqlite
-from adapters.source_revision_store import SourceReviewStore, CHECKS
+from adapters.crosswalk import digest
+from adapters.import_statistics import latest_successful_build
+from adapters.sqlite_translation_store import connection, enable_sqlite
+from tools import build_ukrainian as builder, gossip_simple
 from tools.gossip_coverage import classicua_hash
-from tools.source_revision_review import gossip_contexts
-from tools import build_ukrainian as builder
-from tools import gossip_machine_import
+from tools.manager_inventory import ModuleInventory, latest_units
 
 
-class SourceSelectedBuildTests(unittest.TestCase):
-    def test_exact_human_selected_source_overrides_default_in_private_zip(self):
-        self.build_gossip_case(conflict=False)
+class FreshGossipBuildTests(unittest.TestCase):
+    def test_new_choices_rebuild_idempotently_without_legacy_imports(self):
+        english = "Hello traveler."
+        hashed = classicua_hash(english)
+        lines = [{"lineId": "g:test", "source": "gossip", "npcId": npc,
+                  "npcType": "creature", "originalText": english} for npc in (42, 43)]
+        leaf = SimpleNamespace(origin=SimpleNamespace(file="synthetic.lua", line=4))
+        state = SimpleNamespace(
+            inventory=SimpleNamespace(revision="a" * 40, contexts={"g:test": [
+                {"npc_id": npc, "npc_type": "creature", "wording_sha256": digest(english)}
+                for npc in (42, 43)]}),
+            source=SimpleNamespace(revision="b" * 40, files={}),
+            dataset=SimpleNamespace(records={"gossip": {
+                scope: SimpleNamespace(fields={(hashed,): leaf}) for scope in (42, "!common")}}))
+        lookup = {"byNpc": {42: {hashed: "Перша версія."}}, "common": {hashed: "Спільна версія."}}
+        audit = {(42, hashed): {"exact_hash_sources": [{"scope": 42}, {"scope": "!common"}]},
+                 (43, hashed): {"template_candidates": [{"source": {"english": "Another original."}}]}}
+        with TemporaryDirectory() as temp:
+            db_path, archive = Path(temp) / "test.sqlite3", Path(temp) / "test.zip"
 
-    def test_conflicting_npc_does_not_remove_shared_common(self):
-        for manager in (False, True):
-            with self.subTest(manager=manager):
-                self.build_gossip_case(conflict=True, manager=manager)
+            def view(*_args, **_kwargs):
+                with connection(db_path) as db:
+                    units, build = latest_units(db, archive, "a" * 40, "b" * 40, builder.GOSSIP_MODULE)
+                return ModuleInventory(gossip_simple.rows(state, lines, db_path, units, audit),
+                                       build, units, builder.GOSSIP_MODULE, state)
 
-    def build_gossip_case(self, *, conflict, manager=False):
-        source = [{"source": "gossip", "npcType": "creature", "npcId": 42,
-                   "npcName": "Synthetic NPC", "originalText": "Hello traveler."}]
-        source.append(dict(source[0], npcId=43))
-        hashed = classicua_hash("Hello traveler.")
-        skipped = [] if manager else None
-        trusted = gossip_contexts(source)
-        key, proof = next(iter(trusted.items()))
-        with TemporaryDirectory() as tmp:
-            db = Path(tmp) / "translations.sqlite3"
-            store = SourceReviewStore(db)
-            store.ingest({"provider": "another", "revision": "b" * 40,
-                "records": [{"domain": "gossip", "target_id": key[1],
-                    "english_sha256": proof["english_sha256"],
-                    "context_sha256": proof["context_sha256"],
-                    "ukrainian_text": "Альтернативний переклад",
-                    "source_ref": "another:synthetic"}]}, trusted)
-            candidate = store.candidates()[0]
-            store.decide(candidate["id"], "approved", "human",
-                         {k: True for k in CHECKS}, trusted)
-            store.activate(candidate["id"], "human", trusted)
-            state = Mock()
-            state.inventory.revision = "a" * 40
-            state.source.revision = "b" * 40
-            state.inventory.contexts = {}
-            state.translation_action.return_value = {"report": {
-                "total_spoken_records": 1, "machine_one_to_one_imported": 1,
-                "human_reviewed_imported_total": 0}}
-            preview = {1: {"accept": {"text": "Синтетичний квест", "reviewed": False}}}
-            captured = {}
-            def write_zip(files, destination):
-                captured.update(files)
-                return Path("dist/synthetic.zip"), "c" * 64
-            with enable_sqlite(db), patch.object(
-                gossip_machine_import,
-                "GossipMachineImport", return_value=Mock(
-                    build_lookup=Mock(return_value={"byNpc": {}, "common": {
-                        classicua_hash("Hello traveler."): "Стара версія"}}),
-                    page=Mock(return_value={}))), patch.object(
-                builder, "validate_source_paths"), patch.object(
-                builder, "build_state", return_value=state), patch.object(
-                builder, "current_quest_texts", return_value=(preview, 1, 0)), patch.object(
-                builder, "unknown_faction_import_counts",
-                return_value={"machine_provisional": 0, "human_reviewed": 0}), patch.object(
-                builder, "read_classicua_inflections", return_value={}), patch.object(
-                builder, "local_gossip_titles",
-                return_value={"horde": {}, "alliance": {}}), patch.object(
-                builder, "local_gossip_texts", return_value={
-                    "byNpc": {}, "common": {classicua_hash("Hello traveler."): "Стара версія"}}), patch(
-                "tools.gossip_translation_review.load_reviewed_gossip",
-                return_value={42: {hashed: "Раніше схвалений переклад"}} if conflict else {}), patch(
-                "tools.gossip_coverage.read_pinned_corpus", return_value=source), patch.object(
-                builder, "import_reason_for_quest", return_value={"quest_id": 97279}), patch.object(
-                builder, "write_zip", side_effect=write_zip), patch(
-                "tools.import_build_inventory.collect_build_rows", return_value=[]) as collect:
-                result = builder.build(Path("/unused/classicua"), Path("/unused/spoken"), module=builder.GOSSIP_MODULE, skipped=skipped)
-            lua = captured["Spoken_Gossip_UA/GossipTranslations.lua"].decode("utf-8")
-            if conflict:
-                from lua_runtime import run_lua
-                self.assertNotIn("Альтернативний переклад", lua)
-                self.assertNotIn("Раніше схвалений переклад", lua)
-                self.assertEqual(result["explicit_source_gossip_selections"], 0)
-                if manager:
-                    self.assertEqual(skipped, [(key[1], "conflicting_human_reviewed_gossip_selection")])
-                self.assertEqual(collect.call_args.kwargs["excluded_gossip"], {(42, hashed): "reviewed+source_selected"})
-                run_lua(lua + r'''
-_G = _G or _ENV
-local npc = 42
-function UnitGUID() return "Creature-0-1-2-3-" .. npc .. "-00001" end
-function CreateFrame() return {RegisterEvent = function() end, SetScript = function() end} end
-function hooksecurefunc(tbl, key, cb)
-    local original = tbl[key]
-    tbl[key] = function(...) original(...); cb(...) end
-end
-function SpokenUkrainian:ExpandQuestText(text) return text end
-GossipOptionButtonMixin = {Setup = function(widget, info) widget:SetText(info.name) end}
-''' + captured["Spoken_Gossip_UA/GossipFrame.lua"].decode("utf-8") + r'''
-local widget = {GetText = function(self) return self.text end,
-                SetText = function(self, text) self.text = text end}
-local option = {name = "Hello traveler."}
-GossipOptionButtonMixin.Setup(widget, option)
-assert(widget.text == "Hello traveler.")
-npc = 43
-GossipOptionButtonMixin.Setup(widget, option)
-assert(widget.text == "Стара версія")
-''')
-            else:
-                self.assertIn("Альтернативний переклад", lua)
-                self.assertEqual(result["explicit_source_gossip_selections"], 1)
-            self.assertIn("Стара версія", lua)
+            with connection(db_path) as db:
+                db.execute("INSERT INTO ledger_documents(ledger_name,payload,revision) VALUES (?,?,1)",
+                           ("gossip-translation-reviews.json", '{"historic":true}'))
+                db.execute("""INSERT INTO quest_simple_choices(moment,evidence,text,text_sha256,source)
+                    VALUES ('q:7:accept','proof','Quest','hash','manual')""")
+            with enable_sqlite(db_path), patch.object(builder, "DIST", Path(temp)), patch.object(
+                    builder, "local_gossip_texts", return_value=lookup), patch.object(
+                    builder, "read_classicua_inflections", return_value={}), patch(
+                    "tools.manager_inventory.load_inventory", side_effect=view):
+                rows = view().rows
+                uncertain = rows[f"gossip:43:{hashed}"]
+                row = rows[f"gossip:42:{hashed}"]
+                self.assertTrue(row["needs_choice"])
+                self.assertEqual(len(row["candidates"]), 2)
+                self.assertEqual(uncertain["candidates"], [])
+                self.assertFalse(uncertain["ready_to_import"])
+                empty = builder.build(temp, temp, module=builder.GOSSIP_MODULE, destination=archive)
+                self.assertEqual(empty["gossip_text_records"]["npc_hashes"], 0)
+                old_zip = archive.read_bytes()
+                with connection(db_path) as db:
+                    gossip_simple.apply_choice("choose_gossip", {"binding": row["review_binding"],
+                        "candidate": row["candidates"][1]["sha256"]}, row, state, db_path, db=db)
+                self.assertEqual(archive.read_bytes(), old_zip)
+                self.assertTrue(view().rows[row["id"]]["ready_to_import"])
+                first = builder.build(temp, temp, module=builder.GOSSIP_MODULE, destination=archive)
+                with ZipFile(archive) as zip_file:
+                    lua = zip_file.read("Spoken_Gossip_UA/GossipTranslations.lua").decode()
+                self.assertIn("Спільна версія.", lua)
+                self.assertIn("[42]", lua)
+                self.assertNotIn("[43]", lua)
+                self.assertFalse(view().rows[row["id"]]["ready_to_import"])
+                self.assertIsNotNone(view().rows[row["id"]]["built"])
+                second = builder.build(temp, temp, module=builder.GOSSIP_MODULE, destination=archive)
+                self.assertEqual(first["sha256"], second["sha256"])
+                self.assertEqual(latest_successful_build(db_path, builder.GOSSIP_MODULE)["categories"]["gossip"], 1)
+            with connection(db_path) as db:
+                self.assertEqual(db.execute("SELECT text FROM quest_simple_choices").fetchone()[0], "Quest")
+                self.assertEqual(db.execute("SELECT payload FROM ledger_documents").fetchone()[0],
+                                 '{"historic":true}')
 
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_placeholder_and_gender_branches(self):
+        original = "$N, $C of the $R.$B$G Brother:Sister;"
+        rendered = gossip_simple.runtime_text(original, "$N, $C, $R.$B$G Брате:Сестро;")
+        self.assertIn("{Ім'я}".lower(), rendered.lower())
+        self.assertIn("\n{стать:Брате:Сестро}", rendered)
+        for bad in ("Брате.", "$N, $C, $R.$B$G Брате: ;", "$N, $C, $R.$B$G $N:Сестро;"):
+            with self.assertRaisesRegex(ValueError, "manager_invalid_translation_format"):
+                gossip_simple.runtime_text(original, bad)

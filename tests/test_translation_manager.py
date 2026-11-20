@@ -88,7 +88,7 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manager_install_windows_path_on_non_windows"):
             wow_addons_destination(windows, platform="posix")
 
-    def test_manager_install_existing_zip_creates_backup_and_preserves_upstream(self):
+    def test_manager_installs_newly_built_zip_with_backup_and_preserves_upstream(self):
         from tools.install_addon import install
         wow_root = self.root / "World of Warcraft"
         addons = wow_root / "_forever_" / "Interface" / "AddOns"
@@ -111,8 +111,21 @@ class ManagerTests(unittest.TestCase):
                    "text_sha256": sha256("Вітаю".encode()).hexdigest()}])
         manager = ManagerUI(*self.paths, self.db)
         self.addCleanup(manager.close)
-        result = manager.action("install", {
-            "module": MODULE, "wow_path": str(wow_root) + os.sep})
+        other = addons / builder.GOSSIP_MODULE
+        other.mkdir()
+        (other / "keep.lua").write_text("keep", encoding="utf-8")
+        def built(*_args, **_kwargs):
+            from tools.translation_manager import manager_lock
+            with self.assertRaisesRegex(ValueError, "manager_reimport_already_running"):
+                with manager_lock(builder.DIST):
+                    self.fail("Concurrent operation acquired the manager lock")
+            return {"sha256": digest}
+
+        with patch.object(manager, "_run_worker", side_effect=built) as worker:
+            result = manager.action("install", {
+                "module": MODULE, "wow_path": str(wow_root) + os.sep})
+        self.assertEqual(worker.call_args.args[:2], ("import_ready", MODULE))
+        self.assertEqual((other / "keep.lua").read_text(), "keep")
         self.assertEqual(result["addons"], str(addons))
         self.assertEqual(set(result["installed"]), {"Spoken_Ukrainian", MODULE})
         self.assertEqual(set(result["replaced"]), {"Spoken_Ukrainian", MODULE})
@@ -125,16 +138,16 @@ class ManagerTests(unittest.TestCase):
         for name in ("Spoken", "Spoken_Quests"):
             self.assertEqual((addons / name / (name + ".toc")).read_text(), "upstream")
 
-    def test_install_requires_tracked_zip_and_never_builds_implicitly(self):
+    def test_install_build_failure_never_changes_addons(self):
         wow_root = self.root / "World of Warcraft"
         addons = wow_root / "_forever_" / "Interface" / "AddOns"
         addons.mkdir(parents=True)
         manager = ManagerUI(*self.paths, self.db)
         self.addCleanup(manager.close)
-        with patch("tools.translation_manager.subprocess.run") as worker:
-            with self.assertRaisesRegex(ValueError, "manager_install_module_not_built"):
-                manager.action("install", {"module": MODULE, "wow_path": str(wow_root)})
-            worker.assert_not_called()
+        with patch.object(manager, "_run_worker", side_effect=ValueError("fixture_build_failed")) as worker:
+            with self.assertRaisesRegex(ValueError, "fixture_build_failed"):
+                manager.action("install", {"module": builder.GOSSIP_MODULE, "wow_path": str(wow_root)})
+            self.assertEqual(worker.call_args.args[:2], ("import_ready", builder.GOSSIP_MODULE))
         self.assertEqual(list(addons.iterdir()), [])
         with self.assertRaisesRegex(ValueError, "manager_invalid_options"):
             manager.action("install", {
@@ -155,8 +168,9 @@ class ManagerTests(unittest.TestCase):
         archive.write_bytes(archive.read_bytes() + b"corruption")
         manager = ManagerUI(*self.paths, self.db)
         self.addCleanup(manager.close)
-        with self.assertRaisesRegex(ValueError, "manager_install_archive_outdated"):
-            manager.action("install", {"module": MODULE, "wow_path": str(wow_root)})
+        with patch.object(manager, "_run_worker", return_value={"sha256": digest}):
+            with self.assertRaisesRegex(ValueError, "manager_install_archive_outdated"):
+                manager.action("install", {"module": MODULE, "wow_path": str(wow_root)})
         self.assertEqual(list(addons.iterdir()), [])
 
     def test_inventory_search_filters_pages_and_missing_details(self):
@@ -203,90 +217,6 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(self.view.page(status="multiple_originals", query="first crossing")["total"], 1)
         self.assertEqual(self.view.page(status="mapping_conflict")["total"], 2)
 
-    def test_catalog_joins_verified_placements_to_effective_common_unit(self):
-        from adapters.crosswalk import digest
-        from adapters.source_revision_store import sha
-        from adapters.translation_agent import TranslationAgent, candidate
-        from tools.gossip_coverage import classicua_hash
-        from tools.gossip_translation_review import normalized
-
-        english = "Welcome, $N!"
-        hashed = classicua_hash(english)
-        lines = [
-            {"lineId": "q:42:accept", "source": "accept", "questTitle": "Invented quest"},
-            {"lineId": "g:first", "source": "gossip", "npcId": 3, "npcType": "creature",
-             "npcName": "Guide", "originalText": english},
-            {"lineId": "g:missing", "source": "gossip", "npcId": 4, "npcType": "creature",
-             "npcName": "Visitor", "originalText": "No translation", "text": english},
-            {"lineId": "g:conflict", "source": "gossip", "npcId": 5, "npcType": "creature",
-             "npcName": "Conflicted NPC", "originalText": english},
-        ]
-        empty = {"versions": [], "imports": []}
-        state = SimpleNamespace(
-            allowed_directory=self.root,
-            source=SimpleNamespace(revision="b" * 40, units={}),
-            inventory=SimpleNamespace(revision="a" * 40,
-                targets={r["lineId"]: SimpleNamespace(family="quest" if r["source"] == "accept" else "gossip")
-                         for r in lines},
-                contexts={r["lineId"]: [{"wording_sha256": digest(r.get("originalText", "Hello"))}]
-                          for r in lines}),
-            original_index=SimpleNamespace(original_english={"q:42:accept": "Hello"}),
-            policy=SimpleNamespace(auto_approves_one_to_one=lambda source: False),
-            _hints=[], translation_observations=lambda: [],
-            translations=SimpleNamespace(file=SimpleNamespace(data=empty),
-                                         eligible=lambda *a, **kw: []),
-            machine_imports=SimpleNamespace(file=SimpleNamespace(data=empty)),
-        )
-        placements = [{"npc_id": r["npcId"], "english_hash": classicua_hash(r["originalText"]),
-                       "english_sha256": sha(normalized(r["originalText"])),
-                       "target_id": f"gossip:common:{classicua_hash(r['originalText'])}",
-                       "status": "untranslated" if r["npcId"] == 4 else "eligible"} for r in lines[1:]]
-        self.archive.write_bytes(b"archive")
-        stats = store_successful_build(self.db, artifact_sha256=sha256(b"archive").hexdigest(),
-            spoken_revision="a" * 40, classicua_revision="b" * 40,
-            module=builder.GOSSIP_MODULE,
-            rows=[{"domain": "gossip_common", "unit": f"common:{hashed}", "entity": "common",
-                   "source": "classicua", "route": "agent_verified"},
-                  {"domain": "gossip_excluded", "unit": f"npc:5:{hashed}", "entity": "5",
-                   "source": "reviewed+source_selected", "route": "excluded"}])
-        self.assertEqual(stats["total_text_records"], 1)
-        self.assertEqual(stats["gossip_excluded_npc_hashes"], 1)
-        text = "Вітаю, {ім'я}!"
-        target = f"gossip:common:{hashed}"
-        def assessment(context):
-            return candidate(domain="gossip", target_id=target, provider="classicua",
-                revision="b" * 40, target_revision="a" * 40, original=english + "\n", text=text,
-                context=context, provenance={"source_file": target}, identity=True, rights=True)
-        current = [assessment("one")]
-        TranslationAgent(self.db, lambda: current).run("one", candidate_ids=[current[0]["id"]])
-        inputs = (None, state.source, state.inventory, state.original_index, lines)
-        with patch("tools.manager_inventory.load_source_policy", return_value=state.policy), patch(
-                "tools.review_ui_server.build_state", side_effect=AssertionError("Quest state loaded for Gossip")), patch.object(
-                builder, "local_gossip_texts", return_value={"byNpc": {}, "common": {hashed: text}}), patch(
-                "tools.manager_inventory.GossipMachineImport.inspect", return_value=([], placements, 0, set(), empty)), patch(
-                "tools.translation_agent.evidence", side_effect=lambda *a, **k: current):
-            result = load_inventory(*self.paths, self.db, self.archive, input_loader=lambda: inputs,
-                                    module=builder.GOSSIP_MODULE)
-            current[:] = [assessment("changed")]
-            stale = load_inventory(*self.paths, self.db, self.archive, input_loader=lambda: inputs,
-                                   module=builder.GOSSIP_MODULE)
-        self.assertEqual(result.summary()["gossip"]["included"], 1)
-        self.assertEqual(result.summary()["gossip"]["missing"], 1)
-        self.assertEqual(result.summary()["gossip"]["unverified_alternatives"], 1)
-        self.assertEqual(result.summary()["gossip"]["agent_warnings"], 1)
-        self.assertEqual(result.summary()["gossip"]["conflicts"], 1)
-        self.assertIsNone(result.page(module=builder.GOSSIP_MODULE, filter_by="conflicts")["items"][0]["built"])
-        self.assertEqual(result.summary()["gossip_archive_units"]["common_hashes"], 1)
-        included = result.page(module=builder.GOSSIP_MODULE, filter_by="imported")["items"][0]
-        self.assertFalse(included["recorded"])
-        assessed = result.detail(module=builder.GOSSIP_MODULE, identity=included["id"])["candidates"][0]
-        self.assertIn("{ім'я}", assessed["text"])
-        self.assertEqual(assessed["validation"], "needs_human_review")
-        self.assertFalse(assessed["checks"]["line_breaks"])
-        past = stale.detail(module=builder.GOSSIP_MODULE, identity=included["id"])["candidates"][0]
-        self.assertEqual(past["validation"], "stale")
-        self.assertNotIn("checks", past)
-
     def test_quest_multiple_originals_are_bound_to_their_contexts(self):
         from adapters.crosswalk import digest
         from adapters.spoken.text_index import TextIndex
@@ -303,7 +233,7 @@ class ManagerTests(unittest.TestCase):
         state = LocalReviewState(fixture.dataset, fixture.inventory(), inventory,
             TextIndex({}, (identity,), {}, {identity: texts}), self.root / "decisions.json", self.root)
         with patch("tools.manager_inventory.read_pinned_corpus", return_value=[]), patch(
-                "tools.manager_inventory.GossipMachineImport.inspect") as gossip_inspection, patch(
+                "tools.gossip_machine_import.GossipMachineImport.inspect") as gossip_inspection, patch(
                 "tools.manager_inventory.discover_groups") as gossip_groups, patch(
                 "tools.manager_inventory.gossip_evidence") as gossip_hashes:
             catalog = load_inventory(*self.paths, self.db, self.archive, state=state)
@@ -407,7 +337,7 @@ class ManagerTests(unittest.TestCase):
                          gossip["snapshot_id"])
         self.assertEqual(latest_successful_build(self.db)["snapshot_id"], legacy["snapshot_id"])
 
-    def test_import_ready_uses_incremental_builder_only_for_quest(self):
+    def test_import_ready_uses_shared_worker_for_both_modules(self):
         from tools.translation_manager import reimport
         with patch.object(builder, "build", side_effect=self.fake_build) as build, patch(
                 "tools.manager_inventory.load_inventory", return_value=self.view):
@@ -416,9 +346,12 @@ class ManagerTests(unittest.TestCase):
         self.assertTrue(build.call_args.kwargs["incremental"])
         self.assertEqual(result["agent"], {"eligible": 0, "skipped": 0, "reasons": []})
         self.assertFalse(self.gossip_archive.exists())
-        with self.assertRaisesRegex(ValueError, "manager_invalid_options"):
-            reimport(*self.paths, self.db, module=builder.GOSSIP_MODULE,
-                     confirm=True, import_ready=True)
+        with patch.object(builder, "build", side_effect=self.fake_build) as build, patch(
+                "tools.manager_inventory.load_inventory", return_value=self.view):
+            result = reimport(*self.paths, self.db, module=builder.GOSSIP_MODULE,
+                              confirm=True, import_ready=True)
+        self.assertEqual(result["module"], builder.GOSSIP_MODULE)
+        self.assertEqual(build.call_args.kwargs["module"], builder.GOSSIP_MODULE)
         with self.assertRaisesRegex(ValueError, "manager_invalid_options"):
             reimport(*self.paths, self.db, confirm=True,
                      reset=True, import_ready=True)

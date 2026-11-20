@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build a private local-test ZIP for one Ukrainian localization addon.
 
-ALWAYS re-audits pinned ClassicUA/Spoken and runs the explicit ClassicUA 1:1
-import action before packaging. Generated Ukrainian translations are in ignored
+Re-audits pinned ClassicUA/Spoken before packaging local selections or running
+the full Quest import. Generated Ukrainian translations are in ignored
 dist/ only. Provisional text is for an opt-in, independent quest preview panel,
 NOT the official audio-gated Spoken narrator/captions and NOT a release pack.
 """
@@ -649,15 +649,50 @@ def local_test_state(classicua, spoken):
         ROOT / "config/translation_sources.json")
 
 
+def build_gossip(classicua, spoken, destination):
+    from adapters.import_statistics import store_successful_build
+    from adapters.source_revision_store import sha
+    from adapters.sqlite_translation_store import DB_ENV, default_db_path
+    from tools.manager_inventory import load_inventory
+
+    db_path = Path(os.environ.get(DB_ENV) or default_db_path())
+    archive = ARCHIVES[GOSSIP_MODULE] if destination is None else destination
+    view = load_inventory(classicua, spoken, db_path, archive, module=GOSSIP_MODULE)
+    gossip = {"byNpc": {}, "common": {}}
+    units = []
+    for row in view.rows.values():
+        selection = row["selection"]
+        if row["status"] == "stale":
+            raise ValueError("manager_review_context_blocked")
+        if selection is None:
+            continue
+        npc, hashed = row["npc_id"], row["english_hash"]
+        gossip["byNpc"].setdefault(npc, {})[hashed] = selection["rendered"]
+        units.append({"domain": "gossip", "unit": f"npc:{npc}:{hashed}", "entity": str(npc),
+                      "source": selection["source"], "route": "user_selected",
+                      "text_sha256": sha(selection["rendered"])})
+    forms = read_classicua_inflections(classicua, view.state.source.files)
+    entries = template_entries(None, render_gossip_lua(gossip, inflections=forms), module=GOSSIP_MODULE)
+    artifact, digest = write_zip(entries, archive)
+    imported = store_successful_build(
+        db_path, artifact_sha256=digest, module=GOSSIP_MODULE, rows=units,
+        spoken_revision=view.state.inventory.revision, classicua_revision=view.state.source.revision)
+    return {"artifact": artifact, "sha256": digest, "import_inventory": imported,
+            "gossip_text_records": {"npc_ids": len(gossip["byNpc"]), "npc_hashes": len(units),
+                                    "common_hashes": 0}}
+
+
 def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare=None,
           destination=None, skipped=None, incremental=False):
-    """Auto-import is mandatory; there is no build-without-import switch."""
+    """Build one private addon using its pinned module-specific selection rules."""
     if module not in MODULE_DOMAINS:
         raise ValueError("manager_unknown_module")
     is_quest = module == QUEST_MODULE
-    if incremental and not is_quest:
-        raise ValueError("manager_incremental_quest_only")
     classicua, spoken = Path(classicua), Path(spoken)
+    if not is_quest:
+        if before_import is not None:
+            raise ValueError("manager_invalid_review_request")
+        return build_gossip(classicua, spoken, destination)
     state = local_test_state(classicua, spoken)
     previous, ready = {}, set()
     if incremental:
@@ -711,8 +746,7 @@ def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare
     forms = read_classicua_inflections(classicua, state.source.files)
     titles = local_gossip_titles(state) if is_quest else {}
     gossip, reviewed_gossip, selected_gossip, excluded_gossip, source_proofs, gossip_page = (
-        gossip_build_data(state, spoken, db_path, agent_rows, skipped) if not is_quest
-        else ({"byNpc": {}, "common": {}}, {}, [], {}, {}, {}))
+        {"byNpc": {}, "common": {}}, {}, [], {}, {}, {})
     entries = template_entries(
         render_quest_lua(preview, state.inventory.revision, forms, titles) if is_quest else None,
         render_gossip_lua(gossip, excluded=excluded_gossip, inflections=forms) if not is_quest else None,
@@ -759,65 +793,6 @@ def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare
     }
 
 
-def gossip_build_data(state, spoken, db_path, agent_rows, skipped):
-    original_gossip = local_gossip_texts(state)
-    from tools.gossip_machine_import import GossipMachineImport
-    gossip_machine = GossipMachineImport(state, spoken)
-    gossip_machine.run()
-    gossip = gossip_machine.build_lookup()
-    for row in agent_rows:
-        if row["domain"] == "gossip":
-            _, scope, hashed = row["target_id"].split(":")
-            dest = gossip["common"] if scope == "common" else gossip["byNpc"].setdefault(int(scope), {})
-            dest[int(hashed)] = row["text"]
-    # Human imports retain their existing queue/evidence and override machine text.
-    from tools.gossip_translation_review import load_reviewed_gossip
-    reviewed_gossip = load_reviewed_gossip(state, original_gossip, spoken)
-    for npc_id, rows in reviewed_gossip.items():
-        for digest, text in rows.items():
-            gossip["byNpc"].setdefault(npc_id, {})[digest] = text
-    # Source Review selections override provider priority only when explicitly
-    # human-approved AND scoped to an exact pinned Spoken NPC/English hash.
-    # They never override a second, separately imported human Gossip decision
-    # without first resolving that conflict in the review ledger.
-    selected_gossip = []
-    excluded_gossip = {}
-    source_proofs = {}
-    if db_path:
-        from adapters.source_revision_store import SourceReviewStore
-        from tools.source_revision_review import gossip_contexts
-        from tools.gossip_coverage import read_pinned_corpus
-        source_proofs = gossip_contexts(read_pinned_corpus(spoken, state.inventory.revision))
-        source_choices = SourceReviewStore(db_path).active(source_proofs, domain="gossip", skipped=skipped)
-        for selection in source_choices:
-            match = re.fullmatch(r"gossip:([1-9][0-9]*):([1-9][0-9]*)",
-                                 selection["target_id"])
-            if match is None:
-                raise ValueError("source_selection_not_exact_npc_gossip")
-            npc_id, text_hash = map(int, match.groups())
-            existing_reviewed = reviewed_gossip.get(npc_id, {}).get(text_hash)
-            if (existing_reviewed is not None
-                    and existing_reviewed != selection["ukrainian_text"]):
-                if skipped is not None:
-                    skipped.append((selection["target_id"], "conflicting_human_reviewed_gossip_selection"))
-                remaining = gossip["byNpc"][npc_id]
-                remaining.pop(text_hash)
-                if not remaining:
-                    del gossip["byNpc"][npc_id]
-                excluded_gossip[npc_id, text_hash] = "reviewed+source_selected"
-                continue
-            gossip["byNpc"].setdefault(npc_id, {})[text_hash] = selection["ukrainian_text"]
-            selected_gossip.append(selection)
-        from tools.gossip_machine_import import source_review_targets
-        for target in source_review_targets(db_path):
-            match = re.fullmatch(r"gossip:([1-9][0-9]*):([1-9][0-9]*)", target)
-            if match:
-                npc, hashed = map(int, match.groups())
-                if hashed in gossip["common"] and hashed not in gossip["byNpc"].get(npc, {}):
-                    excluded_gossip.setdefault((npc, hashed), "source_review")
-    return gossip, reviewed_gossip, selected_gossip, excluded_gossip, source_proofs, gossip_machine.page()
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--classicua", type=Path, required=True,
@@ -826,7 +801,7 @@ def main(argv=None):
     parser.add_argument("--spoken", type=Path, required=True,
                         help="Local CLEAN Git checkout at sources.lock.json pinned Spoken commit")
     args = parser.parse_args(argv)
-    print("Spoken Ukrainian local TEST build: running mandatory ClassicUA 1:1 auto-import...",
+    print(f"Spoken Ukrainian local TEST build for {args.module}...",
           flush=True)
     try:
         from adapters.sqlite_translation_store import DB_ENV, default_db_path
@@ -834,7 +809,7 @@ def main(argv=None):
         result = reimport(args.classicua, args.spoken, os.environ.get(DB_ENV) or default_db_path(),
                           module=args.module, confirm=True)
     except (ValueError, OSError, TypeError, KeyError, json.JSONDecodeError) as exc:
-        print("Quest build failed reason=" + _reason(exc), file=sys.stderr)
+        print("Module build failed reason=" + _reason(exc), file=sys.stderr)
         return 1
     print("Local test ZIP:", result["artifact"])
     print("SHA-256:", result["sha256"])

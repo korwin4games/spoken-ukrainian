@@ -28,7 +28,8 @@ from tools.manager_timing import timing
 
 MODULE = QUEST_MODULE
 MANAGER_WORKER_TIMEOUT_SECONDS = 600
-SOURCE_INPUTS = ("sources.lock.json", "config/translation_sources.json", "tests/stage3_sources.json")
+SOURCE_INPUTS = ("sources.lock.json", "config/translation_sources.json", "tests/stage3_sources.json",
+                 "config/gossip_audit_baselines.json")
 REVIEW_ONLY = ("save_translation", "register_candidate", "review_mapping",
                "withdraw_quest_approval", "save_quest", "choose_quest")
 WORKER_ERRORS = frozenset({
@@ -210,7 +211,7 @@ def promote(db_path, staged, baseline, archive, incoming, archive_baseline, work
             if db_stamp(db) != baseline or (file_stamp(archive), file_stamp(checksum)) != archive_baseline:
                 raise ValueError("manager_state_changed_retry_reimport")
             # Materialize agent child scopes before deleting their parent assessments.
-            scopes = module_scopes(module)
+            scopes = module_scopes(module) if module == QUEST_MODULE else {}
             for table in reversed(scopes):
                 if not reset and table.startswith("source_"):
                     continue
@@ -288,7 +289,9 @@ def reimport(classicua, spoken, db_path, *, module=MODULE, reset=False, dry_run=
         raise ValueError("manager_unknown_module")
     if any(type(v) is not bool for v in (reset, dry_run, confirm, import_ready)):
         raise ValueError("manager_invalid_options")
-    if import_ready and (module != QUEST_MODULE or reset or dry_run or review is not None):
+    if import_ready and (reset or dry_run or review is not None):
+        raise ValueError("manager_invalid_options")
+    if module != QUEST_MODULE and (reset or review is not None):
         raise ValueError("manager_invalid_options")
     if review is not None and (reset or dry_run):
         raise ValueError("manager_invalid_review_request")
@@ -447,7 +450,8 @@ class ManagerUI:
             except (ValueError, OSError):
                 raise ValueError("manager_spoken_checkout_invalid") from None
         return (pin_file, (ROOT / "config/translation_sources.json").read_bytes(),
-                (ROOT / "tests/stage3_sources.json").read_bytes())
+                (ROOT / "tests/stage3_sources.json").read_bytes(),
+                (ROOT / "config/gossip_audit_baselines.json").read_bytes())
 
     def action(self, action, payload):
         module = payload.get("module")
@@ -457,10 +461,10 @@ class ManagerUI:
             with timing("api", module, action):
                 return self._install_module(module, payload)
         mutations = ("confirm_candidate", "choose_quest", "save_quest", *REVIEW_ONLY)
-        if action in ("choose_quest", "save_quest"):
+        if action in ("choose_quest", "save_quest", "choose_gossip", "save_gossip"):
             with timing("api", module, action):
                 try:
-                    return self._save_quest(action, module, payload)
+                    return self._save_selection(action, module, payload)
                 except sqlite3.Error:
                     raise ValueError("manager_reimport_failed") from None
         if action in ("reimport", "import_ready") or action in mutations:
@@ -468,7 +472,7 @@ class ManagerUI:
             options = payload if review is None else {"module": module, "confirm": True}
             allowed = {"module", "reset", "dry_run", "confirm"}
             if (set(options) - allowed or any(type(options[k]) is not bool for k in set(options) - {"module"})
-                    or action == "import_ready" and (module != QUEST_MODULE or
+                    or action == "import_ready" and (
                        options.get("reset") or options.get("dry_run") or not options.get("confirm"))):
                 raise ValueError("manager_invalid_options")
             with timing("api", module, action):
@@ -480,7 +484,7 @@ class ManagerUI:
                 raise ValueError("manager_state_changed_retry_reimport") from None
 
     def _install_module(self, module, payload):
-        """Install the last tracked, checksum-verified ZIP using the existing installer."""
+        """Build the captured module and install that exact verified archive."""
         from zipfile import BadZipFile
         from tools.build_ukrainian import DIST
         from tools.install_addon import InstallError, install
@@ -495,7 +499,9 @@ class ManagerUI:
                 raise ValueError("manager_install_unsafe_wow_path")
         if not target.is_dir():
             raise ValueError("manager_install_addons_directory_missing")
-        with manager_lock(DIST):
+        with manager_workspace(DIST) as workspace:
+            result = self._run_worker("import_ready", module, {"module": module, "confirm": True}, None,
+                                      workspace=workspace)
             archive = ARCHIVES[module]
             with connection(self.db_path) as db:
                 latest = db.execute("""SELECT s.artifact_sha256
@@ -504,10 +510,10 @@ class ManagerUI:
                     WHERE h.module=? AND s.module=?""", (module, module)).fetchone()
             if latest is None:
                 raise ValueError("manager_install_module_not_built")
-            if file_stamp(archive) != latest[0]:
+            if result["sha256"] != latest[0] or file_stamp(archive) != latest[0]:
                 raise ValueError("manager_install_archive_outdated")
             try:
-                installed = install(archive, target, expected_module=module)
+                installed = install(archive, target, expected_module=module, expected_sha=result["sha256"])
             except (InstallError, BadZipFile, OSError, UnicodeError) as exc:
                 reason = str(exc)
                 if reason.startswith("install_failed_rollback_incomplete"):
@@ -529,7 +535,7 @@ class ManagerUI:
         return {"module": module, "installed": installed["installed"],
                 "replaced": installed["replaced"], "backup": str(installed["backup"])
                 if installed["backup"] is not None else None,
-                "addons": str(target)}
+                "addons": str(target), "build_result": result}
 
     def _catalog_stamp(self, module):
         with timing("sqlite_generation", module):
@@ -537,19 +543,19 @@ class ManagerUI:
         legacy = tuple(self._stat(ROOT / "build" / name) for name in MODULE_LEDGERS)
         return database, file_stamp(ARCHIVES[module]), legacy
 
-    def _save_quest(self, action, module, payload):
-        """Store one Quest selection using the verified warm catalog, no source re-audit.
+    def _save_selection(self, action, module, payload):
+        """Store one local selection using the verified warm catalog.
 
         Browser saves are small SQLite transactions. Module builds still use
         the staged worker, checksum verification, and atomic ZIP promotion.
         """
         from tools.build_ukrainian import DIST
-        from tools.quest_simple import apply_choice
+        from tools import gossip_simple, quest_simple
 
         expected = ({"module", "identity", "binding", "candidate", "confirm"}
-                    if action == "choose_quest" else
+                    if action.startswith("choose_") else
                     {"module", "identity", "binding", "text", "confirm"})
-        if (module != QUEST_MODULE or set(payload) != expected
+        if (not action.endswith("_" + MODULE_DOMAINS[module]) or set(payload) != expected
                 or payload.get("confirm") is not True):
             raise ValueError("manager_invalid_review_request")
         if (self.db_path.suffix not in (".sqlite", ".sqlite3", ".db")
@@ -559,7 +565,7 @@ class ManagerUI:
                 (not self.db_path.is_file() or self.db_path.stat().st_nlink != 1)):
             raise ValueError("manager_unsafe_database_path")
         with manager_lock(DIST):
-            # Reuse the same pinned catalog already used to display the Quest.
+            # Reuse the same pinned catalog already used to display the record.
             # Rebuild only if it has genuinely changed since browsing.
             row = self._browse("detail", module, {"module": module, "identity": payload["identity"]})
             with self._lock:
@@ -576,9 +582,10 @@ class ManagerUI:
                         # BEGIN IMMEDIATE. Recheck for commits before this lock.
                         if cached[0] != self._catalog_stamp(module):
                             raise ValueError("manager_state_changed_retry_reimport")
-                        apply_choice(action, {k: v for k, v in payload.items() if k != "module"},
-                                     row, cached[1].state, self.db_path,
-                                     revalidate_inputs=False, db=db)
+                        editor = quest_simple if module == QUEST_MODULE else gossip_simple
+                        editor.apply_choice(action, {k: v for k, v in payload.items() if k != "module"},
+                                            row, cached[1].state, self.db_path,
+                                            revalidate_inputs=False, db=db)
                         if (self.validate_checkouts() != pinned
                                 or source_stamps() != source_before):
                             raise ValueError("manager_source_configuration_changed")
@@ -589,11 +596,11 @@ class ManagerUI:
                 self._cached.clear()
         return {"module": module, "build": "review_saved"}
 
-    def _run_worker(self, action, module, options, review):
+    def _run_worker(self, action, module, options, review, *, workspace=None):
         from tools.build_ukrainian import DIST
 
         # The server owns the lock and staging files, even if subprocess.run kills the child.
-        with manager_workspace(DIST) as workspace:
+        with (manager_workspace(DIST) if workspace is None else nullcontext(workspace)) as workspace:
             flags = {"reset": "--reset-test-data", "dry_run": "--dry-run", "confirm": "--confirm"}
             try:
                 worker = subprocess.run(
