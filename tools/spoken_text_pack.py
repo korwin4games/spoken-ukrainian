@@ -67,7 +67,10 @@ def quest_source_moments(state):
     """
     result = defaultdict(set)
     index = state.original_index
-    for target, item in state.inventory.targets.items():
+    targets = getattr(state.inventory, "targets", None)
+    if not isinstance(targets, dict):
+        return result  # Synthetic/incomplete state: never infer canonical IDs.
+    for target, item in targets.items():
         if item.family != "quest":
             continue
         match = QUEST_ID.fullmatch(target)
