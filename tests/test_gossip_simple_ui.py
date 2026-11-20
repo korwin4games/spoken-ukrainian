@@ -154,3 +154,161 @@ class GossipSimpleUITests(TestCase):
         self.assertEqual(unit["unit"], "npc:68:107874079")
         self.assertEqual((unit["source"], unit["route"]), ("classicua", "pinned_unique"))
         self.assertEqual(unit["text_sha256"], sha("Вітаю."))
+
+    def fuzzy(self, original, english, ukrainian, *, kind="same_template", scope="!common"):
+        from tools.gossip_coverage import classicua_hash
+
+        self.original["originalText"] = original
+        key = classicua_hash(english)
+        self.assertNotEqual(key, TEXT_ID)
+        path = "classic/gossip.lua"
+        self.state.source.files[path] = "c" * 64
+        leaf = SimpleNamespace(origin=SimpleNamespace(file=path, line=19))
+        self.state.dataset.records["gossip"][scope].fields[(key,)] = leaf
+        source = {"scope": scope, "hash": key, "english": english,
+                  "file": path, "file_sha256": "c" * 64,
+                  "revision": self.state.source.revision, "value_line": 19,
+                  "effective": True}
+        audit = {"category": "whitespace_candidate" if kind == "whitespace_candidate"
+                 else "no_evidence"}
+        if kind == "whitespace_candidate":
+            audit["whitespace_candidates"] = [source]
+        else:
+            audit["template_candidates"] = [{"test": kind, "source": source}]
+        lookup = {"byNpc": {}, "common": {key: ukrainian}} if scope == "!common" else {
+            "byNpc": {NPC_ID: {key: ukrainian}}, "common": {}}
+        return self.one(lookup=lookup, audit={(NPC_ID, TEXT_ID): audit})
+
+    def test_same_template_auto_selected_with_distinct_classicua_hash(self):
+        row = self.fuzzy("Greetings, $N!", "Greetings, <name>!", "Вітаю, $N!")
+        self.assertEqual(row["status"], "ready")
+        self.assertTrue(row["ready_to_import"])
+        self.assertTrue(row["selection"]["auto"])
+        self.assertEqual(row["selection"]["match_type"], "same_template")
+        self.assertIn("same_template", row["match_types"])
+        self.assertEqual(row["english_hash"], TEXT_ID)
+        self.assertIn("[!common]", row["selection"]["reference"])
+        self.assertEqual(row["selection"]["rendered"], "Вітаю, {ім'я}!")
+
+    def test_whitespace_auto_selected_with_spoken_runtime_hash(self):
+        row = self.fuzzy("Welcome.\nHave a seat.", "Welcome.  Have a seat.",
+                         "Ласкаво просимо.", kind="whitespace_candidate")
+        self.assertEqual(row["status"], "ready")
+        self.assertEqual(row["selection"]["match_type"], "whitespace_candidate")
+        self.assertIn("whitespace_candidate", row["match_types"])
+        self.assertEqual(row["english_hash"], TEXT_ID)
+        view = ModuleInventory([row], None, {}, module=builder.GOSSIP_MODULE)
+        self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
+                                   match_type="whitespace_candidate")["total"], 1)
+        self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
+                                   match_type="same_template")["total"], 0)
+
+    def test_template_auto_rejects_missing_runtime_placeholders(self):
+        row = self.fuzzy("Greetings, $N!", "Greetings, <name>!", "Вітаю!")
+        self.assertIsNone(row["selection"])
+        self.assertFalse(row["ready_to_import"])
+        self.assertEqual(row["status"], "missing")
+        self.assertIn("same_template", row["match_types"])
+
+    def test_one_token_edit_is_filterable_but_not_auto_selected(self):
+        row = self.fuzzy("Greetings, $N!", "Greetings, <name>!",
+                         "Вітаю, $N!", kind="one_token_edit")
+        self.assertIsNone(row["selection"])
+        self.assertFalse(row["ready_to_import"])
+        self.assertIn("one_token_edit", row["match_types"])
+        view = ModuleInventory([row], None, {}, module=builder.GOSSIP_MODULE)
+        self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
+                                   match_type="one_token_edit")["total"], 1)
+        with self.assertRaisesRegex(ValueError, "manager_invalid_filters"):
+            view.page(module=builder.GOSSIP_MODULE, match_type="not_a_match_type")
+
+    def test_stale_manual_choice_blocks_template_auto_selection(self):
+        stored = {IDENTITY: ("outdated", "Ручний.", sha("Ручний."),
+                             "manual", "local_selection")}
+        self.original["originalText"] = "Greetings, $N!"
+        from tools.gossip_coverage import classicua_hash
+        english = "Greetings, <name>!"
+        source_hash = classicua_hash(english)
+        self.state.source.files["classic/gossip.lua"] = "c" * 64
+        self.state.dataset.records["gossip"]["!common"].fields[(source_hash,)] = SimpleNamespace(
+            origin=SimpleNamespace(file="classic/gossip.lua", line=19))
+        source = {"scope": "!common", "hash": source_hash, "english": english,
+                  "file": "classic/gossip.lua", "file_sha256": "c" * 64,
+                  "revision": self.state.source.revision, "value_line": 19, "effective": True}
+        row = self.one(lookup={"byNpc": {}, "common": {source_hash: "Вітаю, $N!"}},
+                       audit={(NPC_ID, TEXT_ID): {
+                           "category": "no_evidence",
+                           "template_candidates": [{"test": "same_template", "source": source}]}},
+                       stored=stored)
+        self.assertEqual(row["status"], "stale")
+        self.assertIsNone(row["selection"])
+        self.assertFalse(row["ready_to_import"])
+
+    def test_ambiguous_whitespace_source_records_are_not_auto_selected(self):
+        original = "Welcome.\nHave a seat."
+        english = ("Welcome.  Have a seat.", "Welcome.\nHave a seat.")
+        from tools.gossip_coverage import classicua_hash
+        self.original["originalText"] = original
+        srcs, lookup = [], {"byNpc": {}, "common": {}}
+        self.state.source.files["classic/gossip.lua"] = "c" * 64
+        for line, text in enumerate(english, 19):
+            key = classicua_hash(text)
+            self.state.dataset.records["gossip"]["!common"].fields[(key,)] = SimpleNamespace(
+                origin=SimpleNamespace(file="classic/gossip.lua", line=line))
+            srcs.append({"scope": "!common", "hash": key, "english": text,
+                         "file": "classic/gossip.lua", "file_sha256": "c" * 64,
+                         "revision": self.state.source.revision, "value_line": line,
+                         "effective": True})
+            lookup["common"][key] = "Ласкаво просимо."
+        row = self.one(lookup=lookup, audit={(NPC_ID, TEXT_ID): {
+            "category": "whitespace_candidate", "whitespace_candidates": srcs}})
+        self.assertIsNone(row["selection"])
+        self.assertFalse(row["ready_to_import"])
+        self.assertTrue(row["candidate_conflict"])
+
+    def test_ambiguous_npc_type_blocks_unreviewed_exact_auto_selection(self):
+        audit = {(NPC_ID, TEXT_ID): {
+            "category": "ambiguous_npc_type",
+            "exact_hash_sources": [{"scope": NPC_ID}]}}
+        row = self.one(audit=audit)
+        self.assertFalse(row["ready_to_import"])
+        self.assertIsNone(row["selection"])
+        self.assertIn("ambiguous_npc_type", row["match_types"])
+        self.assertEqual(row["status"], "review")
+        self.assertEqual(len(row["candidates"]), 1)
+
+    def test_ambiguous_npc_type_preserves_explicit_manual_choice(self):
+        from adapters.crosswalk import digest
+
+        fields = ("lineId", "npcType", "race", "gender", "playerGender", "voice", "originalText")
+        binding = digest({"spoken": self.state.inventory.revision,
+                          "classicua": self.state.source.revision,
+                          "identity": IDENTITY,
+                          "contexts": [{key: self.original.get(key) for key in fields}]})
+        stored = {IDENTITY: (binding, "Ручний.", sha("Ручний."), "manual", "local_selection")}
+        audit = {(NPC_ID, TEXT_ID): {"category": "ambiguous_npc_type",
+                                    "exact_hash_sources": [{"scope": NPC_ID}]}}
+        row = self.one(audit=audit, stored=stored)
+        self.assertEqual(row["selection"]["source"], "manual")
+        self.assertEqual(row["selection"]["text"], "Ручний.")
+        self.assertTrue(row["ready_to_import"])
+
+    def test_template_variants_with_different_placeholder_casing_are_not_auto_selected(self):
+        from adapters.crosswalk import digest
+        from tools.gossip_coverage import classicua_hash
+        from tools.gossip_simple import safe_audit_candidates
+
+        originals = ("Greetings, $C!", "Greetings, $c!")
+        english = "Greetings, <class>!"
+        source_hash = classicua_hash(english)
+        self.state.source.files["classic/gossip.lua"] = "c" * 64
+        self.state.dataset.records["gossip"]["!common"].fields[(source_hash,)] = SimpleNamespace(
+            origin=SimpleNamespace(file="classic/gossip.lua", line=19))
+        source = {"scope": "!common", "hash": source_hash, "english": english,
+                  "file": "classic/gossip.lua", "file_sha256": "c" * 64,
+                  "revision": self.state.source.revision, "value_line": 19, "effective": True}
+        matching = safe_audit_candidates(
+            {"template_candidates": [{"test": "same_template", "source": source}]},
+            originals, NPC_ID, self.state, {
+                "byNpc": {}, "common": {source_hash: "Вітаю, $C!"}})
+        self.assertEqual(matching, [])

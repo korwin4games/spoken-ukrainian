@@ -58,6 +58,92 @@ def _audit_catalog(classicua, spoken, lock, baselines):
     return {(pair["npc_id"], pair["hash"]): pair for pair in pairs}
 
 
+def audit_match_types(match):
+    """Expose all audit match types, including those not safe for auto-selection."""
+    types = []
+    def add(kind):
+        if kind and kind not in types:
+            types.append(kind)
+
+    for source in match.get("exact_hash_sources", ()):
+        add("exact_common" if source.get("scope") == "!common" else "exact_npc")
+    for kind, field in (
+            ("whitespace_candidate", "whitespace_candidates"),
+            ("same_template", "template_candidates"),
+            ("corpus_alternate_candidate", "corpus_alternate"),
+            ("wrong_npc_scope", "wrong_npc_scope"),
+            ("other_family_candidate", "other_families"),
+            ("glossary_candidate", "glossary"),
+            ("dynamic_candidate", "dynamic"),
+            ("reply_only_candidate", "reply_only"),
+            ("verified_alias_wording", "alternatives")):
+        for entry in match.get(field, ()):
+            add(entry.get("test", kind) if kind == "same_template" else kind)
+    if match.get("category") and match["category"] != "no_evidence":
+        add(match["category"])
+    if not types:
+        add("no_evidence")
+    return types
+
+
+def safe_audit_candidates(match, originals, npc, state, lookup):
+    """Return only unambiguous, in-scope, source-audited template/layout candidates.
+
+    An audit lead is not an approval. Re-check every canonical original and
+    source fingerprint; a changed English runtime hash is always kept as the
+    target key, never copied from ClassicUA.
+    """
+    from tools.gossip_mapping_audit import layout_wording
+    from tools.gossip_candidate_tables import template
+    from tools.gossip_coverage import classicua_hash
+
+    # A single runtime NPC/hash must not collapse variants with different
+    # placeholder capitalization into one automatically rendered translation.
+    # Uppercase $C/$R render differently from their lowercase forms.
+    if not originals or len({tuple(sorted(Counter(TOKENS.findall(original)).items()))
+                             for original in originals}) != 1:
+        return []
+
+    sources = {}
+    for kind, values in (
+            ("whitespace_candidate", match.get("whitespace_candidates", ())),
+            ("same_template", match.get("template_candidates", ()))):
+        for hit in values:
+            if kind == "same_template" and hit.get("test") != "same_template":
+                continue
+            source = hit.get("source", hit) if kind == "same_template" else hit
+            scope, source_hash = source.get("scope"), source.get("hash")
+            english, path = source.get("english"), source.get("file")
+            if (scope not in (npc, "!common") or type(source_hash) is not int
+                    or type(english) is not str or not english or type(path) is not str
+                    or source.get("effective") is not True
+                    or source.get("revision") != state.source.revision
+                    or state.source.files.get(path) != source.get("file_sha256")
+                    or classicua_hash(english) != source_hash):
+                continue
+            comparison = layout_wording if kind == "whitespace_candidate" else template
+            if not all(comparison(original) == comparison(english) for original in originals):
+                continue
+            source_record = state.dataset.records.get("gossip", {}).get(scope)
+            leaf = source_record.fields.get((source_hash,)) if source_record else None
+            if (leaf is None or leaf.origin.file != path
+                    or leaf.origin.line != source.get("value_line")):
+                continue
+            value = (lookup["common"] if scope == "!common"
+                     else lookup["byNpc"].get(scope, {})).get(source_hash)
+            if type(value) is not str:
+                continue
+            try:
+                for original in originals:
+                    runtime_text(original, value)
+            except ValueError:
+                continue
+            sources.setdefault((scope, source_hash), (kind, leaf, value))
+    # Even identical Ukrainian bytes cannot establish which of two distinct
+    # source originals was meant. Keep these as review alternatives.
+    return list(sources.items())
+
+
 def runtime_text(original, text):
     if (not usable_text(text) or re.search(
             r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\|[cCrRhHtTaA]|%(?:\d+\$)?[sdif]", text)
@@ -132,7 +218,19 @@ def rows(state, lines, db_path, units, audit=None):
                         runtime_text(original, text)
                 except ValueError:
                     continue
-                choices.append(review_candidate(text, "classicua", ref, state.source.revision, "candidate"))
+                choices.append(review_candidate(text, "classicua", ref, state.source.revision, "candidate")
+                               | {"match_type": "exact_common" if scope == "!common" else "exact_npc"})
+        ambiguous_audit = False
+        auto_context_safe = match.get("category") != "ambiguous_npc_type"
+        if binding and auto_context_safe and not choices and match:
+            matching = safe_audit_candidates(match, originals, npc, state, lookup)
+            if len(matching) == 1:
+                (scope, source_hash), (kind, leaf, value) = matching[0]
+                ref = f"{leaf.origin.file}:{leaf.origin.line} [{scope}][{source_hash}]"
+                choices.append(review_candidate(value, "classicua", ref, state.source.revision, "candidate")
+                               | {"match_type": kind})
+            elif len(matching) > 1:
+                ambiguous_audit = True
         selected, built, stale = None, None, False
         if identity in stored:
             old, text, fingerprint, source, ref = stored[identity]
@@ -147,17 +245,20 @@ def rows(state, lines, db_path, units, audit=None):
                 except ValueError:
                     current = False
             if current:
-                selected = {"text": text, "rendered": rendered, "source": source, "reference": ref}
+                selected = {"text": text, "rendered": rendered, "source": source, "reference": ref,
+                            "match_type": next((c["match_type"] for c in choices
+                                                if c["sha256"] == fingerprint and c["reference"] == ref),
+                                               "manual" if source == "manual" else "unknown")}
                 if source == "manual":
                     choices.append(review_candidate(text, source, ref, state.inventory.revision, "selected"))
                 unit = units.get(("gossip", f"npc:{npc}:{hashed}"))
                 if unit and unit["route"] == "user_selected" and unit["text_sha256"] == sha(rendered):
                     built = unit | {"text_sha256": fingerprint}
             stale = not current
-        # A single safe exact-hash ClassicUA translation needs no manual
-        # selection. Two different valid translations still require a choice.
+        # A single safe, unambiguous ClassicUA translation needs no manual
+        # selection. Ambiguous NPC types or explicit choices require review.
         # A stale explicit user choice must never be silently overwritten.
-        if identity not in stored and binding:
+        if identity not in stored and binding and auto_context_safe:
             unique = {candidate["sha256"]: candidate for candidate in choices}
             if len(unique) == 1:
                 candidate = next(iter(unique.values()))
@@ -165,7 +266,7 @@ def rows(state, lines, db_path, units, audit=None):
                 rendered = runtime_text(originals[0], text)
                 selected = {"text": text, "rendered": rendered,
                             "source": "classicua", "reference": candidate["reference"],
-                            "auto": True}
+                            "auto": True, "match_type": candidate.get("match_type", "exact_npc")}
                 unit = units.get(("gossip", f"npc:{npc}:{hashed}"))
                 if (unit and unit["route"] == "pinned_unique"
                         and unit["text_sha256"] == sha(rendered)):
@@ -183,7 +284,7 @@ def rows(state, lines, db_path, units, audit=None):
                                      "reference": f"{origin.get('file', '')}:{origin.get('key_line', origin.get('line', ''))}",
                                      "scope": scope, "hash": source_hash, "ukrainian": text})
         ready = selected is not None and built is None
-        conflict = len({c["sha256"] for c in choices}) > 1 and selected is None
+        conflict = (ambiguous_audit or len({c["sha256"] for c in choices}) > 1) and selected is None
         yield {"id": identity, "type": "gossip", "label": members[0].get("npcName") or f"NPC {npc}",
                "npc_id": npc, "english_hash": hashed, "originals": originals,
                "contexts": evidence_contexts, "review_binding": binding,
@@ -193,7 +294,8 @@ def rows(state, lines, db_path, units, audit=None):
                "translation_state": translation_state(choices), "built": built,
                "recorded": identity in stored and selected is not None,
                "ready_to_import": ready, "needs_choice": conflict, "candidate_conflict": conflict,
-               "unverified_alternatives": alternatives, "candidates": choices, "selection": selected,
+               "unverified_alternatives": alternatives, "match_types": audit_match_types(match),
+               "candidates": choices, "selection": selected,
                "selected_sha256": sha(selected["text"]) if selected else None}
 
 

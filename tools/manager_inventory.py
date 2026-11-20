@@ -28,6 +28,14 @@ STATUS_HELP = {
     "stale": "Попередні докази змінилися. Перевірте відповідність і версію джерела.",
     "multiple_originals": "Гра передає лише ID квесту та етап. Підтвердьте один переклад, який підходить для кожного наведеного оригіналу й контексту.",
 }
+GOSSIP_MATCH_TYPES = frozenset({
+    "all", "exact_npc", "exact_common", "whitespace_candidate", "same_template",
+    "one_token_edit", "corpus_alternate_candidate", "wrong_npc_scope",
+    "other_family_candidate", "glossary_candidate", "dynamic_candidate",
+    "reply_only_candidate", "verified_alias_wording", "hash_collision",
+    "ambiguous_npc_type", "missing_verified_original", "no_evidence",
+})
+
 MAPPING_STATES = {"mapping_verified", "mapping_provisional", "mapping_pending",
                   "mapping_conflict", "mapping_rejected", "invalid_context", "stale"}
 TRANSLATION_STATES = {"translation_available", "translation_missing", "translation_pending",
@@ -107,11 +115,14 @@ class ModuleInventory:
         }
         return result
 
-    def page(self, *, module=MODULE, query="", kind="all", filter_by="all", status="all", offset=0, limit=30):
+    def page(self, *, module=MODULE, query="", kind="all", filter_by="all", status="all",
+             match_type="all", offset=0, limit=30):
         if (module != self.module or kind not in ("all", MODULE_DOMAINS[self.module])
                 or filter_by not in ("all", "imported", "not_imported", "conflicts", "multiple_originals",
                                      "quest_imported", "quest_ready", "quest_problem")
                 or status not in {"all", *STATUS_HELP, *MAPPING_STATES, *TRANSLATION_STATES}
+                or match_type not in GOSSIP_MATCH_TYPES
+                or (MODULE_DOMAINS[self.module] != "gossip" and match_type != "all")
                 or type(query) is not str or len(query) > 200
                 or type(offset) is not int or offset < 0
                 or type(limit) is not int or not 1 <= limit <= 100):
@@ -122,6 +133,8 @@ class ModuleInventory:
         for row in self.rows.values():
             if kind not in ("all", row["type"]) or status not in (
                     "all", row["status"], row.get("mapping_state"), row.get("translation_state")):
+                continue
+            if match_type != "all" and match_type not in row.get("match_types", ()):
                 continue
             if filter_by == "imported" and not row["built"] or filter_by == "not_imported" and row["built"]:
                 continue
@@ -140,7 +153,7 @@ class ModuleInventory:
                 items.append({k: row[k] for k in ("id", "type", "label", "status", "built", "recorded",
                     "mapping_state", "translation_state", "import_state", "review_queue",
                     "agent_warning", "unverified_alternatives", "candidate_conflict",
-                    "ready_to_import", "needs_choice", "npc_id", "english_hash") if k in row})
+                    "ready_to_import", "needs_choice", "npc_id", "english_hash", "match_types") if k in row})
             total += 1
         return {"module": module, "summary": self.summary(), "build": self.build,
                 "total": total, "items": items}

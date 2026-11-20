@@ -70,11 +70,32 @@
               <option value="quest_problem">Проблемні</option>
             </select>
           </label>
+          <label id="match-filter-control" hidden>Тип відповідності
+            <select id="match-filter">
+              <option value="all">Усі</option>
+              <option value="exact_npc">Точний NPC</option>
+              <option value="exact_common">Точний !common</option>
+              <option value="whitespace_candidate">Пробіли / перенесення</option>
+              <option value="same_template">Той самий шаблон</option>
+              <option value="one_token_edit">Відмінність в одному слові</option>
+              <option value="corpus_alternate_candidate">Підготовлений текст (TTS)</option>
+              <option value="wrong_npc_scope">Інший NPC</option>
+              <option value="other_family_candidate">Інша категорія ClassicUA</option>
+              <option value="glossary_candidate">Глосарій</option>
+              <option value="dynamic_candidate">Динамічний шаблон</option>
+              <option value="reply_only_candidate">Репліка гравця</option>
+              <option value="verified_alias_wording">Альтернативний Spoken ID</option>
+              <option value="hash_collision">Колізія хешу</option>
+              <option value="ambiguous_npc_type">Неоднозначний тип NPC</option>
+              <option value="missing_verified_original">Немає оригіналу</option>
+              <option value="no_evidence">Без відповідності</option>
+            </select>
+          </label>
         </form>
         <div class="table-scroll" tabindex="0" aria-label="Таблиця перекладів">
           <table>
             <thead><tr><th scope="col">Тип</th><th scope="col">npcID</th><th scope="col">ID</th><th scope="col">Назва / NPC</th>
-              <th scope="col">Імпорт</th><th scope="col">Переклад</th><th scope="col"><span class="sr-only">Проблема</span>⚑</th></tr></thead>
+              <th scope="col">Імпорт</th><th scope="col">Переклад</th><th scope="col"><span class="sr-only">Проблема</span>⚑</th><th scope="col">Відповідність</th></tr></thead>
             <tbody id="rows"></tbody>
           </table>
         </div>
