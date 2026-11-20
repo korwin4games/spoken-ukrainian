@@ -54,6 +54,17 @@ const errors = {
   manager_reimport_failed: "Не вдалося завершити переімпорт. Запустіть збірку через CLI, щоб побачити причину.",
   manager_classicua_checkout_invalid: "Потрібна чиста копія ClassicUA на закріпленій ревізії.",
   manager_spoken_checkout_invalid: "Потрібна чиста копія Spoken на закріпленій ревізії.",
+  manager_install_invalid_wow_path: "Введіть повний шлях до папки World of Warcraft (без _forever_).",
+  manager_install_windows_path_on_non_windows: "Windows-шлях можна використовувати лише якщо Translation Manager запущено на Windows.",
+  manager_install_addons_directory_missing: "Не знайдено папку _forever_\\Interface\\AddOns. Перевірте WoW path.",
+  manager_install_unsafe_wow_path: "Шлях гри містить небезпечне посилання або перенаправлення.",
+  manager_install_module_not_built: "Спершу натисніть «Створити модуль», щоб отримати ZIP.",
+  manager_install_archive_outdated: "ZIP змінився або застарів. Створіть модуль повторно.",
+  manager_install_invalid_archive: "ZIP не пройшов перевірку цілісності. Створіть модуль повторно.",
+  manager_install_dependencies_missing: "Не знайдено потрібного аддона Spoken / Spoken_Quests у папці AddOns.",
+  manager_install_legacy_addon: "Виявлено старий Spoken_Quests_UA. Перемістіть його з AddOns перед встановленням.",
+  manager_install_rollback_incomplete: "Помилка встановлення: відновлення не завершено. Перевірте резервні копії вручну.",
+  manager_install_failed: "Не вдалося встановити модуль. Перевірте доступ до папки гри та журнал термінала.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
 let readyCount = 0;
@@ -112,7 +123,7 @@ async function call(action, payload) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.reason || result.error || "manager_request_failed");
-    if (!["list", "detail"].includes(action) && !payload.dry_run) recentLists.clear();
+    if (!["list", "detail", "install"].includes(action) && !payload.dry_run) recentLists.clear();
     return result;
   }, action);
 }
@@ -254,7 +265,7 @@ function simpleQuestControls(row) {
     if (busy) return;
     busy = true;
     message.textContent = "Зберігаємо переклад…";
-    for (const id of ["preview", "reimport", "module"]) el(id).disabled = true;
+    for (const id of ["preview", "reimport", "module", "install"]) el(id).disabled = true;
     try {
       const result = await call(action, {...data, identity: row.id,
         binding: row.review_binding, confirm: true});
@@ -267,7 +278,7 @@ function simpleQuestControls(row) {
       message.textContent = errorMessage(error);
     } finally {
       busy = false;
-      for (const id of ["preview", "reimport", "module"]) el(id).disabled = false;
+      for (const id of ["preview", "reimport", "module", "install"]) el(id).disabled = false;
       el("reimport").disabled = domain() === "quest" && readyCount === 0;
     }
   };
@@ -675,7 +686,7 @@ function renderResult(result) {
 async function reimport(dryRun) {
   if (busy) return;
   busy = true;
-  for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = true;
+  for (const id of ["preview", "reimport", "reset", "module", "install"]) el(id).disabled = true;
   el("run-summary").hidden = true;
   el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" :
     domain() === "quest" ? "Створюємо архів модуля Quest…" : "Переімпорт і збірка тривають…";
@@ -695,7 +706,32 @@ async function reimport(dryRun) {
   } catch (error) { el("operation-status").textContent = errorMessage(error); }
   finally {
     busy = false;
-    for (const id of ["preview", "reimport", "reset", "module"]) el(id).disabled = false;
+    for (const id of ["preview", "reimport", "reset", "module", "install"]) el(id).disabled = false;
+    el("reimport").disabled = domain() === "quest" && readyCount === 0;
+  }
+}
+
+async function installModule() {
+  if (busy) return;
+  busy = true;
+  for (const id of ["preview", "reimport", "reset", "module", "install", "wow-path"])
+    el(id).disabled = true;
+  el("install-status").textContent = "Перевіряємо ZIP та встановлюємо аддон…";
+  try {
+    const result = await call("install", {wow_path: el("wow-path").value});
+    const replaced = result.replaced.length ?
+      " Попередні папки: " + result.replaced.join(", ") + "." : "";
+    const backup = result.backup ?
+      " Резервна копія: " + result.backup + "." : "";
+    el("install-status").textContent = "Встановлено: " + result.installed.join(", ") +
+      ". Каталог: " + result.addons + "." + replaced + backup +
+      " Перезапустіть WoW: Forever, щоб застосувати зміни.";
+  } catch (error) {
+    el("install-status").textContent = errorMessage(error);
+  } finally {
+    busy = false;
+    for (const id of ["preview", "reimport", "reset", "module", "install", "wow-path"])
+      el(id).disabled = false;
     el("reimport").disabled = domain() === "quest" && readyCount === 0;
   }
 }
@@ -745,6 +781,7 @@ refreshModuleControls();
 el("prev").addEventListener("click", () => { offset = Math.max(0, offset - pageSize); list(); });
 el("next").addEventListener("click", () => { offset += pageSize; list(); });
 el("preview").addEventListener("click", () => reimport(true));
+el("install").addEventListener("click", installModule);
 el("reimport").addEventListener("click", () => {
   if (domain() === "quest") {
     reimport(false);
