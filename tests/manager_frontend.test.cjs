@@ -140,6 +140,82 @@ test("Gossip selects through the shared editor and does not build on save", asyn
   assert.equal(b.requests.some(request => request.action === "import_ready"), false);
 });
 
+test("Gossip audit alternatives populate the editor but save as manual choices", async () => {
+  const row = {...fixture, type: "gossip", id: "gossip:295:934080707",
+    npc_id: 295, review_binding: "pinned-evidence", originals: [
+      "When you give love tokens to townsfolk, you'll receive different gifts in return."
+    ], candidates: [], selected_sha256: null, unverified_alternatives: [
+      {kind: "corpus_alternate_candidate", english: "When you give love tokens...",
+        ukrainian: "Даруючи знаки любові, ви отримаєте подарунки.",
+        scope: "!common", hash: 100, reference: "entries/gossip.lua:50"},
+      {kind: "same_template", english: "When you give love tokens ...",
+        ukrainian: "Подарунки за знаки любові.",
+        scope: 295, hash: 200, reference: "entries/innkeepers.lua:60"},
+      {kind: "wrong_npc_scope", english: "English-only hint",
+        ukrainian: null, scope: 42, hash: 300, reference: "entries/gossip.lua:70"},
+    ]};
+  const b = browser((action, body) => {
+    if (action === "list") return listing(body.module);
+    if (action === "detail") return row;
+    if (action === "save_gossip") return {module: gossip, build: "review_saved"};
+    throw new Error("Unexpected action: " + action);
+  });
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  await b.run('detail("gossip:295:934080707")');
+  const nodes = b.el("selected").all();
+  const select = nodes.find(node => node.tag === "select");
+  const field = nodes.find(node => node.tag === "textarea");
+  assert.ok(select);
+  assert.equal(select.children.length, 3);
+  assert.ok(select.children[0].textContent.includes("Аудит · не підтверджено"));
+  assert.ok(select.children[1].textContent.includes("entries/innkeepers.lua:60"));
+  assert.equal(select.children[2].disabled, true);
+  assert.match(select.children[2].textContent, /Українського перекладу немає/);
+  assert.equal(field.value, ""); // no automatic acceptance of audit-only leads
+  select.value = "audit:1";
+  select.events.change();
+  assert.equal(field.value, "Подарунки за знаки любові.");
+  assert.equal(b.requests.some(request => request.action === "save_gossip"), false);
+  nodes.find(node => node.textContent === "Зберегти").events.click();
+  await flush();
+  const saved = b.requests.find(request => request.action === "save_gossip");
+  assert.equal(saved.text, "Подарунки за знаки любові.");
+  assert.equal(saved.identity, row.id);
+  assert.equal(saved.binding, "pinned-evidence");
+  assert.equal(b.requests.some(request => request.action === "choose_gossip"), false);
+  assert.equal(b.requests.some(request => request.action === "import_ready"), false);
+});
+
+test("Verified Gossip candidates retain source provenance when audit alternatives exist", async () => {
+  const row = {...fixture, type: "gossip", id: "gossip:68:107874079",
+    review_binding: "pin", selected_sha256: "verified-a",
+    candidates: [{text: "Вітаю.", sha256: "verified-a", provider: "classicua",
+      reference: "entries/gossip.lua:17"}],
+    unverified_alternatives: [{kind: "wrong_npc_scope",
+      english: "Hello.", ukrainian: "Привіт.",
+      reference: "entries/gossip.lua:33", scope: 42, hash: 4}]};
+  const b = browser((action, body) =>
+    action === "choose_gossip" ? {module: gossip, build: "review_saved"} :
+    action === "detail" ? row : listing(body.module));
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  b.run("renderDetail(" + JSON.stringify(row) + ")");
+  const nodes = b.el("selected").all();
+  const field = nodes.find(node => node.tag === "textarea");
+  const select = nodes.find(node => node.tag === "select");
+  assert.equal(field.value, "Вітаю.");
+  assert.equal(select.children.length, 2);
+  nodes.find(node => node.textContent === "Зберегти").events.click();
+  await flush();
+  assert.equal(b.requests.find(request => request.action === "choose_gossip").candidate, "verified-a");
+  assert.equal(b.requests.some(request => request.action === "save_gossip"), false);
+});
+
 test("Gossip uses the selected module and retains the shared path during operation", async () => {
   let complete;
   const pending = new Promise(resolve => { complete = resolve; });
