@@ -454,3 +454,37 @@ test("Quest missing translation can be entered without reviewer identity", async
   await flush();
   assert.match(b.el("copied").textContent, /Hello/);
 });
+
+
+test("Gossip match type filter uses server pagination and resets on module changes", async () => {
+  const html = readFileSync("tools/review_ui/static/manager.html", "utf8");
+  assert.match(html, /id="match-filter"/);
+  assert.match(html, /value="same_template"/);
+  assert.match(html, /value="whitespace_candidate"/);
+  const b = browser((action, body) => listing(body.module));
+  await flush();
+  assert.equal(b.el("match-filter-control").hidden, true);
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  assert.equal(b.el("match-filter-control").hidden, false);
+  assert.equal(b.requests.at(-1).match_type, "all");
+  b.el("match-filter").value = "same_template";
+  b.el("match-filter").events.change();
+  await flush();
+  assert.equal(b.requests.at(-1).match_type, "same_template");
+  const row = {
+    id:"gossip:68:107874079", type:"gossip", npc_id:68, english_hash:107874079,
+    label:"Innkeeper", ready_to_import:true, status:"ready", built:null,
+    match_types:["same_template"],
+  };
+  b.run("renderList(" + JSON.stringify({items:[row], total:1, build:null,
+    summary:{gossip:{total:1, ready:1, quest_imported:0, quest_problem:0}}}) + ")");
+  assert.match(b.el("rows").children[0].children.at(-1).textContent, /Той самий шаблон/);
+  b.el("module").value = quest;
+  b.el("module").events.change();
+  await flush();
+  assert.equal(b.el("match-filter-control").hidden, true);
+  assert.equal(b.el("match-filter").value, "all");
+  assert.equal(b.requests.at(-1).match_type, undefined);
+});
