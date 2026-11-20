@@ -96,6 +96,48 @@ class GossipSimpleUITests(TestCase):
         self.assertIsNone(row["selection"])
         self.assertFalse(row["ready_to_import"])
 
+    def test_persisted_manual_translation_must_match_all_originals(self):
+        from adapters.crosswalk import digest
+
+        first = {**self.original, "originalText": "Hello $N"}
+        second = {**self.original, "originalText": "Hello $C"}
+        fields = ("lineId", "npcType", "race", "gender", "playerGender", "voice", "originalText")
+        evidence_contexts = [{key: line.get(key) for key in fields}
+                             for line in (first, second)]
+        binding = digest({"spoken": self.state.inventory.revision,
+                          "classicua": self.state.source.revision,
+                          "identity": IDENTITY, "contexts": evidence_contexts})
+        text = "Вітаю $N"
+        stored = {IDENTITY: (binding, text, sha(text), "manual", "local_selection")}
+        with patch("tools.gossip_simple.contexts", return_value=(
+                {(NPC_ID, TEXT_ID): [first, second]}, set())), patch(
+                "tools.build_ukrainian.local_gossip_texts", return_value=self.lookup), patch(
+                "tools.gossip_simple.selections", return_value=stored):
+            row = list(gossip_rows(self.state, [first, second], None, {}, self.audit))[0]
+        self.assertEqual(row["status"], "stale")
+        self.assertIsNone(row["selection"])
+        self.assertFalse(row["ready_to_import"])
+
+    def test_stale_choice_does_not_block_other_ready_gossip_imports(self):
+        stale = self.one(stored={IDENTITY: ("outdated", "Старий.", sha("Старий."),
+                                           "manual", "local_selection")})
+        valid = self.one()
+        # The second row stands for a distinct verified NPC/hash.
+        valid.update(id="gossip:69:107874079", npc_id=69)
+        view = ModuleInventory([stale, valid], None, {}, module=builder.GOSSIP_MODULE,
+                               state=self.state)
+        self.assertEqual(view.summary()["gossip"]["ready"], 1)
+        self.assertEqual(view.summary()["gossip"]["quest_problem"], 1)
+        with patch("tools.manager_inventory.load_inventory", return_value=view), patch.object(
+                builder, "read_classicua_inflections", return_value={}), patch.object(
+                builder, "template_entries", return_value={}), patch.object(
+                builder, "render_gossip_lua", return_value=b""), patch.object(
+                builder, "write_zip", return_value=(Path("test.zip"), "checksum")), patch(
+                "adapters.import_statistics.store_successful_build", return_value={}) as store:
+            result = builder.build_gossip(Path("ClassicUA"), Path("Spoken"), Path("test.zip"))
+        self.assertEqual(result["gossip_text_records"]["npc_hashes"], 1)
+        self.assertEqual(store.call_args.kwargs["rows"][0]["unit"], "npc:69:107874079")
+
     def test_build_serializes_only_safe_auto_choice_with_pinned_provenance(self):
         row = self.one()
         view = ModuleInventory([row], None, {}, module=builder.GOSSIP_MODULE,
