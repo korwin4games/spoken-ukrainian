@@ -546,7 +546,7 @@ def quest_lines(preview, gossip_titles):
     return lines
 
 
-def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE):
+def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE, text_pack_lua=None):
     if module not in MODULE_DOMAINS:
         raise ValueError("manager_unknown_module")
     entries = {}
@@ -570,19 +570,33 @@ def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE):
             "Core.lua\n"):
         if required not in base_toc:
             raise ValueError("missing_base_ukrainian_toc_contract")
+    from tools.spoken_text_pack import render_spoken_text_pack
+
     if module == GOSSIP_MODULE:
         if ("## Dependencies: Spoken_Ukrainian\n" not in toc
-                or "GossipTranslations.lua\nGossipFrame.lua\n" not in toc):
+                or "## X-Spoken-Text: ukUA\n" not in toc
+                or "## X-Spoken-TextFormat: 1\n" not in toc
+                or "## X-Spoken-LanguageFont: NotoSans-Regular.ttf\n" not in toc
+                or "GossipTranslations.lua\nTextPack.lua\nGossipFrame.lua\n" not in toc):
             raise ValueError("missing_gossip_ukrainian_toc_contract")
+        # Keep the native Gossip addon independent from Quest, including its font.
+        # Reuse the audited/licensed font bytes instead of committing a duplicate.
+        for name in ("NotoSans-Regular.ttf", "OFL-NotoSans.txt"):
+            source = ROOT / "addons" / QUEST_MODULE / name
+            if source.is_symlink() or not source.is_file():
+                raise ValueError("unsafe_ukrainian_addon_template")
+            entries[f"{module}/{name}"] = source.read_bytes()
         entries[f"{module}/GossipTranslations.lua"] = gossip_lua
+        entries[f"{module}/TextPack.lua"] = (
+            text_pack_lua if text_pack_lua is not None else render_spoken_text_pack())
         return entries
     for required in (
             "## Title: Spoken Ukrainian: Quests\n",
-            "## Dependencies: Spoken, Spoken_Quests, Spoken_Ukrainian\n",
-            "## LoadOnDemand: 1\n",
-            "## X-SpokenQuests-DataModule-Version: 1\n",
-            "## X-SpokenQuests-Language: ukUA\n",
-            "Translations.lua\nQuestFont.lua\nModule.lua\nNativeQuestFrame.lua\nQuestJournal.lua\nGossipQuestTitles.lua\n"):
+            "## Dependencies: Spoken, Spoken_Ukrainian\n",
+            "## X-Spoken-Text: ukUA\n",
+            "## X-Spoken-TextFormat: 1\n",
+            "## X-Spoken-LanguageFont: NotoSans-Regular.ttf\n",
+            "Translations.lua\nTextPack.lua\nQuestFont.lua\nModule.lua\nNativeQuestFrame.lua\nQuestJournal.lua\nGossipQuestTitles.lua\n"):
         if required not in toc:
             raise ValueError("missing_quest_ukrainian_toc_contract")
     # Module must never invent sound files or call AddOn playback.
@@ -597,11 +611,11 @@ def template_entries(preview_lua=None, gossip_lua=None, *, module=QUEST_MODULE):
             "GossipAvailableQuestButtonMixin", "QuestFrameGreetingPanel",
             "GetAvailableQuestInfo", "UnitFactionGroup", "IsShiftKeyDown")):
         raise ValueError("missing_gossip_quest_title_contract")
-    if not ('quests:Register("Spoken_Quest_UA"' in module
-            and "SoundLengthLookupByFileName = {}" in module
-            and "QUEST_DETAIL" in module):
-        raise ValueError("missing_quest_pack_registration")
+    if "QUEST_DETAIL" not in module or "SoundLengthLookupByFileName" in module:
+        raise ValueError("missing_quest_text_pack_contract")
     entries["Spoken_Quest_UA/Translations.lua"] = preview_lua
+    entries["Spoken_Quest_UA/TextPack.lua"] = (
+        text_pack_lua if text_pack_lua is not None else render_spoken_text_pack())
     return entries
 
 
@@ -675,7 +689,15 @@ def build_gossip(classicua, spoken, destination):
                       "route": "pinned_unique" if selection.get("auto") else "user_selected",
                       "text_sha256": sha(selection["rendered"])})
     forms = read_classicua_inflections(classicua, view.state.source.files)
-    entries = template_entries(None, render_gossip_lua(gossip, inflections=forms), module=GOSSIP_MODULE)
+    from tools.spoken_text_pack import gossip_payload, render_spoken_text_pack
+
+    # Inventory has already validated and loaded the full pinned corpus.
+    # Synthetic test inventories intentionally have no corpus and export no
+    # additional proof beyond their own scoped rows.
+    text_lines = gossip_payload(view.rows.values(), corpus_lines=getattr(view, "corpus_lines", None))
+    entries = template_entries(
+        None, render_gossip_lua(gossip, inflections=forms), module=GOSSIP_MODULE,
+        text_pack_lua=render_spoken_text_pack(lines=text_lines))
     artifact, digest = write_zip(entries, archive)
     imported = store_successful_build(
         db_path, artifact_sha256=digest, module=GOSSIP_MODULE, rows=units,
@@ -750,10 +772,14 @@ def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare
     titles = local_gossip_titles(state) if is_quest else {}
     gossip, reviewed_gossip, selected_gossip, excluded_gossip, source_proofs, gossip_page = (
         {"byNpc": {}, "common": {}}, {}, [], {}, {}, {})
+    from tools.spoken_text_pack import quest_payload, quest_source_moments, render_spoken_text_pack
+
+    text_titles, text_lines = quest_payload(
+        preview, source_moments=quest_source_moments(state), faction_titles=titles)
     entries = template_entries(
         render_quest_lua(preview, state.inventory.revision, forms, titles) if is_quest else None,
         render_gossip_lua(gossip, excluded=excluded_gossip, inflections=forms) if not is_quest else None,
-        module=module)
+        module=module, text_pack_lua=render_spoken_text_pack(text_titles, text_lines))
     import_inventory = None
     if db_path:
         from adapters.import_statistics import store_successful_build

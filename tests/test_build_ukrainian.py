@@ -45,11 +45,14 @@ class BuildUkrainianTests(unittest.TestCase):
             "Spoken_Quest_UA/OFL-NotoSans.txt",
             "Spoken_Quest_UA/GossipQuestTitles.lua",
             "Spoken_Quest_UA/Translations.lua",
+            "Spoken_Quest_UA/TextPack.lua",
         })
         self.assertIn(b"Spoken_Ukrainian, ", entries["Spoken_Quest_UA/Spoken_Quest_UA.toc"]
                       .replace(b"Spoken_Ukrainian\n", b"Spoken_Ukrainian, "))
-        self.assertIn(b"X-SpokenQuests-DataModule-Version: 1",
+        self.assertIn(b"X-Spoken-TextFormat: 1",
                       entries["Spoken_Quest_UA/Spoken_Quest_UA.toc"])
+        self.assertNotIn(b"X-SpokenQuests-DataModule-Version",
+                         entries["Spoken_Quest_UA/Spoken_Quest_UA.toc"])
         scripts = b"".join(content for name, content in entries.items() if name.endswith((".lua", ".toc")))
         self.assertNotIn(b".mp3", scripts)
         self.assertNotIn(b"Silence", scripts)
@@ -339,7 +342,7 @@ VoiceOver = {DataModules = {
                 "Spoken_Quest_UA/Module.lua"):
             script += "\n" + files[name].decode("utf-8") + "\n"
         script += """
-assert(VoiceOver.DataModules.registered == "Spoken_Quest_UA")
+assert(VoiceOver.DataModules.registered == nil)
 assert(SpokenUkrainian.previewEnabled == false)
 local found
 for _, widget in ipairs(widgets) do

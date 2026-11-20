@@ -9,6 +9,13 @@
 - Module-specific identity, current pinned evidence, rights and placeholder checks still apply. For Gossip use a fresh versioned selection scope. Keep old SQLite decisions as history and exclude them from candidates, selections and builds. A local choice is not an approval. Bind each Gossip selection to the verified NPC and original wording/hash. Never promote uncertain audit candidates, reuse one gender branch across variants, use TTS-prepared wording as a runtime key, or widen a choice to unrelated NPCs.
 - Keep the workflow private for local testing. These conventions supersede older per-module UI, legacy combined addon, and installer restrictions below.
 
+## Spoken 3.10.1 text-pack integration (issue #38, PR #39)
+
+- The active audited Spoken source pin is `spoken/v3.10.1` at `db5669b0a39815dd38568f0e871f4ced82bc9229`. The Quest/Gossip corpus, aliases and Stage 3 input files are byte-identical to 3.9.0; preserve legacy Stage 1/2B behavior tests against their **separate** historical 3.9.0 manifest, not the active source pin.
+- Register Quest/Gossip text only through the public `Spoken:RegisterText("ukUA", "quests", ...)` API, with `X-Spoken-Text` metadata. Do not invent voice packs or synthetic sound lengths. Official `Spoken_Quests` remains required for the Compendium Quest tab but is not overwritten by Ukrainian modules.
+- Canonical Spoken IDs and native ClassicUA NPC/hash lookups are different contracts. Always check the full pinned English/variant set before exporting a base `q:ID:event`; never guess `:wN` or player-sex variants. Export shared `g:...` only after checking **all** pinned corpus contexts including unselected NPCs and unsupported objects. Missing evidence, conflicting translations or unsafe tokens mean omit that Text Pack entry, retaining English fallback and native localization.
+- Native Quest and Gossip hooks must remain usable regardless of the selected Spoken Text Language. The modules load normally (official Text Packs also permit non-LoadOnDemand addons), and each independently includes a Cyrillic-capable font plus license. Keep text-only and voice modules independently installable. In-game WoW: Forever verification is required before claiming acceptance.
+
 ## Project
 
 Spoken Ukrainian is an independent WoW Forever `ukUA` Community Packs project. Spoken Player and ClassicUA are external repositories. A Community Pack is not a replacement for the player; `ukUA` is a content language, not a Blizzard client locale.

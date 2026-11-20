@@ -1,5 +1,7 @@
 # Spoken Ukrainian 🇺🇦
 
+**Інтеграція текстових модулів Spoken 3.10.1 (PR #39, Draft):** окремі Quest і Gossip Text Packs для Compendium та субтитрів Spoken, без вимоги українського озвучення. Закріплене джерело оновлено до перевіреного 3.10.1, неоднозначні відповідності пропускаються, native Quest/Gossip залишаються. Gossip отримав власний шрифт із кирилицею. **Потрібна реальна перевірка у WoW: Forever.** [Інструкція, обмеження та відкат](docs/SPOKEN_3101_TEXT_PACK.uk.md).
+
 **Поточний Quest UI:** У локальному менеджері можна додати український текст, вибрати один із кількох перекладів або автоматично застосувати єдиний переклад до кількох перевірених англійських варіантів. Імен рецензентів і галочок для Quest немає. Історичні дані SQLite зберігаються. Див. [спрощену інструкцію](docs/TRANSLATION_MANAGER.md).
 
 [Посібник з командного рядка](docs/CLI.uk.md) · [English CLI guide](docs/CLI.md)
@@ -24,11 +26,11 @@ uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoke
 **Встановлення білда в WoW Forever без ручного розпакування:**
 
 ```bash
-uv run --locked python tools/install_addon.py --addons "/шлях/до/WoW/Interface/AddOns" --dry-run
+uv run --locked python tools/install_addon.py --addons "/шлях/до/World of Warcraft/_forever_/Interface/AddOns" --dry-run
 uv run --locked python tools/install_addon.py --addons "/шлях/до/WoW/Interface/AddOns"
 ```
 
-Замінити шлях потрібно на **реальну директорію AddOns**. Скрипт перевіряє SHA-256 та структуру ZIP, замінює **лише** `Spoken_Ukrainian` і `Spoken_Quest_UA`, зберігає попередні версії в прихованій `.spoken-ukrainian-backups/` і не змінює офіційні аддони. Перед встановленням **повністю закрий гру**. `--dry-run` не змінює файли. [Детальніше](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv).
+Замінити шлях потрібно на **реальну директорію AddOns**. Скрипт перевіряє SHA-256 та структуру ZIP, замінює **лише** `Spoken_Ukrainian` та вибраний модуль (`Spoken_Quest_UA` або `Spoken_Gossip_UA`), зберігає попередні версії в прихованій `.spoken-ukrainian-backups/` і не змінює офіційні аддони. Перед встановленням **повністю закрий гру**. `--dry-run` не змінює файли. [Детальніше](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv).
 
 ## Виправлення за перевіркою у WoW Forever (Gossip / українські літери)
 
@@ -55,7 +57,7 @@ uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoke
 
 **AI-переклади ClassicUA:** необов’язковий прапорець `allow_ai_transations` (саме таке написання) за замовчуванням `false`, але в поточному `config/translation_sources.json` для `classicua` встановлено **`true`**. Він дозволяє тільки попередній локальний автоімпорт AI-записів, які пройшли суворе зіставлення 1:1; не означає людського схвалення перекладу. Зміна на `false` та повторний білд виключає AI-записи з активного тестового ZIP, не стираючи локальну історію імпорту. Не всі AI-переклади ClassicUA гарантовано існують у корпусі Spoken.
 
-Результат у приватному `dist/Spoken_Quest_UA_Local_Test.zip` (два каталоги аддонів + SHA-256). Розпакуй у `Interface/AddOns/`, увімкни **Spoken Ukrainian** і **Spoken Ukrainian: Quests**; **ClassicUA у грі більше не потрібен** для підтриманих квестових полів, але його Git-копія потрібна під час білда. У PR #20 **штатне вікно NPC QuestFrame** показує український переклад за замовчуванням; **утримуй Shift для англійського оригіналу**, відпусти — знову українська. Додаткова тестова панель `/spokenuk preview on` залишається опційною. Це **ще не штатні субтитри Spoken** — для них pinned Spoken 3.9.0 вимагає справжніх аудіоданих. **Це локальний тест, не реліз.** [Інструкція та приймальні тести у грі](docs/QUEST_LOCAL_TEST_BUILD.md#native-questframe-translation-issue-19).
+Результат у приватному `dist/Spoken_Quest_UA_Local_Test.zip` (два каталоги аддонів + SHA-256). Розпакуй у `Interface/AddOns/`, увімкни **Spoken Ukrainian** і **Spoken Ukrainian: Quests**; **ClassicUA у грі більше не потрібен** для підтриманих квестових полів, але його Git-копія потрібна під час білда. У PR #20 **штатне вікно NPC QuestFrame** показує український переклад за замовчуванням; **утримуй Shift для англійського оригіналу**, відпусти — знову українська. Додаткова тестова панель `/spokenuk preview on` залишається опційною. **Зміна для Spoken 3.10.1:** окремий Text Pack додає український текст у підтримані субтитри та Compendium без аудіо; цю інтеграцію ще потрібно перевірити в грі. **Це локальний тест, не реліз.** [Інструкція та приймальні тести у грі](docs/QUEST_LOCAL_TEST_BUILD.md#native-questframe-translation-issue-19).
 
 Окремий аддон `Spoken_Gossip_UA` перекладає репліки NPC та варіанти відповідей. Зберіть його з `--module Spoken_Gossip_UA` і встановіть окремий ZIP. Кожен модуль можна ввімкнути зі спільним `Spoken_Ukrainian`. Перед встановленням перенесіть старий `Spoken_Quests_UA` за межі AddOns. Див. [Менеджер перекладів](docs/TRANSLATION_MANAGER.md).
 

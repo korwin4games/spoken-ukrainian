@@ -17,6 +17,9 @@ builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 UPSTREAM = Path(os.environ.get("SPOKEN_SOURCE", ROOT.parent / "spoken-wow"))
 LOCK = json.loads((ROOT / "sources.lock.json").read_text())
+# Historical Stage 1 assertions characterize the old 3.9.0 public API.
+# They deliberately do not claim compatibility with the current 3.10.1 pin.
+LEGACY_LOCK = json.loads((ROOT / "tests/stage1_legacy_sources.json").read_text())
 
 
 def git(*args):
@@ -110,8 +113,8 @@ class PinnedContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.before = snapshot()
         cls.sources = {}
-        pin = LOCK["spoken"]["revision"]
-        for path, expected in LOCK["spoken"]["files"].items():
+        pin = LEGACY_LOCK["revision"]
+        for path, expected in LEGACY_LOCK["files"].items():
             data = git("show", pin + ":" + path)
             if hashlib.sha256(data).hexdigest() != expected:
                 raise AssertionError("Pinned source hash mismatch: " + path)

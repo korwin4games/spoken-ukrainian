@@ -1,5 +1,7 @@
 # Spoken Ukrainian 🇺🇦
 
+**Spoken 3.10.1 text-only integration (PR #39, Draft):** Quest and Gossip have independent Ukrainian Text Packs for Spoken captions/Compendium. The source pin is now the audited 3.10.1 tag; canonical/variant mappings fail closed, with no Ukrainian voice pack required. Native Quest/Gossip hooks are retained, and Gossip includes its own Cyrillic font. **Actual WoW: Forever testing is still required.** [Integration and rollback guide](docs/SPOKEN_3101_TEXT_PACK.md).
+
 **Current Quest UI:** In the local Translation Manager, Quest translation editing has a simple choose-or-enter workflow: one existing translation applies automatically across verified English variants, two alternatives require choosing one, and missing text can be entered or drafted using a copyable Codex prompt. No Quest reviewer checkboxes or journal menus are shown. See [the simplified Quest Manager guide](docs/TRANSLATION_MANAGER.md). Historical SQLite records are retained; these are private test builds.
 
 [Complete CLI guide](docs/CLI.md) · [Посібник українською](docs/CLI.uk.md)
@@ -24,11 +26,11 @@ uv run --locked python tools/build_ukrainian.py --classicua ../ClassicUA --spoke
 After quitting WoW Forever, validate and install the local test ZIP (no unzip command needed):
 
 ```sh
-uv run --locked python tools/install_addon.py --addons "/real/path/to/WoW/Interface/AddOns" --dry-run
+uv run --locked python tools/install_addon.py --addons "/real/path/to/World of Warcraft/_forever_/Interface/AddOns" --dry-run
 uv run --locked python tools/install_addon.py --addons "/real/path/to/WoW/Interface/AddOns"
 ```
 
-The installer verifies the ZIP's SHA-256 sidecar and exact contents, updates **only** `Spoken_Ukrainian` and `Spoken_Quest_UA`, keeps replaced folders in `.spoken-ukrainian-backups/`, and leaves official `Spoken`/`Spoken_Quests` untouched. `--dry-run` never modifies files. [Full installation guide](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv).
+The installer verifies the ZIP's SHA-256 sidecar and exact contents, updates **only** `Spoken_Ukrainian` and the selected Ukrainian module (`Spoken_Quest_UA` or `Spoken_Gossip_UA`), keeps replaced folders in `.spoken-ukrainian-backups/`, and leaves official `Spoken`/`Spoken_Quests` untouched. `--dry-run` never modifies files. [Full installation guide](docs/QUEST_LOCAL_TEST_BUILD.md#safe-local-addon-installer-with-uv).
 
 ## Local Spoken Ukrainian Quest test build
 

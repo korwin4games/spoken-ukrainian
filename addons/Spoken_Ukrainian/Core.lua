@@ -87,6 +87,15 @@ function SU:ExpandQuestText(sourceText)
     end))
 end
 
+-- Official Spoken 3.10.1 text-pack contract. An older Player simply lacks this
+-- API; native QuestFrame/Journal/Gossip localization remains available.
+-- A text pack is never registered as a voice pack or used as a sound source.
+function SU:RegisterTextPack(section, data)
+    if section ~= "quests" or type(data) ~= "table" then return false end
+    if not Spoken or type(Spoken.RegisterText) ~= "function" then return false end
+    return Spoken:RegisterText("ukUA", section, data) == true
+end
+
 SLASH_SPOKENUKRAINIAN1 = "/spokenuk"
 SlashCmdList["SPOKENUKRAINIAN"] = function(message)
     message = (message or ""):lower():match("^%s*(.-)%s*$")

@@ -55,6 +55,7 @@ jobs:
         with:
           repository: rusty-key/spoken-wow
           ref: ${{ steps.spoken.outputs.revision }}
+          fetch-depth: 0 # Include historical 3.9.0 commit for immutable Stage 1/2B characterization.
           path: spoken-wow
           persist-credentials: false
 
@@ -99,6 +100,7 @@ jobs:
               assert "Spoken_Ukrainian/Spoken_Ukrainian.toc" in names
               assert "Spoken_Quest_UA/Spoken_Quest_UA.toc" in names
               assert "Spoken_Quest_UA/Translations.lua" in names
+              assert "Spoken_Quest_UA/TextPack.lua" in names
               assert "Spoken_Quest_UA/Module.lua" in names
               assert "Spoken_Quest_UA/GossipQuestTitles.lua" in names
               assert {name.split("/")[0] for name in names} == {"Spoken_Ukrainian", "Spoken_Quest_UA"}
@@ -112,11 +114,21 @@ jobs:
               record = spoken_rows.split("    [97279] = {", 1)[1].split("    },", 1)[0]
               assert all(event + " = { text =" in record
                          for event in ("accept", "progress", "complete"))
+              quest_pack = z.read("Spoken_Quest_UA/TextPack.lua").decode("utf-8")
+              # Verify real pinned-source content is exposed to Spoken 3.10.1,
+              # not just the native QuestFrame/Journal bridge.
+              assert 'SpokenUkrainian:RegisterTextPack("quests"' in quest_pack
+              assert 'q:97279:accept' in quest_pack
+              assert "[97279] = " in quest_pack
               assert not any(name.endswith(".mp3") or "Spoken_Quests/" in name for name in names)
               assert z.testzip() is None
           with ZipFile("dist/Spoken_Gossip_UA_Local_Test.zip") as z:
               assert {name.split("/")[0] for name in z.namelist()} == {"Spoken_Ukrainian", "Spoken_Gossip_UA"}
               assert "SpokenUkrainian.GossipTexts = {" in z.read("Spoken_Gossip_UA/GossipTranslations.lua").decode("utf-8")
+              assert "Spoken_Gossip_UA/TextPack.lua" in z.namelist()
+              assert "Spoken_Gossip_UA/NotoSans-Regular.ttf" in z.namelist()
+              assert "Spoken_Gossip_UA/OFL-NotoSans.txt" in z.namelist()
+              assert 'SpokenUkrainian:RegisterTextPack("quests"' in z.read("Spoken_Gossip_UA/TextPack.lua").decode()
               assert z.testzip() is None
           print("Both independent local-test archives are structurally valid.")
           PY
