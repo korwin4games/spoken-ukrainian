@@ -191,6 +191,30 @@ test("Gossip audit alternatives populate the editor but save as manual choices",
   assert.equal(b.requests.some(request => request.action === "import_ready"), false);
 });
 
+test("Gossip same-template auto-ready candidate is not duplicated by its audit lead", async () => {
+  const text = "Срібнокрилим стражам потрібна допомога, {Ім'я}.";
+  const row = {...fixture, type:"gossip", id:"gossip:68:1978831227",
+    review_binding:"pinned-guard", ready_to_import:true,
+    selected_sha256:"template-verified",
+    candidates:[{text, sha256:"template-verified", provider:"classicua",
+      reference:"entries/classic/gossip.lua:12", match_type:"same_template"}],
+    unverified_alternatives:[{kind:"same_template", ukrainian:text,
+      reference:"entries/classic/gossip.lua:12",
+      english:"The Silverwing Sentinels need your help. <name>, visit Stormwind Keep."}]};
+  const b = browser((action, body) => action === "detail" ? row : listing(body.module));
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  b.run("renderDetail(" + JSON.stringify(row) + ")");
+  const nodes = b.el("selected").all();
+  const select = nodes.find(node => node.tag === "select");
+  const field = nodes.find(node => node.tag === "textarea");
+  assert.equal(select.children.length, 1);
+  assert.equal(field.value, text);
+  assert.ok(select.children[0].textContent.length <= 60);
+});
+
 test("Verified Gossip candidates retain source provenance when audit alternatives exist", async () => {
   const row = {...fixture, type: "gossip", id: "gossip:68:107874079",
     review_binding: "pin", selected_sha256: "verified-a",
