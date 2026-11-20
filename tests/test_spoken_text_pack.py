@@ -30,22 +30,84 @@ class SpokenTextPackTests(unittest.TestCase):
         self.assertEqual(lines, {"q:42:accept": "Вітаю, $N!"})
 
     def test_gossip_shared_id_conflict_fails_closed(self):
-        rows = [
-            {"status": "ready", "selection": {"text": "Вітаю."},
-             "contexts": [{"lineId": "g:abcd"}]},
-            {"status": "ready", "selection": {"text": "Привіт."},
-             "contexts": [{"lineId": "g:abcd"}]},
-            {"status": "stale", "selection": {"text": "Застаріле."},
-             "contexts": [{"lineId": "g:efgh"}]},
-            {"status": "ready", "selection": {"text": "Добрий день."},
-             "contexts": [{"lineId": "g:unique"}]},
-        ]
-        self.assertEqual(gossip_payload(rows), {"g:unique": "Добрий день."})
+        shared = "g:" + "a" * 32
+        unique = "g:" + "b" * 32
+
+        def row(npc, key, english, selection):
+            return {
+                "status": "ready", "npc_id": npc, "english_hash": npc,
+                "review_binding": "verified", "originals": [english],
+                "selection": {"text": selection} if selection else None,
+                "contexts": [{"lineId": key, "originalText": english, "npcType": "creature",
+                              "voice": None, "playerGender": None}],
+            }
+
+        rows = [row(42, shared, "Hello.", "Вітаю."),
+                row(43, shared, "Hello.", "Привіт."),
+                row(44, unique, "Welcome.", "Добрий день.")]
+        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+
+        # A shared canonical ID is not safe if even one NPC has no selection.
+        rows[1]["selection"] = None
+        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+        rows[1]["selection"] = {"text": "Вітаю."}
+        self.assertEqual(gossip_payload(rows), {shared: "Вітаю.", unique: "Добрий день."})
+
+        # A different verified original cannot inherit the same translation.
+        rows[1]["originals"] = ["Greetings."]
+        rows[1]["contexts"][0]["originalText"] = "Greetings."
+        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+
+        rows[1]["status"] = "stale"
+        self.assertEqual(gossip_payload(rows), {unique: "Добрий день."})
+
+    def test_gossip_complete_corpus_scoping_blocks_unlisted_contexts(self):
+        from tools.gossip_coverage import classicua_hash
+        key = "g:" + "c" * 32
+        english = "Original line."
+        row = {
+            "npc_id": 42, "english_hash": classicua_hash(english),
+            "review_binding": "evidence", "status": "ready", "originals": [english],
+            "selection": {"text": "Переклад."},
+            "contexts": [{"lineId": key, "originalText": english,
+                          "npcType": "creature", "voice": None, "playerGender": None}],
+        }
+        full = [{"source": "gossip", "lineId": key, "npcId": 42, "npcType": "creature",
+                 "originalText": english}]
+        self.assertEqual(gossip_payload([row], corpus_lines=full), {key: "Переклад."})
+        # This row is outside the editor scope but shares the global ID.
+        full.append({**full[0], "npcId": 43})
+        self.assertEqual(gossip_payload([row], corpus_lines=full), {})
+        full.pop()
+        full.append({**full[0], "npcType": "gameobject", "npcId": 0})
+        self.assertEqual(gossip_payload([row], corpus_lines=full), {})
+
+    def test_quest_base_id_requires_one_verified_original(self):
+        preview = {
+            42: {"title": "Завдання", "accept": {"text": "Вітаю."}},
+            43: {"accept": {"text": "Привіт."}},
+        }
+        moments = {(42, "accept"): {"Hello."},
+                   (43, "accept"): {"Hello.", "Greetings."}}
+        titles, lines = quest_payload(preview, source_moments=moments,
+                                      faction_titles={"horde": {43: "Назва"}})
+        self.assertEqual(titles, {42: "Завдання", 43: "Назва"})
+        self.assertEqual(lines, {"q:42:accept": "Вітаю."})
+        # Faction-specific title disagreement must not be globally exported.
+        titles, _ = quest_payload(preview, source_moments=moments,
+                                  faction_titles={"horde": {42: "Інша назва"}})
+        self.assertNotIn(42, titles)
+
+    def test_unsupported_tokens_fail_closed(self):
+        for value in ("Привіт, $Q.", "$Gmale:female", "$Gmale:;", "{ім'я:к}",
+                      "{стать:хто:що;$N}", "Невідоме {плейсхолдер}."):
+            with self.subTest(value=value):
+                self.assertIsNone(text_pack_words(value))
 
     def test_text_pack_registers_only_with_supported_spoken_api(self):
         data = render_spoken_text_pack(
             {42: "Український квест"}, {"q:42:accept": "Вітаю, $N!"})
-        code = StringIO = data.decode("utf-8")
+        code = data.decode("utf-8")
         self.assertIn('SpokenUkrainian:RegisterTextPack("quests",', code)
         from pathlib import Path
         core = Path("addons/Spoken_Ukrainian/Core.lua").read_text(encoding="utf-8")
@@ -79,6 +141,8 @@ end}
             self.assertIn("## X-Spoken-TextFormat: 1", toc)
             self.assertIn("TextPack.lua", toc)
             self.assertIn(f"{module}/TextPack.lua", entries)
+            self.assertIn(f"{module}/NotoSans-Regular.ttf", entries)
+            self.assertIn(f"{module}/OFL-NotoSans.txt", entries)
         self.assertNotIn("X-SpokenQuests-Language: ukUA",
                          q["Spoken_Quest_UA/Spoken_Quest_UA.toc"].decode())
 
