@@ -206,3 +206,12 @@ uv run --locked python tools/translation_manager.py reimport --module Spoken_Gos
 а `api_response` охоплює і серіалізацію та запис відповіді. Перший вхід
 до кожного модуля будує каталог. Gossip після Quest може скористатися
 вже завантаженими спільними індексами.
+
+### Встановлення з Translation Manager
+
+Поле **WoW path** має типове значення D:\Games\World of Warcraft. Спочатку натисніть **Створити модуль**, потім **Інсталювати**. Менеджер прибирає кінцеві роздільники шляху й додає \_forever_\Interface\AddOns. Для типового значення отримуємо D:\Games\World of Warcraft\_forever_\Interface\AddOns.
+
+Установлення не перебудовує ZIP: використовується останній архів вибраного Quest/Gossip-модуля, перевірений за SQLite та SHA-256. Викликається наявний інсталятор tools/install_addon.py: перевіряє архів і залежності Spoken, резервує попередні українські папки в AddOns\.spoken-ukrainian-backups, встановлює нові файли й відкочує часткові помилки. UI показує шлях резервної копії. Після успіху перезапустіть WoW.
+
+Translation Manager має працювати на комп'ютері з грою. Папки гри та AddOns повинні існувати; не додавайте _forever_ або Interface\AddOns до поля WoW path. Windows-шлях підтримується лише на Windows.
+
