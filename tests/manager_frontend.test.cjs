@@ -149,6 +149,24 @@ test("obsolete search and detail requests do not keep the loading indicator acti
   assert.equal(b.el("metrics").children[0].children[1].textContent, "70");
 });
 
+test("Quest translation editor uses a full-width multi-line field with actions below", async () => {
+  const row = {...fixture, review_binding: "pinned-binding",
+    candidates: [{text: "Вітаю.", provider: "classicua", sha256: "choice-a"}]};
+  const b = browser((action, body) => action === "detail" ? row : listing(body.module));
+  await flush();
+  b.run("renderDetail(" + JSON.stringify(row) + ")");
+  const section = b.el("selected").all().find(x => x.tag === "section" && x.className === "quest-editor");
+  assert.ok(section);
+  const field = section.all().find(x => x.tag === "textarea");
+  assert.equal(field.rows, 7);
+  assert.equal(field.value, "Вітаю.");
+  const actions = section.all().find(x => x.className === "quest-editor-actions");
+  assert.ok(actions);
+  assert.deepEqual(actions.children.map(x => x.textContent),
+    ["Зберегти", "Скопіювати запит для Codex"]);
+  assert.ok(section.children.indexOf(field) < section.children.indexOf(actions));
+});
+
 test("Quest selection shows all candidates without reviewer forms or checkboxes", async () => {
   const choices = [
     {text:"Вітаю.", provider:"classicua", sha256:"choice-a", eligibility:"mapping_required"},
