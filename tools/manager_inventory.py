@@ -70,12 +70,13 @@ def latest_units(db, archive, spoken_revision, classicua_revision, module=MODULE
 
 
 class ModuleInventory:
-    def __init__(self, rows, build, units, module=MODULE, state=None):
+    def __init__(self, rows, build, units, module=MODULE, state=None, corpus_lines=None):
         self.module = module
         self.rows = {r["id"]: r for r in rows if r["type"] == MODULE_DOMAINS[module]}
         self.build = build
         self.units = units
         self.state = state
+        self.corpus_lines = corpus_lines
 
     def summary(self):
         return self._summary
@@ -312,7 +313,8 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
                          if value["route"] in ("user_selected", "pinned_unique")}
         audit = audit_catalog(classicua, spoken)
         return ModuleInventory(gossip_rows(state, lines, db_path, current_units, audit),
-                               build if not units or current_units else None, current_units, module, state)
+                               build if not units or current_units else None, current_units, module, state,
+                               corpus_lines=lines)
     with timing("sqlite_reads", module), connection(db_path) as db:
         units, build = latest_units(db, archive, state.inventory.revision, state.source.revision, module)
         agent_targets = {r["target_id"] for r in recorded_imports(db) if r["domain"] == domain}
