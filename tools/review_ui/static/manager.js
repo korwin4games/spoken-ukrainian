@@ -688,6 +688,7 @@ async function reimport(dryRun) {
   busy = true;
   for (const id of ["preview", "reimport", "reset", "module", "install"]) el(id).disabled = true;
   el("run-summary").hidden = true;
+  el("install-status").textContent = "";
   el("operation-status").textContent = dryRun ? "Перевіряємо й збираємо пробний ZIP…" :
     domain() === "quest" ? "Створюємо архів модуля Quest…" : "Переімпорт і збірка тривають…";
   try {
@@ -768,7 +769,7 @@ el("module").addEventListener("change", () => {
   el("filter").value = el("translation-status").value = el("quest-filter").value = "all";
   readyCount = 0;
   el("reset").checked = false;
-  for (const id of ["metrics", "rows", "selected", "operation-status", "build-state", "match-count", "page"])
+  for (const id of ["metrics", "rows", "selected", "operation-status", "install-status", "build-state", "match-count", "page"])
     el(id).replaceChildren();
   el("prev").disabled = el("next").disabled = true;
   el("run-summary").hidden = true;
