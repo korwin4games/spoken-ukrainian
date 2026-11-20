@@ -101,6 +101,64 @@ class GossipSimpleUITests(TestCase):
             self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
                                        filter_by="quest_ready")["total"], 1)
 
+    def test_manager_save_gossip_updates_cached_detail_and_ready_filter(self):
+        """Exercise the exact browser Save -> SQLite -> list/detail reload path."""
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from adapters.sqlite_translation_store import connection
+        from tools import translation_manager as manager_module
+        from tools.gossip_simple import rows as current_rows
+
+        self.original["originalText"] = "Hello, $n."
+        selected_text = "Вітаю, {Ім'я}."
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            db_path = root / "gossip.sqlite3"
+            gossip_zip = root / "gossip.zip"
+            gossip_zip.write_bytes(b"existing ZIP stays unchanged")
+            with connection(db_path):
+                pass
+            manager = manager_module.ManagerUI(root / "ClassicUA", root / "Spoken", db_path)
+            self.addCleanup(manager.close)
+
+            def view_loader(classicua, spoken, db_path, archive, *, module, input_loader):
+                self.assertEqual(module, builder.GOSSIP_MODULE)
+                with patch("tools.gossip_simple.contexts", return_value=(
+                        {(NPC_ID, TEXT_ID): [self.original]}, set())), patch(
+                        "tools.build_ukrainian.local_gossip_texts",
+                        return_value={"byNpc": {}, "common": {}}):
+                    records = list(current_rows(self.state, [self.original], db_path, {}, {}))
+                return ModuleInventory(records, None, {}, module=module, state=self.state)
+
+            archive_paths = {builder.QUEST_MODULE: root / "quest.zip",
+                             builder.GOSSIP_MODULE: gossip_zip}
+            with patch.object(builder, "DIST", root), patch.object(
+                    manager_module, "ARCHIVES", archive_paths), patch.object(
+                    manager, "validate_checkouts", return_value=("verified-pins",)), patch(
+                    "tools.manager_inventory.load_inventory", side_effect=view_loader):
+                options = {"module": builder.GOSSIP_MODULE, "identity": IDENTITY}
+                before = manager.action("detail", options)
+                self.assertFalse(before["ready_to_import"])
+                self.assertEqual(manager.action("list", {
+                    "module": builder.GOSSIP_MODULE,
+                    "filter_by": "quest_problem"})["total"], 1)
+                result = manager.action("save_gossip", options | {
+                    "binding": before["review_binding"], "text": selected_text, "confirm": True})
+                self.assertEqual(result["build"], "review_saved")
+                after = manager.action("detail", options)
+                self.assertTrue(after["ready_to_import"])
+                self.assertEqual(after["status"], "ready")
+                self.assertEqual(after["selection"]["text"], selected_text)
+                self.assertTrue(after["recorded"])
+                self.assertEqual(manager.action("list", {
+                    "module": builder.GOSSIP_MODULE, "filter_by": "quest_problem"})["total"], 0)
+                self.assertEqual(manager.action("list", {
+                    "module": builder.GOSSIP_MODULE, "filter_by": "quest_ready"})["total"], 1)
+                self.assertEqual(manager.action("stats", {
+                    "module": builder.GOSSIP_MODULE})["summary"]["gossip"]["ready"], 1)
+            self.assertEqual(gossip_zip.read_bytes(), b"existing ZIP stays unchanged")
+
     def test_matching_auto_import_is_marked_imported_not_ready(self):
         units = {("gossip", f"npc:{NPC_ID}:{TEXT_ID}"): {
             "source": "classicua", "route": "pinned_unique",
