@@ -217,7 +217,7 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(self.view.page(status="multiple_originals", query="first crossing")["total"], 1)
         self.assertEqual(self.view.page(status="mapping_conflict")["total"], 2)
 
-    def test_quest_multiple_originals_are_bound_to_their_contexts(self):
+    def test_unique_translation_across_quest_originals_is_ready_without_mapping_approval(self):
         from adapters.crosswalk import digest
         from adapters.spoken.text_index import TextIndex
         from test_stage3 import Fixture, synthetic_inventory
@@ -239,9 +239,13 @@ class ManagerTests(unittest.TestCase):
         for gossip_work in (gossip_audit, gossip_contexts):
             gossip_work.assert_not_called()
         detail = catalog.detail(identity=identity)
-        self.assertEqual(detail["status"], "multiple_originals")
+        self.assertEqual(detail["status"], "ready")
+        self.assertTrue(detail["ready_to_import"])
+        self.assertFalse(detail["candidate_conflict"])
         self.assertEqual(detail["mapping_state"], "mapping_pending")
         self.assertEqual(detail["translation_state"], "translation_available")
+        self.assertEqual(catalog.page(filter_by="quest_ready")["total"], 1)
+        self.assertEqual(catalog.page(filter_by="quest_problem")["total"], 0)
         self.assertEqual(catalog.page(status="mapping_pending")["total"], 1)
         self.assertTrue(detail["draft_available"])
         self.assertFalse(detail["built"])
