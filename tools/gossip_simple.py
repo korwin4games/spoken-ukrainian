@@ -126,7 +126,10 @@ def rows(state, lines, db_path, units, audit=None):
                 leaf = state.dataset.records["gossip"][scope].fields[(hashed,)]
                 ref = f"{leaf.origin.file}:{leaf.origin.line} [{scope}][{hashed}]"
                 try:
-                    runtime_text(originals[0], text)
+                    # Shared NPC/hash mappings must be safe for every verified
+                    # original, not just the first wording variant.
+                    for original in originals:
+                        runtime_text(original, text)
                 except ValueError:
                     continue
                 choices.append(review_candidate(text, "classicua", ref, state.source.revision, "candidate"))
@@ -148,6 +151,22 @@ def rows(state, lines, db_path, units, audit=None):
                 if unit and unit["route"] == "user_selected" and unit["text_sha256"] == sha(rendered):
                     built = unit | {"text_sha256": fingerprint}
             stale = not current
+        # A single safe exact-hash ClassicUA translation needs no manual
+        # selection. Two different valid translations still require a choice.
+        # A stale explicit user choice must never be silently overwritten.
+        if identity not in stored and binding:
+            unique = {candidate["sha256"]: candidate for candidate in choices}
+            if len(unique) == 1:
+                candidate = next(iter(unique.values()))
+                text = candidate["text"]
+                rendered = runtime_text(originals[0], text)
+                selected = {"text": text, "rendered": rendered,
+                            "source": "classicua", "reference": candidate["reference"],
+                            "auto": True}
+                unit = units.get(("gossip", f"npc:{npc}:{hashed}"))
+                if (unit and unit["route"] == "pinned_unique"
+                        and unit["text_sha256"] == sha(rendered)):
+                    built = unit | {"text_sha256": sha(text)}
         alternatives = []
         for field in ("corpus_alternate", "whitespace_candidates", "alternatives", "wrong_npc_scope",
                       "other_families", "glossary", "dynamic", "reply_only", "template_candidates"):
