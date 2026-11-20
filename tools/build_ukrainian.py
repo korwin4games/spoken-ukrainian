@@ -692,7 +692,9 @@ def build_gossip(classicua, spoken, destination):
     forms = read_classicua_inflections(classicua, view.state.source.files)
     from tools.spoken_text_pack import gossip_payload, render_spoken_text_pack
 
-    text_lines = gossip_payload(view.rows.values())
+    from tools.gossip_coverage import read_pinned_corpus
+    text_lines = gossip_payload(
+        view.rows.values(), corpus_lines=read_pinned_corpus(spoken, view.state.inventory.revision))
     entries = template_entries(
         None, render_gossip_lua(gossip, inflections=forms), module=GOSSIP_MODULE,
         text_pack_lua=render_spoken_text_pack(lines=text_lines))
@@ -770,9 +772,10 @@ def build(classicua, spoken, *, module=QUEST_MODULE, before_import=None, prepare
     titles = local_gossip_titles(state) if is_quest else {}
     gossip, reviewed_gossip, selected_gossip, excluded_gossip, source_proofs, gossip_page = (
         {"byNpc": {}, "common": {}}, {}, [], {}, {}, {})
-    from tools.spoken_text_pack import quest_payload, render_spoken_text_pack
+    from tools.spoken_text_pack import quest_payload, quest_source_moments, render_spoken_text_pack
 
-    text_titles, text_lines = quest_payload(preview)
+    text_titles, text_lines = quest_payload(
+        preview, source_moments=quest_source_moments(state), faction_titles=titles)
     entries = template_entries(
         render_quest_lua(preview, state.inventory.revision, forms, titles) if is_quest else None,
         render_gossip_lua(gossip, excluded=excluded_gossip, inflections=forms) if not is_quest else None,
