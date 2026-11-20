@@ -1,5 +1,9 @@
 # Instructions for coding agents
 
+## Gossip audit leads in the translation editor
+
+Gossip audit candidates in `unverified_alternatives` are **evidence**, not safe NPC/hash mappings or human-approved translations. The editor may offer their **existing Ukrainian text** in a clearly labeled dropdown for explicit user review. Selecting one fills the textarea only; it must not save, approve, auto-import, or call `choose_gossip` for an unverified candidate. Clicking **Зберегти** must use the regular `save_gossip` path and validate placeholders against every verified English original under the current NPC/hash. Keep English-only audit leads visible but disabled (never insert English into the Ukrainian field or fabricate a translation). Preserve existing verified candidate selection behavior and the SQLite audit history. No change to the Gossip global canonical-ID collision restrictions.
+
 ## Quest and Gossip coverage KPI (Translation Manager)
 
 The manager must show **Покриття перекладом** for both Quest and Gossip. Use the complete *module inventory*, not the current search/filter/page. Every item belongs to exactly one UI bucket: ready-to-import takes precedence over already-built, then imported, then problematic. Coverage = (ready + imported) / total × 100, with no double counting. Show both percentage (one decimal maximum) and covered/total counts; an empty inventory displays a dash instead of a misleading 0%. Quest items are ID/event moments, while Gossip items are NPC/hash wordings. This is coverage of the manager's indexed Spoken module inventory, **not** a claim about all WoW quests, every upstream Spoken line, or verified in-game translation quality. Keep backend summary and visible UI metrics consistent with independent module selection and unfiltered counts.
