@@ -191,6 +191,49 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid_filters"):
             self.view.page(module="Spoken_Readables")
 
+    def test_coverage_buckets_are_exclusive_and_use_all_module_rows(self):
+        quest = ModuleInventory([
+            row("q:1:accept", "quest", "Already built and newly ready", "ready",
+                built=True, english="Hello.") | {"ready_to_import": True},
+            row("q:2:accept", "quest", "Already included", "ready",
+                built=True, english="Goodbye."),
+            row("q:3:accept", "quest", "Only ready", "ready",
+                english="Welcome.") | {"ready_to_import": True},
+            row("q:4:accept", "quest", "Problem", "missing", english="Missing."),
+        ], None, {})
+        total = quest.summary()["quest"]
+        self.assertEqual((total["total"], total["ready"], total["quest_imported"],
+                          total["quest_problem"]), (4, 2, 1, 1))
+        self.assertEqual(total["covered"], 3)
+        self.assertEqual(total["coverage_percent"], 75.0)
+        self.assertEqual(total["covered"] + total["quest_problem"], total["total"])
+        # Page filtering and pagination must never change overall coverage.
+        page = quest.page(filter_by="quest_problem", limit=1)
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["summary"]["quest"]["coverage_percent"], 75.0)
+
+        gossip = ModuleInventory([
+            row("gossip:3:1", "gossip", "Greeting", "ready",
+                english="Hello.") | {"ready_to_import": True},
+            row("gossip:3:2", "gossip", "Reply", "ready",
+                english="Welcome.", built=True),
+            row("gossip:4:3", "gossip", "Missing", "missing",
+                english="No translation."),
+        ], None, {}, builder.GOSSIP_MODULE)
+        summary = gossip.summary()["gossip"]
+        self.assertEqual((summary["ready"], summary["quest_imported"],
+                          summary["quest_problem"], summary["covered"]), (1, 1, 1, 2))
+        self.assertEqual(summary["coverage_percent"], 66.7)
+        filtered = gossip.page(module=builder.GOSSIP_MODULE,
+                              filter_by="quest_ready", limit=1)
+        self.assertEqual(filtered["total"], 1)
+        self.assertEqual(filtered["summary"]["gossip"]["covered"], 2)
+
+        empty = ModuleInventory([], None, {}, builder.GOSSIP_MODULE).summary()["gossip"]
+        self.assertEqual(empty["total"], 0)
+        self.assertEqual(empty["covered"], 0)
+        self.assertIsNone(empty["coverage_percent"])
+
     def test_candidate_conflicts_and_multiple_originals_have_separate_statistics_and_filters(self):
         conflict = self.view.rows["q:43:progress"]
         conflict.update(mapping_state="mapping_conflict",
@@ -217,7 +260,7 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(self.view.page(status="multiple_originals", query="first crossing")["total"], 1)
         self.assertEqual(self.view.page(status="mapping_conflict")["total"], 2)
 
-    def test_quest_multiple_originals_are_bound_to_their_contexts(self):
+    def test_unique_translation_across_quest_originals_is_ready_without_mapping_approval(self):
         from adapters.crosswalk import digest
         from adapters.spoken.text_index import TextIndex
         from test_stage3 import Fixture, synthetic_inventory
@@ -239,9 +282,22 @@ class ManagerTests(unittest.TestCase):
         for gossip_work in (gossip_audit, gossip_contexts):
             gossip_work.assert_not_called()
         detail = catalog.detail(identity=identity)
-        self.assertEqual(detail["status"], "multiple_originals")
+        self.assertEqual(detail["status"], "ready")
+        self.assertTrue(detail["ready_to_import"])
+        self.assertFalse(detail["candidate_conflict"])
         self.assertEqual(detail["mapping_state"], "mapping_pending")
         self.assertEqual(detail["translation_state"], "translation_available")
+        self.assertEqual(catalog.page(filter_by="quest_ready")["total"], 1)
+        self.assertEqual(catalog.page(filter_by="quest_problem")["total"], 0)
+        # The same auto-ready decision must flow into the *built* Quest
+        # preview and the Spoken Compendium text pack across all wordings.
+        from tools.spoken_text_pack import quest_payload, quest_source_moments
+        from adapters.sqlite_translation_store import enable_sqlite
+        with enable_sqlite(self.db):
+            preview, _, _ = builder.current_quest_texts(state)
+        self.assertEqual(preview[8]["progress"]["text"], "Вигаданий переклад.")
+        _, lines = quest_payload(preview, source_moments=quest_source_moments(state))
+        self.assertEqual(lines["q:8:progress"], "Вигаданий переклад.")
         self.assertEqual(catalog.page(status="mapping_pending")["total"], 1)
         self.assertTrue(detail["draft_available"])
         self.assertFalse(detail["built"])

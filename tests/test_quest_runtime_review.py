@@ -11,6 +11,7 @@ from adapters.sqlite_translation_store import enable_sqlite
 from tools.build_ukrainian import QUEST_MODULE, current_quest_texts, render_quest_lua
 from tools.manager_review import apply_review
 from tools.quest_runtime_review import approved, binding, history
+from tools.quest_source_compatibility import LEGACY_REVISION, CURRENT_REVISION
 from tools.translation_manager import verify_quest_zip
 
 
@@ -77,6 +78,30 @@ class QuestRuntimeReviewTests(TestCase):
                 self.assertEqual(approved(changed, db, []), {})
             state.blocked_quest_moments = lambda: {self.target}
             self.assertEqual(approved(state, db, []), {})
+
+    def test_390_runtime_approval_survives_identical_3101_upgrade(self):
+        state = self.state(("Hello!", "Greetings!"), revision=LEGACY_REVISION)
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "reviews.sqlite3"
+            row, payload = self.save_and_select(state, db, "Вітаю!")
+            selected = row["candidates"][0]
+            apply_review("confirm_candidate", payload | {
+                "candidate": selected["review_id"]}, QUEST_MODULE, row, state, None, db)
+            previous_history = history(db)
+            self.assertEqual(approved(state, db, [])[self.target]["text"], "Вітаю!")
+
+            state.inventory.revision = CURRENT_REVISION
+            self.assertEqual(approved(state, db, [])[self.target]["text"], "Вітаю!")
+            self.assertEqual(history(db), previous_history)
+
+            # Every non-Spoken proof field remains strict; do not auto-approve
+            # changes in source revision, original wording, NPC/quest contexts.
+            state.source.revision = "c" * 40
+            self.assertEqual(approved(state, db, []), {})
+            state.source.revision = "b" * 40
+            state.inventory.contexts[self.target][0]["wording_sha256"] = digest("Changed!")
+            self.assertEqual(approved(state, db, []), {})
+            self.assertEqual(history(db), previous_history)
 
     def test_incompatible_placeholders_and_conflicting_human_decisions(self):
         with TemporaryDirectory() as tmp:

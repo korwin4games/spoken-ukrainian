@@ -1,4 +1,5 @@
 """Pinned Quest ID/event selections without reviewer forms."""
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ from adapters.source_revision_store import sha
 from adapters.spoken.text_index import TextIndex
 from adapters.sqlite_translation_store import connection
 from tools.quest_simple import apply_choice, resolved
+from tools.quest_source_compatibility import LEGACY_REVISION, CURRENT_REVISION
 
 
 class SimpleQuestTests(TestCase):
@@ -45,10 +47,53 @@ class SimpleQuestTests(TestCase):
                 "original_variants": [{"target_id": self.target}], "originals": originals,
                 "candidates": [{"text": text, "sha256": sha(text)} for text in texts]}
 
+    def test_real_pinned_quest17_automatically_eligible_in_private_pack(self):
+        """Uldaman Reagent Run: regression of reported problematic UI record."""
+        from tools.build_ukrainian import local_test_state
+        classicua = Path(os.environ.get("CLASSICUA_SOURCE", "../ClassicUA"))
+        spoken = Path(os.environ.get("SPOKEN_SOURCE", "../spoken-wow"))
+        if not (classicua / ".git").exists() or not (spoken / ".git").exists():
+            self.skipTest("Requires the pinned ClassicUA and Spoken Git checkouts")
+        state = local_test_state(classicua, spoken)
+        row = resolved(state, None).get("q:17:accept")
+        self.assertIsNotNone(row, "Quest 17 accept has no unique pinned ClassicUA selection")
+        self.assertTrue(row.get("text"), "Quest 17 accept is not importable")
+        self.assertFalse(row["selected"], "Unreviewed unique candidate must remain automatic")
+
     def test_one_translation_is_automatic_for_two_originals(self):
         state = self.state()
         self.assertEqual(resolved(state, None)[self.target]["text"], "Вітаю.")
         self.assertFalse(resolved(state, None)[self.target]["selected"])
+
+    def test_unique_quest_id_event_translation_needs_no_stage3_hint(self):
+        state = self.state(originals=("Go to Uldaman.", "Find caps near Uldaman."),
+                           texts=("Принеси гриби.",))
+        state._hints = []
+        candidate = resolved(state, None)[self.target]
+        self.assertEqual(candidate["text"], "Принеси гриби.")
+        self.assertEqual(candidate["source"], "classicua")
+        self.assertFalse(candidate["selected"])
+
+    def test_faction_and_source_field_mismatch_are_not_importable(self):
+        state = self.state(texts=("Вітаю.",))
+        state._hints = []
+        state.inventory.contexts[self.target] = [
+            {"wording_sha256": digest("Hello."), "faction": "alliance",
+             "quest_id": 42, "source": "accept"}]
+        state.original_index = TextIndex({}, (), {}, {self.target: ("Hello.",)})
+        # Only a Horde source is present; Alliance-only Spoken context
+        # must not inherit the opposite faction's translation.
+        self.assertNotIn(self.target, resolved(state, None))
+        state.inventory.contexts[self.target][0]["faction"] = "horde"
+        state.source.units["quest:horde:42:accept"].effective_sha256 = "0" * 64
+        self.assertNotIn(self.target, resolved(state, None))
+        state.source.units["quest:horde:42:accept"].effective_sha256 = sha("Вітаю.")
+        self.assertEqual(resolved(state, None)[self.target]["text"], "Вітаю.")
+        state.policy.stores = lambda provider: False
+        self.assertNotIn(self.target, resolved(state, None))
+        state.policy.stores = lambda provider: True
+        state.blocked_quest_moments = lambda: {self.target}
+        self.assertNotIn(self.target, resolved(state, None))
 
     def test_choose_between_two_translations_and_revalidate_evidence(self):
         state = self.state(texts=("Вітаю.", "Доброго дня."))
@@ -63,6 +108,63 @@ class SimpleQuestTests(TestCase):
             self.assertEqual(resolved(state, db)[self.target]["text"], "Доброго дня.")
             state.inventory.revision = "c" * 40
             self.assertTrue(resolved(state, db)[self.target]["conflict"])
+
+    def test_390_choice_remains_ready_on_byte_identical_3101_corpus(self):
+        state = self.state(texts=("Вітаю.", "Доброго дня."))
+        state.inventory.revision = LEGACY_REVISION
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "choices.sqlite3"
+            row = self.row(state, ("Вітаю.", "Доброго дня."))
+            row["candidates"][0]["provider"] = "classicua"
+            apply_choice("choose_quest", {
+                "identity": self.target, "binding": row["review_binding"],
+                "candidate": sha("Вітаю."), "confirm": True,
+            }, row, state, db)
+            with connection(db) as sql:
+                original = sql.execute("""SELECT evidence, text, text_sha256, source
+                    FROM quest_simple_choices WHERE moment=?""", (self.target,)).fetchone()
+            state.inventory.revision = CURRENT_REVISION
+            restored = resolved(state, db)[self.target]
+            self.assertEqual(restored["text"], "Вітаю.")
+            self.assertTrue(restored["selected"])
+            with connection(db) as sql:
+                self.assertEqual(sql.execute("""SELECT evidence, text, text_sha256, source
+                    FROM quest_simple_choices WHERE moment=?""", (self.target,)).fetchone(), original)
+
+            # Repeated explicit choice preserves its true provider rather than
+            # making a ClassicUA candidate appear to be a new manual translation.
+            updated = self.row(state, ("Вітаю.", "Доброго дня."))
+            apply_choice("choose_quest", {
+                "identity": self.target, "binding": updated["review_binding"],
+                "candidate": sha("Вітаю."), "confirm": True,
+            }, updated, state, db)
+            with connection(db) as sql:
+                actual = sql.execute("""SELECT evidence, text, text_sha256, source
+                    FROM quest_simple_choices WHERE moment=?""", (self.target,)).fetchone()
+            self.assertEqual(actual[0], updated["review_binding"])
+            self.assertEqual(actual[3], "classicua")
+
+    def test_migrated_choice_rejects_changed_original_context_and_classicua(self):
+        state = self.state(originals=("Hello.", "Greetings."), texts=("Вітаю.",))
+        state.inventory.revision = LEGACY_REVISION
+        with TemporaryDirectory() as temp:
+            db = Path(temp) / "choices.sqlite3"
+            row = self.row(state, ("Вітаю.",))
+            apply_choice("choose_quest", {
+                "identity": self.target, "binding": row["review_binding"],
+                "candidate": sha("Вітаю."), "confirm": True,
+            }, row, state, db)
+            state.inventory.revision = CURRENT_REVISION
+            self.assertEqual(resolved(state, db)[self.target]["text"], "Вітаю.")
+            state.source.revision = "c" * 40
+            self.assertTrue(resolved(state, db)[self.target]["conflict"])
+            state.source.revision = "b" * 40
+            state.inventory.contexts[self.target][0]["wording_sha256"] = digest("Changed original.")
+            # Missing/changed evidence is blocked, not silently migrated.
+            self.assertNotIn(self.target, resolved(state, db))
+            with connection(db) as sql:
+                self.assertEqual(sql.execute(
+                    "SELECT COUNT(*) FROM quest_simple_choices").fetchone()[0], 1)
 
     def test_save_raw_quest_text_without_language_or_placeholder_validation(self):
         state = self.state(originals=("Hello, $N.$BReturn.", "Greetings."), texts=())

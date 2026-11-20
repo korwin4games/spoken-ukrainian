@@ -90,15 +90,22 @@ class ModuleInventory:
             pending = Counter(r["status"] for r in rows if r["built"] is None)
             built = sum(r["built"] is not None for r in rows)
             conflicts = sum(r.get("candidate_conflict", r["status"] == "conflict") for r in rows)
-            result[kind] = {"total": len(rows), "included": built, "not_included": len(rows) - built,
+            # The three mutually exclusive UI buckets are authoritative for
+            # coverage; a row that is both built and ready counts only once.
+            buckets = Counter(quest_bucket(r) for r in rows)
+            covered = buckets["quest_imported"] + buckets["quest_ready"]
+            total = len(rows)
+            result[kind] = {"total": total, "included": built, "not_included": total - built,
+                            "covered": covered,
+                            "coverage_percent": round(100 * covered / total, 1) if total else None,
                             "recorded": sum(r["recorded"] for r in rows),
                             "conflicts": conflicts,
                             "multiple_originals": sum(len(r.get("originals", ())) > 1 for r in rows
                                                       if r["type"] == "quest"),
                             "conflicting_candidates": conflicts, "missing": counts["missing"],
-                            "ready": sum(bool(r.get("ready_to_import")) for r in rows),
-                            "quest_imported": sum(quest_bucket(r) == "quest_imported" for r in rows),
-                            "quest_problem": sum(quest_bucket(r) == "quest_problem" for r in rows),
+                            "ready": buckets["quest_ready"],
+                            "quest_imported": buckets["quest_imported"],
+                            "quest_problem": buckets["quest_problem"],
                             "pending_review": pending["review"] + pending["stale"],
                             "mapping_states": dict(Counter(r.get("mapping_state", r["status"]) for r in rows)),
                             "translation_states": dict(Counter(r.get("translation_state", r["status"]) for r in rows)),
@@ -435,6 +442,7 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
     runtime_history = defaultdict(list)
     runtime_approved = {}
     from tools.quest_simple import resolved as simple_resolved, selections as simple_selections
+    from tools.quest_source_compatibility import matching_evidence, matching_selection
     local_choices = simple_selections(db_path)
     quick_resolved = simple_resolved(state, db_path)
     for review in quest_runtime_review.history(db_path):
@@ -507,13 +515,21 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
                            (not built or built["text_sha256"] != sha(current_quick["text"])))
         quick_conflict = bool(current_quick and current_quick.get("conflict"))
         quick = local_choices.get(moment)
-        if quick and binding and quick[0] == digest(binding):
+        # The current validated one-to-one choice is a real importable
+        # candidate even if historical Stage 3 review has not approved it.
+        if current_quick and current_quick.get("text") and not any(
+                choice["sha256"] == sha(current_quick["text"]) for choice in choices):
+            choices.append(review_candidate(
+                current_quick["text"], current_quick["source"], "pinned Quest ID/event",
+                state.source.revision, "candidate") | {"eligibility": "auto_selected"})
+        if quick and binding and matching_selection(quick[0], binding):
             if not any(c["sha256"] == quick[2] for c in choices):
                 choices.append(review_candidate(quick[1], quick[3], "local", state.inventory.revision, "local"))
             recorded = True
         approved = runtime_approved.get(moment)
         decisions = quest_runtime_review.current_decisions(runtime_history[moment])
-        approvals = {r["candidate"] for r in decisions if r["evidence"] == binding}
+        approvals = {r["candidate"] for r in decisions if binding is not None
+                     and matching_evidence(r["evidence"], binding)}
         for choice in choices:
             if choice.get("review_id") and quest_runtime_review.candidate_key(choice) in approvals:
                 choice["runtime_approval"] = True
@@ -523,7 +539,7 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
         for review in runtime_history[moment]:
             if review["decision"] != "pending":
                 continue
-            current = binding is not None and review["evidence"] == binding
+            current = binding is not None and matching_evidence(review["evidence"], binding)
             decision = ("stale" if not current else "approved" if approved and
                         approved["candidate"] == "runtime:" + review["id"] else "pending")
             choices.append(review_candidate(review["text"], "manual", moment, state.inventory.revision, decision)
@@ -532,11 +548,18 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
                               "runtime_approval": "runtime:" + review["id"] in approvals})
         conflict = len({r["sha256"] for r in choices if r["review"] not in (
             "rejected", "deferred", "pending_update", "stale") and r.get("eligibility") != "stale"}) > 1
-        ready = bool(approved) or ready and not multiple and moment not in rejected_moments
+        # A new automatic source candidate must not conceal a different manual
+        # draft or another admissible translation. An explicit stored local
+        # choice, however, resolves such a conflict for private ZIP builds.
+        if conflict and not (current_quick and current_quick.get("selected")):
+            quick_ready = False
+        ready = quick_ready or (bool(approved) or
+                               ready and not multiple and moment not in rejected_moments)
         queue = "quest_mapping" if any(quest_queue[t] for t in targets) else (
             "quest_translation" if set(targets) & reviewed_targets else None)
         stale_review = bool(decisions) and moment not in runtime_approved
-        reason = ("quest_mapping_rejected_or_deferred" if moment in rejected_moments else
+        reason = (None if quick_ready else
+                  "quest_mapping_rejected_or_deferred" if moment in rejected_moments else
                   "conflicting_quest_runtime_variants" if moment in runtime_approved and not approved else
                   "quest_runtime_review_stale" if stale_review else
                   "quest_multiple_verified_originals" if multiple and not approved else
@@ -545,15 +568,18 @@ def _load_inventory(classicua, spoken, db_path, archive, *, module, skipped, sta
         mapping = ("mapping_rejected" if moment in rejected_moments else
                    "mapping_verified" if set(targets) & reviewed_targets else
                    "mapping_provisional" if set(targets) & q_auto.keys() else "mapping_pending")
-        status = ("rejected" if moment in rejected_moments else "ready" if approved else
+        status = ("ready" if quick_ready else
+                  "rejected" if moment in rejected_moments else "ready" if approved else
                   "conflict" if moment in runtime_approved else "multiple_originals" if multiple else
                   status_for(english, choices, conflict=conflict, ready=ready))
         rows.append(decorate({"id": moment, "type": "quest", "label": title, "originals": english},
                     targets + [moment], built, choices, recorded, status, mapping=mapping, reason=reason,
-                    review_queue=queue, original_variants=original_variants, candidate_conflict=conflict,
+                    review_queue=queue, original_variants=original_variants, candidate_conflict=conflict and not quick_ready,
                     draft_available=bool(binding) and moment not in rejected_moments,
                     ready_to_import=quick_ready, needs_choice=quick_conflict,
-                    selected_sha256=quick[2] if quick and binding and quick[0] == digest(binding) else None,
+                    selected_sha256=(sha(current_quick["text"]) if current_quick and current_quick.get("text")
+                                     else quick[2] if quick and binding
+                                     and matching_selection(quick[0], binding) else None),
                     review_binding=digest(binding) if binding else None,
                     approved_variant_count=len(english) if approved and multiple else 0,
                     quest_id=quest_id, event=event, contexts=[c for t in targets for c in state.inventory.contexts[t]]))

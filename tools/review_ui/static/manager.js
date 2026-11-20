@@ -2,6 +2,7 @@
 
 const el = id => document.getElementById(id);
 const number = new Intl.NumberFormat("uk");
+const decimal = new Intl.NumberFormat("uk", {maximumFractionDigits: 1});
 const errors = {
   manager_confirmation_required: "Підтвердіть переімпорт.",
   manager_reimport_already_running: "Інший переімпорт уже триває. Дочекайтеся його завершення.",
@@ -103,17 +104,24 @@ async function call(action, payload) {
 
 function metrics(summary, build) {
   const q = summary[domain()];
-    const cards = [
-      ["Імпортовано", q.quest_imported ?? 0],
-      ["Готові до імпорту", q.ready ?? 0],
-      ["Проблемні", q.quest_problem ?? 0],
-    ];
-    el("metrics").className = "metrics quest-summary";
-    el("metrics").replaceChildren(...cards.map(([name, value]) => {
-      const card = make("div", undefined, "metric");
-      card.append(make("span", name), make("strong", number.format(value)));
-      return card;
-    }));
+  const total = Number(q.total ?? 0);
+  const covered = Number(q.covered ?? (Number(q.quest_imported ?? 0) + Number(q.ready ?? 0)));
+  const coverage = total ? decimal.format(q.coverage_percent ?? 100 * covered / total) + "%" : "—";
+  const cards = [
+    ["Імпортовано", q.quest_imported ?? 0],
+    ["Готові до імпорту", q.ready ?? 0],
+    ["Проблемні", q.quest_problem ?? 0],
+    ["Покриття перекладом", coverage],
+  ];
+  el("metrics").className = "metrics quest-summary";
+  el("metrics").replaceChildren(...cards.map(([name, value], index) => {
+    const card = make("div", undefined, "metric");
+    card.append(make("span", name),
+      make("strong", index === 3 ? value : number.format(value)));
+    if (index === 3) card.append(make("small",
+      number.format(covered) + " із " + number.format(total) + " записів", "muted"));
+    return card;
+  }));
     el("build-state").textContent = build ?
       "Останній " + domainName() + " ZIP: " + build.built_at + " UTC" :
       domainName() + " ZIP ще не зібрано.";

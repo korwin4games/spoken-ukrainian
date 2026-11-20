@@ -61,9 +61,9 @@ def text_pack_words(value):
 def quest_source_moments(state):
     """List every audited English wording for each Quest ID/event.
 
-    The native Quest preview only selects by ID/event and cannot prove an
-    individual -wN or gendered file. More than one wording blocks the base
-    Spoken key instead of translating an unrelated voice/wording variant.
+    The native Quest preview uses ID/event. Preserve all audited English
+    wordings for completeness checks, even when one Ukrainian translation
+    intentionally covers multiple English wording/sex variants.
     """
     result = defaultdict(set)
     index = state.original_index
@@ -86,11 +86,12 @@ def quest_source_moments(state):
 
 
 def quest_payload(preview, *, source_moments=None, faction_titles=None):
-    """Use only unambiguous, pinned, event-scoped Quest translations.
+    """Export a pinned Quest ID/event translation across verified wordings.
 
-    The full Spoken corpus is checked before emitting a *base* q:ID:event key.
-    Without per-wording proofs, never guess -wN or :m/:f targets. The official
-    runtime tries :m/:f and then the base key automatically.
+    One selected Ukrainian text is applied to the base q:ID:event key, which
+    the official Spoken runtime uses as a fallback for wording/sex variants.
+    The event must exist in the full pinned corpus. Do not invent explicit
+    -wN or :m/:f translations without variant-specific proof.
     """
     titles, lines = {}, {}
     for quest, data in sorted(preview.items()):
@@ -114,7 +115,7 @@ def quest_payload(preview, *, source_moments=None, faction_titles=None):
             row = data.get(part)
             if type(row) is not dict:
                 continue
-            if source_moments is not None and len(source_moments.get((quest, part), ())) != 1:
+            if source_moments is not None and not source_moments.get((quest, part)):
                 continue
             text = text_pack_words(row.get("text"))
             if text:

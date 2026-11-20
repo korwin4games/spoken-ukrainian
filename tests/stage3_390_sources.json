@@ -1,0 +1,18 @@
+{
+  "files": {
+    "addons/Spoken_Bosses/Data/Bosses.lua": "79a3b9d36b5d1dff8f4b0019bb601c5586fce325468f50f63c2879673957346b",
+    "addons/Spoken_Places/Data/enUS/Subzones.lua": "7dcf14ead51faee58932ef84840aba77738f9774dda580d0601e24fe231f1216",
+    "addons/Spoken_Readables/Checksum.lua": "82200418e70616fb5d093c0d5479410ddcde23c3c5d2fe1b5842f481e82e92d0",
+    "addons/Spoken_Readables/Data/Books.lua": "741a2101fe266872a7fe9a7d5a063fa58321f03c2faeae5ddfc7f1cc57005646",
+    "pipelines/places/tools/seed/subzones.json": "08050c08ffce2d53b845a779c46e9c335aa86435175e19fd1a6d6db89f6024df",
+    "pipelines/places/tools/seed/zones.json": "683cd35c0d10cf27e50e6b9b896d18b8804f41cffb8990a65c3866d573aaacf4",
+    "pipelines/places/tools/voice/naming.mjs": "3e90371dbccf83ea0bd7e7671469ec3733ef03d4c06d285d5f05d5452b766c3b",
+    "pipelines/quests/corpus/corpus.json.gz": "54eec482fc73aac7b15ba4ef08c86ed4eeff99d824c375f8f376c9d06fc3b802",
+    "pipelines/quests/corpus/factions.json": "427f7dafcd3b506ad340dd1523cc78b56b4bb3249fd32dd8e2dc21a47e24ccc9",
+    "pipelines/quests/corpus/gossip_aliases.json": "f7a8c651640c2f2c2ceabd247aa608d0206ca70afc63232685eb30de88da1342",
+    "pipelines/quests/tts_cli/naming.py": "2d9c9d8f4759138e17973542f3e6d3290349aab2713f2451c09b07c67267ab1c",
+    "pipelines/readables/tools/lib/naming.mjs": "e9f579f2b6d0d8be80a931cb940ffb06074f8faf382fe793fbda558385e373e1",
+    "pipelines/readables/tools/lib/text.mjs": "d15b197da68e90eef5e0fe7ade34a0fdb748963733ae69d0fcbb0ba289eec85b"
+  },
+  "revision": "3c896874e27ec9e07d51a3578c0b9fa8545c9ac7"
+}

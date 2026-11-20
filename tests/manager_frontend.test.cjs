@@ -412,11 +412,12 @@ test("Quest summary and filters show only imported, ready and problematic bucket
     } : listing(body.module);
   });
   await flush();
-  assert.equal(b.el("metrics").children.length, 3);
+  assert.equal(b.el("metrics").children.length, 4);
   assert.deepEqual(b.el("metrics").children.map(x => x.children[0].textContent),
-    ["Імпортовано", "Готові до імпорту", "Проблемні"]);
+    ["Імпортовано", "Готові до імпорту", "Проблемні", "Покриття перекладом"]);
   assert.deepEqual(b.el("metrics").children.map(x => x.children[1].textContent),
-    ["5", "2", "3"]);
+    ["5", "2", "3", "70%"]);
+  assert.equal(b.el("metrics").children[3].children[2].textContent, "7 із 10 записів");
   assert.equal(b.el("reimport").textContent, "Створити модуль");
   b.el("quest-filter").value = "quest_problem";
   b.el("quest-filter").events.change();
@@ -426,6 +427,37 @@ test("Quest summary and filters show only imported, ready and problematic bucket
   b.el("module").events.change();
   await flush();
   assert.equal(b.el("quest-filter").value, "all");
+});
+
+test("Quest and Gossip coverage uses unfiltered module totals, handles rounding and empty data", async () => {
+  const b = browser((action, body) => listing(body.module));
+  await flush();
+  b.run("renderList(" + JSON.stringify({
+    items:[], total:1, build:null,
+    summary:{quest:{total:3, ready:1, quest_imported:1, quest_problem:1,
+      covered:2, coverage_percent:66.7}},
+  }) + ")");
+  assert.equal(b.el("metrics").children[3].children[1].textContent, "66,7%");
+  assert.equal(b.el("metrics").children[3].children[2].textContent, "2 із 3 записів");
+
+  // This is a filtered page (one row). Coverage still uses the entire
+  // module's summary, not the visible page count or number of search hits.
+  b.el("module").value = gossip;
+  b.run("renderList(" + JSON.stringify({
+    items:[], total:1, build:null,
+    summary:{gossip:{total:4, ready:1, quest_imported:2, quest_problem:1,
+      covered:3, coverage_percent:75}},
+  }) + ")");
+  assert.equal(b.el("metrics").children[3].children[1].textContent, "75%");
+  assert.equal(b.el("metrics").children[3].children[2].textContent, "3 із 4 записів");
+
+  b.run("renderList(" + JSON.stringify({
+    items:[], total:0, build:null,
+    summary:{gossip:{total:0, ready:0, quest_imported:0, quest_problem:0,
+      covered:0, coverage_percent:null}},
+  }) + ")");
+  assert.equal(b.el("metrics").children[3].children[1].textContent, "—");
+  assert.equal(b.el("metrics").children[3].children[2].textContent, "0 із 0 записів");
 });
 
 test("Quest missing translation can be entered without reviewer identity", async () => {

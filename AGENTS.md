@@ -1,5 +1,21 @@
 # Instructions for coding agents
 
+## Quest and Gossip coverage KPI (Translation Manager)
+
+The manager must show **Покриття перекладом** for both Quest and Gossip. Use the complete *module inventory*, not the current search/filter/page. Every item belongs to exactly one UI bucket: ready-to-import takes precedence over already-built, then imported, then problematic. Coverage = (ready + imported) / total × 100, with no double counting. Show both percentage (one decimal maximum) and covered/total counts; an empty inventory displays a dash instead of a misleading 0%. Quest items are ID/event moments, while Gossip items are NPC/hash wordings. This is coverage of the manager's indexed Spoken module inventory, **not** a claim about all WoW quests, every upstream Spoken line, or verified in-game translation quality. Keep backend summary and visible UI metrics consistent with independent module selection and unfiltered counts.
+
+## Owner-approved Quest auto-import policy — private WoW: Forever testing
+
+This **newest Quest-specific decision overrides older Stage 3 / Stage 4 human-approval prerequisites for *local test ZIPs and Translation Manager ready status only***. Do not weaken the separate Gossip NPC/hash safety rules, approved-translation ledger semantics, mapping audit history, rights for publication or public release gates.
+
+- Use the *pinned* ClassicUA Quest field and the *verified* Spoken **Quest ID + event** (`accept`, `progress`, `complete`) as the private test-pack mapping. Stage 3 hints and human mapping/content approval are **not required** for an automatically importable Quest entry. Never infer Quest IDs from names, unverified fuzzy text similarity, or a different event.
+- If a Quest ID/event has **one distinct eligible Ukrainian translation**, automatically select it for **all verified English originals, faction-compatible contexts and wording variants of that same event**, even if the English texts differ. No reviewer action, checkbox or manual Save click is needed; show **Готовий до імпорту** immediately.
+- Two or more **different eligible Ukrainian texts** for the same Quest ID/event require an explicit user choice; do not pick arbitrarily. Duplicate identical texts collapse to one candidate. Persist user choices and exact source provenance; an existing explicit valid choice takes precedence. Explicit rejections, mismatched IDs/events, opposing faction, stale changed evidence/source, missing verified originals, invalid source hashes or unsafe content remain blocked.
+- The **Ready to import** status must mean the backend will include that Quest ID/event in the next private ZIP build. The UI list, detail, summary counts, ready-only CLI/build, native QuestFrame/Journal and Spoken 3.10.1 Text Pack/Compendium must use the *same* decision. Text Pack writes a single base `q:ID:event` fallback for all verified English wording/sex variants; never fabricate `:wN` or `:m/:f` entries.
+- Automatic selection is **not human approval** and must not rewrite human decisions or auto-publish translations. Preserve SQLite audit history, original wording context and fallback. Record how the selection was obtained. Test actual game cases and refine exceptions based on evidence instead of demanding manual review for every Quest.
+- Scope is Quest local testing only. Gossip retains its complete pinned-corpus cross-NPC collision checks and separate text/voice modules retain their independent installation contracts.
+
+
 ## Owner decision ? shared local module workflow
 
 - `Spoken_Quest_UA` and `Spoken_Gossip_UA` are independent Ukrainian addons. Each module ZIP contains the selected addon and required shared `Spoken_Ukrainian` core, with its own checksum. Keep independent text and voice addons where applicable. `Spoken_Quests` remains the unchanged official Quest and Gossip target.
@@ -13,7 +29,7 @@
 
 - The active audited Spoken source pin is `spoken/v3.10.1` at `db5669b0a39815dd38568f0e871f4ced82bc9229`. The Quest/Gossip corpus, aliases and Stage 3 input files are byte-identical to 3.9.0; preserve legacy Stage 1/2B behavior tests against their **separate** historical 3.9.0 manifest, not the active source pin.
 - Register Quest/Gossip text only through the public `Spoken:RegisterText("ukUA", "quests", ...)` API, with `X-Spoken-Text` metadata. Do not invent voice packs or synthetic sound lengths. Official `Spoken_Quests` remains required for the Compendium Quest tab but is not overwritten by Ukrainian modules.
-- Canonical Spoken IDs and native ClassicUA NPC/hash lookups are different contracts. Always check the full pinned English/variant set before exporting a base `q:ID:event`; never guess `:wN` or player-sex variants. Export shared `g:...` only after checking **all** pinned corpus contexts including unselected NPCs and unsupported objects. Missing evidence, conflicting translations or unsafe tokens mean omit that Text Pack entry, retaining English fallback and native localization.
+- Canonical Spoken IDs and native ClassicUA NPC/hash lookups are different contracts. Verify all pinned English variants exist before exporting one base `q:ID:event` covering their shared Quest ID/event; different verified English wordings are allowed under the owner-approved private Quest policy, but never guess `:wN` or player-sex variant IDs. Export shared `g:...` only after checking **all** pinned corpus contexts including unselected NPCs and unsupported objects. Missing evidence, conflicting translations or unsafe tokens mean omit that Text Pack entry, retaining English fallback and native localization.
 - Native Quest and Gossip hooks must remain usable regardless of the selected Spoken Text Language. The modules load normally (official Text Packs also permit non-LoadOnDemand addons), and each independently includes a Cyrillic-capable font plus license. Keep text-only and voice modules independently installable. In-game WoW: Forever verification is required before claiming acceptance.
 
 ## Project
