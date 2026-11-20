@@ -59,6 +59,106 @@ class GossipSimpleUITests(TestCase):
         self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
                                    query="107874079")["total"], 1)
 
+    def test_save_gossip_reloads_as_ready_from_actual_sqlite(self):
+        """A chosen audit translation must persist, then leave Problematic."""
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from adapters.sqlite_translation_store import connection
+        from tools.gossip_simple import apply_choice, rows as current_rows
+
+        original = "Welcome, $n."
+        self.original["originalText"] = original
+        candidate = "Вітаю, {Ім'я}."
+        row = self.one(lookup={"byNpc": {NPC_ID: {TEXT_ID: candidate}}, "common": {}})
+        self.assertTrue(row["review_binding"])
+        with TemporaryDirectory() as temp:
+            db_path = Path(temp) / "gossip.sqlite3"
+            with connection(db_path) as sql:
+                sql.execute("BEGIN IMMEDIATE")
+                apply_choice("save_gossip", {
+                    "identity": row["id"], "binding": row["review_binding"],
+                    "text": candidate, "confirm": True,
+                }, row, self.state, db_path, db=sql)
+                sql.commit()
+                persisted = sql.execute("""SELECT text,source,reference FROM gossip_simple_choices
+                    WHERE identity=?""", (row["id"],)).fetchone()
+            self.assertEqual(persisted, (candidate, "manual", "local_selection"))
+            with patch("tools.gossip_simple.contexts", return_value=(
+                    {(NPC_ID, TEXT_ID): [self.original]}, set())), patch(
+                    "tools.build_ukrainian.local_gossip_texts",
+                    return_value={"byNpc": {}, "common": {}}):
+                updated = list(current_rows(self.state, [self.original], db_path, {}, {}))[0]
+            self.assertEqual(updated["status"], "ready")
+            self.assertTrue(updated["ready_to_import"])
+            self.assertTrue(updated["recorded"])
+            self.assertEqual(updated["selection"]["source"], "manual")
+            self.assertEqual(updated["selection"]["text"], candidate)
+            view = ModuleInventory([updated], None, {}, module=builder.GOSSIP_MODULE)
+            self.assertEqual(view.summary()["gossip"]["ready"], 1)
+            self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
+                                       filter_by="quest_problem")["total"], 0)
+            self.assertEqual(view.page(module=builder.GOSSIP_MODULE,
+                                       filter_by="quest_ready")["total"], 1)
+
+    def test_manager_save_gossip_updates_cached_detail_and_ready_filter(self):
+        """Exercise the exact browser Save -> SQLite -> list/detail reload path."""
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from adapters.sqlite_translation_store import connection
+        from tools import translation_manager as manager_module
+        from tools.gossip_simple import rows as current_rows
+
+        self.original["originalText"] = "Hello, $n."
+        selected_text = "Вітаю, {Ім'я}."
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            db_path = root / "gossip.sqlite3"
+            gossip_zip = root / "gossip.zip"
+            gossip_zip.write_bytes(b"existing ZIP stays unchanged")
+            with connection(db_path):
+                pass
+            manager = manager_module.ManagerUI(root / "ClassicUA", root / "Spoken", db_path)
+            self.addCleanup(manager.close)
+
+            def view_loader(classicua, spoken, db_path, archive, *, module, input_loader):
+                self.assertEqual(module, builder.GOSSIP_MODULE)
+                with patch("tools.gossip_simple.contexts", return_value=(
+                        {(NPC_ID, TEXT_ID): [self.original]}, set())), patch(
+                        "tools.build_ukrainian.local_gossip_texts",
+                        return_value={"byNpc": {}, "common": {}}):
+                    records = list(current_rows(self.state, [self.original], db_path, {}, {}))
+                return ModuleInventory(records, None, {}, module=module, state=self.state)
+
+            archive_paths = {builder.QUEST_MODULE: root / "quest.zip",
+                             builder.GOSSIP_MODULE: gossip_zip}
+            with patch.object(builder, "DIST", root), patch.object(
+                    manager_module, "ARCHIVES", archive_paths), patch.object(
+                    manager, "validate_checkouts", return_value=("verified-pins",)), patch(
+                    "tools.manager_inventory.load_inventory", side_effect=view_loader):
+                options = {"module": builder.GOSSIP_MODULE, "identity": IDENTITY}
+                before = manager.action("detail", options)
+                self.assertFalse(before["ready_to_import"])
+                self.assertEqual(manager.action("list", {
+                    "module": builder.GOSSIP_MODULE,
+                    "filter_by": "quest_problem"})["total"], 1)
+                result = manager.action("save_gossip", options | {
+                    "binding": before["review_binding"], "text": selected_text, "confirm": True})
+                self.assertEqual(result["build"], "review_saved")
+                after = manager.action("detail", options)
+                self.assertTrue(after["ready_to_import"])
+                self.assertEqual(after["status"], "ready")
+                self.assertEqual(after["selection"]["text"], selected_text)
+                self.assertTrue(after["recorded"])
+                self.assertEqual(manager.action("list", {
+                    "module": builder.GOSSIP_MODULE, "filter_by": "quest_problem"})["total"], 0)
+                self.assertEqual(manager.action("list", {
+                    "module": builder.GOSSIP_MODULE, "filter_by": "quest_ready"})["total"], 1)
+                self.assertEqual(manager.action("stats", {
+                    "module": builder.GOSSIP_MODULE})["summary"]["gossip"]["ready"], 1)
+            self.assertEqual(gossip_zip.read_bytes(), b"existing ZIP stays unchanged")
+
     def test_matching_auto_import_is_marked_imported_not_ready(self):
         units = {("gossip", f"npc:{NPC_ID}:{TEXT_ID}"): {
             "source": "classicua", "route": "pinned_unique",
@@ -189,6 +289,60 @@ class GossipSimpleUITests(TestCase):
         self.assertEqual(row["english_hash"], TEXT_ID)
         self.assertIn("[!common]", row["selection"]["reference"])
         self.assertEqual(row["selection"]["rendered"], "Вітаю, {ім'я}!")
+
+    def test_same_template_supports_classicua_name_grammar(self):
+        row = self.fuzzy(
+            "The Sentinels need your help. $n, speak to their leader.",
+            "The Sentinels need your help. <name>, speak to their leader.",
+            "Стражам потрібна допомога. {Ім'я}, поговори з їхнім ватажком.")
+        self.assertEqual(row["status"], "ready")
+        self.assertTrue(row["ready_to_import"])
+        self.assertTrue(row["selection"]["auto"])
+        self.assertIn("{Ім'я}", row["selection"]["rendered"])
+        self.assertEqual(row["selection"]["match_type"], "same_template")
+
+    def test_classicua_grammar_does_not_hide_missing_or_extra_slots(self):
+        from tools.gossip_simple import runtime_text
+        self.assertEqual(runtime_text("Hello, $n.", "Вітаю, {Ім'я}."),
+                         "Вітаю, {Ім'я}.")
+        self.assertEqual(runtime_text("Hello, $C.", "Вітаю, {Клас}."),
+                         "Вітаю, {Клас}.")
+        self.assertEqual(runtime_text("Hello, $Gfriend:friend;", "Вітаю, {стать:друже:подруго}."),
+                         "Вітаю, {стать:друже:подруго}.")
+        for original, translation in (
+            ("Hello, $n.", "Вітаю."),
+            ("Hello.", "Вітаю, {ім'я}."),
+            ("Hello, $n.", "Вітаю, {Ім'я} та $n."),
+            ("Hello, $n.", "Вітаю, {ім'я:unknown}."),
+            ("Hello, $c.", "Вітаю, {раса}."),
+            ("Hello, $b.", "Вітаю."),
+        ):
+            with self.subTest(original=original, translation=translation), self.assertRaises(ValueError):
+                runtime_text(original, translation)
+
+    def test_real_stormwind_guard_template_becomes_ready(self):
+        """Regression: NPC 68 / original hash 1978831227 from the reviewer screenshot."""
+        import os
+        from tempfile import TemporaryDirectory
+        from tools.manager_inventory import load_inventory
+
+        classicua = Path(os.environ.get("CLASSICUA_SOURCE", "../ClassicUA"))
+        spoken = Path(os.environ.get("SPOKEN_SOURCE", "../spoken-wow"))
+        if not (classicua / ".git").exists() or not (spoken / ".git").exists():
+            self.skipTest("Requires pinned ClassicUA and Spoken Git checkouts")
+        with TemporaryDirectory() as temp:
+            view = load_inventory(classicua, spoken, Path(temp) / "review.sqlite3",
+                                  Path(temp) / "Gossip.zip", module=builder.GOSSIP_MODULE)
+            row = view.rows.get("gossip:68:1978831227")
+            self.assertIsNotNone(row, "Missing pinned Stormwind guard Gossip record")
+            self.assertTrue(row["ready_to_import"], {
+                "status": row["status"], "match_types": row["match_types"],
+                "choices": [(c["sha256"], c.get("match_type")) for c in row["candidates"]],
+                "audit": [(a["kind"], a.get("scope"), bool(a.get("ukrainian")))
+                          for a in row["unverified_alternatives"]],
+                "originals": row["originals"],
+            })
+            self.assertEqual(row["selection"]["match_type"], "same_template")
 
     def test_whitespace_auto_selected_with_spoken_runtime_hash(self):
         row = self.fuzzy("Welcome.\nHave a seat.", "Welcome.  Have a seat.",

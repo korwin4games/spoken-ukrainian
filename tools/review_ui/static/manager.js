@@ -27,6 +27,8 @@ const errors = {
   manager_install_legacy_addon: "Виявлено старий Spoken_Quests_UA. Перемістіть його з AddOns перед встановленням.",
   manager_install_rollback_incomplete: "Помилка встановлення: відновлення не завершено. Перевірте резервні копії вручну.",
   manager_install_failed: "Не вдалося встановити модуль. Перевірте доступ до папки гри та журнал термінала.",
+  manager_invalid_translation_format: "Переклад має неправильні або невідповідні оригіналу плейсхолдери ($N, $C, $R, $B, $G чи {Ім'я}/{Клас}/{Раса}). Перевірте текст і спробуйте знову.",
+  manager_review_context_blocked: "Немає перевіреного контексту NPC/репліки або він змінився. Оновіть запис; зберігати цей переклад небезпечно.",
 };
 let csrf, offset = 0, selected = null, listSeq = 0, detailSeq = 0, busy = false;
 let readyCount = 0;
@@ -194,8 +196,34 @@ function simpleEditor(row) {
   message.setAttribute("role", "status");
   panel.append(message);
   const options = new Map();
+  // Keep the native dropdown compact even when the audit source contains a
+  // long English original, file path or full Ukrainian paragraph.
+  const excerpt = (value, limit = 35) => {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    return text.length > limit ? text.slice(0, limit - 1).trimEnd() + "…" : text;
+  };
   for (const candidate of row.candidates) {
     if (!options.has(candidate.sha256)) options.set(candidate.sha256, candidate);
+  }
+  // Audit alternatives are leads, not verified ClassicUA mappings. Offer the
+  // Ukrainian text for manual review, but never promote it through choose_gossip.
+  // English-only leads remain visible as disabled choices.
+  if (row.type === "gossip") {
+    for (const [index, item] of (row.unverified_alternatives || []).entries()) {
+      const text = typeof item.ukrainian === "string" ? item.ukrainian : "";
+      // A same-template audit lead may already have passed all validation
+      // and become a verified option. Do not show the same text twice.
+      if (text && [...options.values()].some(candidate => candidate.text === text)) continue;
+      const label = [
+        "Аудит " + (index + 1),
+        excerpt(matchNames[item.kind] || item.kind, 20),
+        text ? excerpt(text) : "Українського перекладу немає",
+      ].join(" · ");
+      options.set("audit:" + index, {
+        text, audit: true, disabled: !text.trim(), label,
+        title: [item.kind, item.reference, item.english, text].filter(Boolean).join(" · "),
+      });
+    }
   }
   const editable = Boolean(row.review_binding && row.originals.length);
   const run = async (action, data) => {
@@ -208,19 +236,31 @@ function simpleEditor(row) {
         binding: row.review_binding, confirm: true});
       el("run-summary").hidden = true;
       if (result.build !== "review_saved") throw new Error("manager_reimport_worker_invalid_response");
-      el("operation-status").textContent = "Збережено. Готовий до імпорту — натисніть «Створити модуль».";
       await list();
-      if (selected === row.id) await detail(row.id);
+      const updated = selected === row.id ? await detail(row.id) : null;
+      if (updated?.ready_to_import) {
+        el("operation-status").textContent =
+          "Збережено. Готовий до імпорту — натисніть «Створити модуль».";
+      } else if (updated?.built) {
+        el("operation-status").textContent = "Збережено. Переклад уже імпортовано.";
+      } else {
+        el("operation-status").textContent =
+          "Переклад збережено, але статус «Готовий до імпорту» не підтверджено. " +
+          "Перевірте оновлений запис і контекст NPC.";
+      }
     } catch (error) {
-      message.textContent = errorMessage(error);
+      const messageText = errorMessage(error);
+      message.textContent = messageText;
+      el("operation-status").textContent = "Не вдалося зберегти: " + messageText;
     } finally {
       busy = false;
       for (const id of ["reimport", "module", "install", "wow-path"]) el(id).disabled = false;
       el("reimport").disabled = domain() === "quest" && readyCount === 0;
     }
   };
-  panel.append(make("h3", options.size > 1 ? "Оберіть переклад" :
-    options.size === 1 ? "Доступний переклад" : "Перекладу немає"));
+  const selectableCount = [...options.values()].filter(candidate => !candidate.disabled).length;
+  panel.append(make("h3", selectableCount > 1 ? "Оберіть переклад" :
+    selectableCount === 1 ? "Доступний переклад" : "Перекладу немає"));
   const field = make("textarea");
   field.rows = 7;
   field.maxLength = 60000;
@@ -230,13 +270,19 @@ function simpleEditor(row) {
   if (options.size) {
     select = make("select");
     select.setAttribute("aria-label", "Оберіть український переклад");
-    for (const candidate of options.values()) {
-      const item = make("option", [candidate.provider, candidate.reference, candidate.text.slice(0, 100)]
-        .filter(Boolean).join(" · "));
-      item.value = candidate.sha256;
+    let optionNumber = 0;
+    for (const [id, candidate] of options) {
+      optionNumber += 1;
+      const item = make("option", candidate.label ||
+        [optionNumber + ". " + (candidate.provider || "Переклад"),
+          excerpt(candidate.text)].filter(Boolean).join(" · "));
+      item.value = id;
+      item.disabled = Boolean(candidate.disabled);
+      item.setAttribute("title", candidate.title ||
+        [candidate.provider, candidate.reference, candidate.text].filter(Boolean).join(" · "));
       select.append(item);
     }
-    const first = options.keys().next().value;
+    const first = [...options].find(([, candidate]) => !candidate.disabled)?.[0];
     const initial = row.selected_sha256 && options.has(row.selected_sha256) ?
       row.selected_sha256 : row.built?.text_sha256 && options.has(row.built.text_sha256) ?
       row.built.text_sha256 : first;
@@ -246,9 +292,19 @@ function simpleEditor(row) {
       if (chosen) field.value = chosen.text;
     };
     select.addEventListener("change", useCandidate);
-    if (row.type === "quest" || row.selected_sha256 || options.size === 1) useCandidate();
+    // Unlike a verified candidate, an audit lead always requires deliberate
+    // selection. Viewing the record never fills the Ukrainian field from audit.
+    const hasOnlyAudit = row.type === "gossip" && !row.candidates.length;
+    if (!hasOnlyAudit && (row.type === "quest" || row.selected_sha256 ||
+        (row.candidates.length === 1 && selectableCount === 1))) useCandidate();
     else select.selectedIndex = -1;
     panel.append(select);
+  }
+  if (row.type === "gossip" && row.unverified_alternatives?.length) {
+    panel.append(make("p",
+      "Кандидати з аудиту не підтверджують відповідність NPC. " +
+      "Оберіть наявний український текст і перевірте його перед збереженням. " +
+      "Варіанти без українського перекладу недоступні для вибору.", "muted"));
   }
   const save = make("button", "Зберегти");
   save.type = "button";
@@ -257,11 +313,13 @@ function simpleEditor(row) {
     const text = field.value;
     if (!text.trim()) return;
     const chosen = select && options.get(select.value);
-    if (chosen && chosen.text === text) {
-      // Preserve the selected candidate's source when its text is untouched.
+    if (chosen && chosen.text === text && !chosen.audit) {
+      // Only reviewed/eligible candidate entries may keep their source
+      // provenance through choose_gossip. Audit leads are manual choices.
       run("choose_" + row.type, {candidate: chosen.sha256});
     } else {
-      // Any edited/pasted text is the user's manual translation.
+      // Audit suggestions and edited/pasted text are explicit manual
+      // translations, revalidated for placeholders by the backend.
       run("save_" + row.type, {text});
     }
   });
@@ -344,6 +402,7 @@ async function detail(id, button) {
       el("inspector-heading").tabIndex = -1;
       el("inspector-heading").focus();
     }
+    return row;
   } catch (error) {
     if (seq === detailSeq) el("selected").replaceChildren(make("p", errorMessage(error)));
   }
