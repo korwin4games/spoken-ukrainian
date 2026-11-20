@@ -2,17 +2,18 @@
 ## Title: Spoken Ukrainian: Quests
 ## Notes: Local testing only. Ukrainian Quest translation preview; no recorded audio and no Spoken caption override.
 ## Version: 0.1.0-test
-## Dependencies: Spoken, Spoken_Quests, Spoken_Ukrainian
+## Dependencies: Spoken, Spoken_Ukrainian
 ## LoadOnDemand: 1
 ## Group: Spoken
 ## X-Part-Of: Spoken Ukrainian
-## X-SpokenQuests-DataModule-Version: 1
-## X-SpokenQuests-DataModule-Priority: 50
-## X-SpokenQuests-Language: ukUA
+## X-Spoken-Text: ukUA
+## X-Spoken-TextFormat: 1
+## X-Spoken-LanguageFont: NotoSans-Regular.ttf
 ## X-Spoken-LanguageName: Ukrainian
 ## X-Spoken-LanguageNative: Українська
 
 Translations.lua
+TextPack.lua
 QuestFont.lua
 Module.lua
 NativeQuestFrame.lua
