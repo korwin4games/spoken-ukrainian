@@ -25,7 +25,8 @@ EXPECTED = {
         "Spoken_Quest_UA.toc", "Translations.lua", "TextPack.lua", "Module.lua", "NativeQuestFrame.lua",
         "GossipQuestTitles.lua",
     },
-    "Spoken_Gossip_UA": {"Spoken_Gossip_UA.toc", "GossipTranslations.lua", "TextPack.lua", "GossipFrame.lua"},
+    "Spoken_Gossip_UA": {"Spoken_Gossip_UA.toc", "GossipTranslations.lua", "TextPack.lua", "GossipFrame.lua",
+                         "NotoSans-Regular.ttf", "OFL-NotoSans.txt"},
 }
 QUEST_RUNTIME_FILES = {"QuestFont.lua", "QuestJournal.lua", "NotoSans-Regular.ttf", "OFL-NotoSans.txt"}
 MAX_TOTAL_BYTES = 96 * 1024 * 1024
