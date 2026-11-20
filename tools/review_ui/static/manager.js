@@ -275,7 +275,7 @@ function renderDetail(row) {
   }
   const status = row.ready_to_import ? "Готовий до імпорту" : row.built ? "У ZIP" :
     row.needs_choice ? "Проблемний · оберіть переклад" : "Проблемний";
-  const blocks = [make("h3", row.label), make("p", row.npc_id ? "NPC " + row.npc_id + " ? " + row.id : row.id, "muted"),
+  const blocks = [make("h3", row.label), make("p", row.npc_id ? "NPC " + row.npc_id + " · " + row.id : row.id, "muted"),
     badge(status, row.built && !row.ready_to_import ? "built" : ""), english, simpleEditor(row)];
   if (row.contexts?.length) {
     const context = make("details");
@@ -288,7 +288,7 @@ function renderDetail(row) {
     for (const item of row.unverified_alternatives) {
       if (item.english) evidence.append(make("p", item.english, "original"));
       if (item.ukrainian) evidence.append(make("p", item.ukrainian));
-      evidence.append(make("p", [item.kind, item.reference, item.scope, item.hash].filter(Boolean).join(" ? "), "muted"));
+      evidence.append(make("p", [item.kind, item.reference, item.scope, item.hash].filter(Boolean).join(" · "), "muted"));
     }
     blocks.push(evidence);
   }
@@ -391,6 +391,7 @@ el("filters").addEventListener("submit", event => { event.preventDefault(); rese
 el("quest-filter").addEventListener("change", resetList);
 function refreshModuleControls() {
   el("inventory-heading").textContent = "Переклади " + domainName();
+  el("operation-heading").textContent = "Створення модуля " + domainName();
   el("reimport").textContent = "Створити модуль";
 }
 el("module").addEventListener("change", () => {
