@@ -669,7 +669,8 @@ def build_gossip(classicua, spoken, destination):
         npc, hashed = row["npc_id"], row["english_hash"]
         gossip["byNpc"].setdefault(npc, {})[hashed] = selection["rendered"]
         units.append({"domain": "gossip", "unit": f"npc:{npc}:{hashed}", "entity": str(npc),
-                      "source": selection["source"], "route": "user_selected",
+                      "source": selection["source"],
+                      "route": "pinned_unique" if selection.get("auto") else "user_selected",
                       "text_sha256": sha(selection["rendered"])})
     forms = read_classicua_inflections(classicua, view.state.source.files)
     entries = template_entries(None, render_gossip_lua(gossip, inflections=forms), module=GOSSIP_MODULE)
