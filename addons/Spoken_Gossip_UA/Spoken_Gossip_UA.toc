@@ -5,6 +5,11 @@
 ## Dependencies: Spoken_Ukrainian
 ## Group: Spoken
 ## X-Part-Of: Spoken Ukrainian
+## X-Spoken-Text: ukUA
+## X-Spoken-TextFormat: 1
+## X-Spoken-LanguageName: Ukrainian
+## X-Spoken-LanguageNative: Українська
 
 GossipTranslations.lua
+TextPack.lua
 GossipFrame.lua
