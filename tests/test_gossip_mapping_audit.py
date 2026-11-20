@@ -1,4 +1,5 @@
 import gzip
+import csv
 import json
 from hashlib import sha256
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import patch
 from zipfile import ZipFile
 
 from tools.build_ukrainian import render_gossip_lua
+from tools.gossip_candidate_tables import candidate_tables, one_edit, template, tokens
 from tools.gossip_mapping_audit import (
     ALIAS_PATH, CORPUS_PATH, TOC_PATH, audit, classicua_hash, dynamic_code,
     dynamic_match, prepared_reason, replies, source_comments, spoken_baseline, zip_inventory,
@@ -25,6 +27,37 @@ def nonzero(counts):
 
 
 class GossipMappingAuditTests(unittest.TestCase):
+    def test_candidate_tables_keep_npc_identity_and_all_wording_leads_separate(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            line = dict(row("a", "Hello $N!"), corpus_index=4, npcName="Fixture")
+            pair = {"category": "no_evidence", "npc_id": 7, "hash": 12,
+                    "corpus_indices": [4], "canonical_ids": [line["lineId"]]}
+            sources = {(scope, 13): {"scope": scope, "hash": 13, "english": "Hello <name>!",
+                                     "file": "fixture.lua", "key_line": 8}
+                       for scope in (7, "!common", 8)}
+            counts = candidate_tables(root, "test", "pin", [line], [pair], sources, {},
+                                     {7: [{"expansion": "classic", "name": "fixture"}]})
+            self.assertEqual(counts["pairs_with_catalog_id_and_name"], 1)
+            self.assertEqual(counts["pairs_with_competing_text_leads"], 1)
+            with (root / "pairs-test.csv").open(encoding="utf-8-sig", newline="") as stream:
+                pair_row, = csv.DictReader(stream)
+            self.assertEqual(len(json.loads(pair_row["classicua_candidates"])), 2)
+            with (root / "links-test.csv").open(encoding="utf-8-sig", newline="") as stream:
+                links = list(csv.DictReader(stream))
+            self.assertEqual([(r["test"], r["source_scope"]) for r in links],
+                             [("same_template", "7"), ("same_template", "!common")])
+            self.assertEqual(template("$C$B$B7"), "<class> 7")
+            self.assertNotEqual(tokens(template("$R")), tokens(template("$N")))
+
+    def test_one_word_review_preserves_length_and_order(self):
+        words = tuple("a b c d e f".split())
+        self.assertTrue(one_edit(words, (*words, "g")))
+        self.assertTrue(one_edit(words, (*words[:-1], "g")))
+        self.assertFalse(one_edit(words, words))
+        self.assertFalse(one_edit(words, tuple(reversed(words))))
+        self.assertFalse(one_edit(words, words[:-1]))
+
     def test_layout_candidates_preserve_both_sources_and_do_not_count_as_direct(self):
         sources = {}
         for english in ("A\nB", "A\n\nB"):

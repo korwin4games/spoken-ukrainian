@@ -78,6 +78,34 @@ A second lookup rendered line breaks on both sides and compared runs of whitespa
 
 Reading the lookup in reverse explains the 211 unused ClassicUA records. For 210, the normalized comment original is absent from the entire Spoken Gossip corpus, including objects. The remaining record at `entries/sod/gossip.lua:199` is scoped to NPC 243023. Four other NPCs use that exact wording. All eight Chat overlaps belong to NPC 14849, and the glossary overlap for NPC 259011 points to `entries/forever/spell.lua:514`. These are candidates for context inspection.
 
+## Fields available for the remaining 4,855 pairs
+
+The comparison covers 5,002 Spoken rows for 1,685 NPCs and all 427 effective ClassicUA Gossip records.
+
+| Parameter | Spoken | ClassicUA | Use |
+| --- | --- | --- | --- |
+| Speaker | Every row has `npcId`, `npcName`, and `npcType=creature` | 100 records under 15 numeric NPC keys, 327 under `!common`. Scope headers can carry a name comment | Search the same NPC and common scopes |
+| Name catalog | 1,678 distinct NPC names | `dev/database/classicua.db`, table `npcs`, fields `id`, `name`, `expansion` | All 4,855 pairs have an ID in Classic, SoD or Forever. For 4,796 the normalized name also agrees in at least one layer |
+| Original wording | `originalText` on all 5,002 rows | Verified English comment for each numeric hash | Compare English and hash within scope |
+| Text parameters | `$N`, `$C`, `$R`, `$B` | Comments can contain `<name>`, `<class>`, line breaks and other placeholders | Align known player slots and whitespace, retain numbers, punctuation and word order for template comparison |
+| Line identity | `lineId`, `fileName`, each with 3,810 distinct values | Scoped numeric English hash, 26 records with a separate `!code` pattern | Keep both keys and evidence |
+| Voice and variants | `text`, `race`, `gender`, `voice` on every row, `flavor` on 4,672 and `playerGender` on 264 | Ukrainian value, fingerprint and inline placeholders. Gossip has no separate voice or player-gender field | Preserve individual Spoken contexts |
+| Metadata | `source`, `generatable`, `skipReason` (363 populated), `contributionId` (508), empty `questId` and `questTitle` | Revision, layer, file and digest, comment, key and value lines | Traceability. Neither export provides a shared numeric BroadcastText ID here |
+
+Only nine residual pairs from three NPCs (8737, 12919 and 270582) have any NPC-specific Gossip records. The remaining 4,846 pairs can use only the common scope. The separate NPC name catalog supports speaker comparison.
+
+| Test | Pairs of 4,855 | Result |
+| --- | ---: | --- |
+| Same English template after player-slot and whitespace normalization | **79** | 72 NPCs and 14 source records. 78 pairs use common records, one uses the Forever record for NPC 270582 |
+| One token edit after tokenization | **9** | Five `mage` versus `<class>`, three `ye` versus `you`, one `journies` versus `journeys` |
+| Neither test yielded a lead | **4,767** | Each of the 88 pairs with a lead has one candidate among the 427 scoped records searched |
+
+For NPC 270582, `g:35da71c883eec22c22999a7c44dee8dc` links by template to hash `1522051887` at `entries/forever/gossip.lua:18`. For NPC 68, `g:a28ad28e180fb23f6b2f30a8926dd8d3` links to common hash `3230762823` at `entries/classic/gossip.lua:470`. The looser test allows one insertion, deletion or substitution with at least six tokens on each side. These are review candidates. Direct coverage still uses the original hash.
+
+The audit exports private UTF-8 CSVs under `build/gossip-candidate-tables/`. `spoken-3.10.1.csv` contains all 5,002 rows and speaker catalog records. `classicua.csv` contains all 427 source records, English comments and provenance. `links-3.10.1.csv` contains all 88 leads with both English texts, keys and source locations. Separate Spoken and link tables are written for 3.9.0.
+
+Open `pairs-3.10.1.csv` for a side-by-side view. Each of the 4,855 pairs occupies one row with its NPC, English original, canonical IDs, name check and all source candidates with hashes, wording and provenance. An empty candidate list records that the scoped search produced no line-level lead.
+
 ## Recommended implementation PRs
 
 1. Give the private Gossip editor the Quest-style write/paste and choose flows for one verified NPC/type and original at a time. Reuse a single selection across variants only when pinned evidence establishes their shared context. Keep the existing review decisions, drafts, provenance and imports intact in SQLite. Record newly saved text as a local selection ready for import. Keep existing approval meanings for older decisions and retain the legacy CLI and batch paths until compatibility is verified.

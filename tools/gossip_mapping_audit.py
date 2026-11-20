@@ -22,6 +22,7 @@ from adapters.classicua.source import GitSource, audit_checkout
 from tools.build_ukrainian import local_gossip_texts
 from tools.gossip_coverage import CORPUS_PATH, audit_gossip_rows, classicua_hash
 from tools.gossip_translation_review import normalized
+from tools.gossip_candidate_tables import candidate_tables, npc_catalog
 
 ALIAS_PATH = "pipelines/quests/corpus/gossip_aliases.json"
 TOC_PATH = "addons/Spoken/Spoken.toc"
@@ -129,6 +130,8 @@ def source_comments(text, path):
                 raise ValueError(f"{path}:{entry.key.line}: English comment hash mismatch")
             yield {
                 "scope": scope.key.value, "hash": key, "file": path,
+                "scope_line": scope.key.line,
+                "scope_comment": lines[scope.key.line - 1].partition("--")[2].strip(),
                 "key_line": entry.key.line, "value_line": entry.value.line,
                 "column": entry.value.column, "comment_first_line": index + 2,
                 "comment_last_line": entry.key.line - 1, "english": english,
@@ -458,7 +461,9 @@ def main():
     classicua = json.loads((ROOT / "sources.lock.json").read_text(encoding="utf-8"))["classicua"]
     pins = json.loads((ROOT / "config/gossip_audit_baselines.json").read_text(encoding="utf-8"))
     declarations, *source = source_inventory(args.classicua, classicua)
+    names, catalog_sha = npc_catalog(args.classicua, classicua["revision"])
     summary = {"classicua_revision": classicua["revision"],
+               "classicua_npc_database_sha256": catalog_sha,
                "comment_hash_checks": len(declarations),
                "comment_hash_checks_by_file": dict(Counter(row["file"] for row in declarations)),
                "effective_hash_entries": len(source[0]),
@@ -469,6 +474,9 @@ def main():
     for version, path in (("3.9.0", args.spoken_390), ("3.10.1", args.spoken_3101)):
         lines, aliases = spoken_baseline(path, pins[version])
         counts, rows, mapping = audit(lines, aliases, *source)
+        counts["residual_tables"] = candidate_tables(
+            ROOT / "build/gossip-candidate-tables", version, pins[version]["revision"],
+            rows, mapping, source[0], source[1], names)
         summary["spoken"][version] = {"revision": pins[version]["revision"], **counts}
         evidence["spoken"][version] = {"revision": pins[version]["revision"],
                                        "aliases": aliases, "rows": rows, "mapping": mapping}
