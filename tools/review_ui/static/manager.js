@@ -276,7 +276,7 @@ function renderDetail(row) {
     }
     english.append(context);
   }
-  const status = row.ready_to_import ? "Готовий до імпорту" : row.built ? "У ZIP" :
+  const status = row.ready_to_import ? "Готовий до імпорту" : row.built ? "Імпортовано" :
     row.needs_choice ? "Проблемний · оберіть переклад" : "Проблемний";
   const blocks = [make("h3", row.label), make("p", row.npc_id ? "NPC " + row.npc_id + " · " + row.id : row.id, "muted"),
     badge(status, row.built && !row.ready_to_import ? "built" : ""), english, simpleEditor(row)];
