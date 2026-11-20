@@ -771,6 +771,7 @@ el("module").addEventListener("change", () => {
   el("reset").checked = false;
   for (const id of ["metrics", "rows", "selected", "operation-status", "install-status", "build-state", "match-count", "page"])
     el(id).replaceChildren();
+  el("install-status").textContent = "";
   el("prev").disabled = el("next").disabled = true;
   el("run-summary").hidden = true;
   refreshModuleControls();
