@@ -4,7 +4,7 @@ import json
 import unittest
 
 from lua_runtime import run_lua
-from test_stage1 import LOCK, ROOT, git, quote_lua, snapshot
+from test_stage1 import LEGACY_LOCK, ROOT, git, quote_lua, snapshot
 
 
 class RuntimeCompatibilityTests(unittest.TestCase):
@@ -12,10 +12,10 @@ class RuntimeCompatibilityTests(unittest.TestCase):
     def setUpClass(cls):
         cls.before = snapshot()
         manifest = json.loads((ROOT / "tests/stage2b_sources.json").read_text())
-        if manifest["revision"] != LOCK["spoken"]["revision"]:
+        if manifest["revision"] != LEGACY_LOCK["revision"]:
             raise AssertionError("Stage 2B source revision differs from project pin")
         cls.sources = {}
-        for path, digest in {**LOCK["spoken"]["files"], **manifest["files"]}.items():
+        for path, digest in {**LEGACY_LOCK["files"], **manifest["files"]}.items():
             data = git("show", manifest["revision"] + ":" + path)
             if hashlib.sha256(data).hexdigest() != digest:
                 raise AssertionError("Pinned source hash mismatch: " + path)
