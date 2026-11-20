@@ -23,7 +23,8 @@ from adapters.sqlite_translation_store import connection, DB_ENV, SQLiteDocument
 from tools import build_ukrainian as builder
 from tools.manager_inventory import ModuleInventory, latest_units, load_inventory
 from tools.review_ui_server import create_handler
-from tools.translation_manager import MODULE, ManagerUI, db_stamp, main, reimport, reset_test_state
+from tools.translation_manager import (MODULE, ManagerUI, db_stamp, main, reimport,
+                                       reset_test_state, wow_addons_destination)
 
 
 def row(identity, kind, label, status, *, built=False, recorded=False, english="", ukrainian=""):
@@ -65,6 +66,97 @@ class ManagerTests(unittest.TestCase):
             rows=[{"domain": "quests", "unit": "42:accept", "entity": "42",
                    "source": "classicua", "route": "machine_1to1"}])
         return {"artifact": artifact, "sha256": digest, "import_inventory": inventory}
+
+    def test_wow_path_appends_forever_addons_and_trims_trailing_separator(self):
+        windows = "D:\\Games\\World of Warcraft"
+        expected = windows + "\\_forever_\\Interface\\AddOns"
+        self.assertEqual(wow_addons_destination(windows, platform="nt"), expected)
+        self.assertEqual(wow_addons_destination(windows + "\\", platform="nt"), expected)
+        self.assertEqual(wow_addons_destination(windows + "\\\\", platform="nt"), expected)
+        self.assertEqual(wow_addons_destination(windows.replace("\\", "/") + "/",
+                                                platform="nt"), expected)
+        linux_root = str(self.root / "Game") + "/"
+        self.assertEqual(wow_addons_destination(linux_root, platform="posix"),
+                         str(self.root / "Game" / "_forever_" / "Interface" / "AddOns"))
+        for bad in ("", " ", "World of Warcraft", "D:World of Warcraft",
+                    "\\\\remote\\games\\World of Warcraft", "D:\\foo\\..\\bar",
+                    "D:\\Games\\World of Warcraft\\_forever_", "D:\\Games\\WOW\x00"):
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                    ValueError, "manager_install_invalid_wow_path"):
+                wow_addons_destination(bad, platform="nt")
+        with self.assertRaisesRegex(ValueError, "manager_install_windows_path_on_non_windows"):
+            wow_addons_destination(windows, platform="posix")
+
+    def test_manager_install_existing_zip_creates_backup_and_preserves_upstream(self):
+        from tools.install_addon import install
+        wow_root = self.root / "World of Warcraft"
+        addons = wow_root / "_forever_" / "Interface" / "AddOns"
+        for name in ("Spoken", "Spoken_Quests"):
+            folder = addons / name
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / (name + ".toc")).write_text("upstream", encoding="utf-8")
+        for name in ("Spoken_Ukrainian", MODULE):
+            folder = addons / name
+            folder.mkdir()
+            (folder / "old.lua").write_text("old content", encoding="utf-8")
+        payload = builder.template_entries(builder.render_quest_lua({
+            42: {"accept": {"text": "Вітаю", "reviewed": False, "quick": True}}},
+            "a" * 40))
+        archive, digest = builder.write_zip(payload, self.archive)
+        store_successful_build(self.db, module=MODULE, artifact_sha256=digest,
+            spoken_revision="a" * 40, classicua_revision="b" * 40,
+            rows=[{"domain": "quests", "unit": "42:accept", "entity": "42",
+                   "source": "manual", "route": "user_selected",
+                   "text_sha256": sha256("Вітаю".encode()).hexdigest()}])
+        manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
+        result = manager.action("install", {
+            "module": MODULE, "wow_path": str(wow_root) + os.sep})
+        self.assertEqual(result["addons"], str(addons))
+        self.assertEqual(set(result["installed"]), {"Spoken_Ukrainian", MODULE})
+        self.assertEqual(set(result["replaced"]), {"Spoken_Ukrainian", MODULE})
+        self.assertTrue(Path(result["backup"]).is_dir())
+        for name in ("Spoken_Ukrainian", MODULE):
+            self.assertEqual((Path(result["backup"]) / name / "old.lua").read_text(), "old content")
+            self.assertFalse((addons / name / "old.lua").exists())
+        self.assertEqual((addons / MODULE / "Translations.lua").read_bytes(),
+                         payload[MODULE + "/Translations.lua"])
+        for name in ("Spoken", "Spoken_Quests"):
+            self.assertEqual((addons / name / (name + ".toc")).read_text(), "upstream")
+
+    def test_install_requires_tracked_zip_and_never_builds_implicitly(self):
+        wow_root = self.root / "World of Warcraft"
+        addons = wow_root / "_forever_" / "Interface" / "AddOns"
+        addons.mkdir(parents=True)
+        manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
+        with patch("tools.translation_manager.subprocess.run") as worker:
+            with self.assertRaisesRegex(ValueError, "manager_install_module_not_built"):
+                manager.action("install", {"module": MODULE, "wow_path": str(wow_root)})
+            worker.assert_not_called()
+        self.assertEqual(list(addons.iterdir()), [])
+        with self.assertRaisesRegex(ValueError, "manager_invalid_options"):
+            manager.action("install", {
+                "module": MODULE, "wow_path": str(wow_root), "archive": "/tmp/other.zip"})
+        with self.assertRaisesRegex(ValueError, "manager_install_addons_directory_missing"):
+            manager.action("install", {"module": MODULE, "wow_path": str(self.root / "missing")})
+
+    def test_manager_install_rejects_outdated_archive_without_replacing_addons(self):
+        wow_root = self.root / "World of Warcraft"
+        addons = wow_root / "_forever_" / "Interface" / "AddOns"
+        addons.mkdir(parents=True)
+        archive, digest = builder.write_zip(
+            builder.template_entries(builder.render_quest_lua({
+                42: {"accept": {"text": "A", "reviewed": False, "quick": True}}}, "a" * 40)),
+            self.archive)
+        store_successful_build(self.db, module=MODULE, artifact_sha256=digest,
+                               spoken_revision="a" * 40, classicua_revision="b" * 40, rows=[])
+        archive.write_bytes(archive.read_bytes() + b"corruption")
+        manager = ManagerUI(*self.paths, self.db)
+        self.addCleanup(manager.close)
+        with self.assertRaisesRegex(ValueError, "manager_install_archive_outdated"):
+            manager.action("install", {"module": MODULE, "wow_path": str(wow_root)})
+        self.assertEqual(list(addons.iterdir()), [])
 
     def test_inventory_search_filters_pages_and_missing_details(self):
         self.assertEqual(self.view.page()["total"], 2)
