@@ -71,6 +71,7 @@ class SimpleQuestTests(TestCase):
         with TemporaryDirectory() as temp:
             db = Path(temp) / "choices.sqlite3"
             row = self.row(state, ("Вітаю.", "Доброго дня."))
+            row["candidates"][0]["provider"] = "classicua"
             apply_choice("choose_quest", {
                 "identity": self.target, "binding": row["review_binding"],
                 "candidate": sha("Вітаю."), "confirm": True,
