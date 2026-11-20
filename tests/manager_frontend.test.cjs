@@ -191,6 +191,65 @@ test("Gossip audit alternatives populate the editor but save as manual choices",
   assert.equal(b.requests.some(request => request.action === "import_ready"), false);
 });
 
+test("Saved Gossip audit suggestion shows Ready only after server confirms updated status", async () => {
+  let saved = false;
+  const id = "gossip:295:934080707";
+  const candidate = "Даруючи знаки любові, ви отримуєте подарунки.";
+  const row = {...fixture, type:"gossip", id, label:"Innkeeper Farley",
+    review_binding:"verified-binding", originals:["When you give love tokens."],
+    candidates:[], unverified_alternatives:[{kind:"same_template", ukrainian:candidate,
+      english:"When you give love tokens.", reference:"entries/gossip.lua:30"}]};
+  const b = browser((action, body) => {
+    if (action === "save_gossip") { saved = true; return {module:gossip, build:"review_saved"}; }
+    if (action === "detail") return {...row, ready_to_import:saved, status:saved ? "ready" : "missing",
+      recorded:saved};
+    return listing(body.module);
+  });
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  await b.run('detail("' + id + '")');
+  const nodes = b.el("selected").all();
+  const select = nodes.find(node => node.tag === "select");
+  select.value = "audit:0";
+  select.events.change();
+  nodes.find(node => node.textContent === "Зберегти").events.click();
+  await flush();
+  await flush();
+  assert.equal(b.requests.find(request => request.action === "save_gossip").text, candidate);
+  assert.match(b.el("operation-status").textContent, /Збережено\. Готовий до імпорту/);
+  assert.equal(b.requests.filter(request => request.action === "detail").length, 2);
+  assert.equal(b.requests.some(request => request.action === "import_ready"), false);
+});
+
+test("Gossip editor never claims Ready if reloaded status is still problematic", async () => {
+  const id = "gossip:295:934080707";
+  const row = {...fixture, type:"gossip", id, review_binding:"verified-binding",
+    originals:["When you give love tokens."], candidates:[],
+    unverified_alternatives:[{kind:"same_template", ukrainian:"Переклад.",
+      english:"When you give love tokens.", reference:"entries/gossip.lua:30"}]};
+  const b = browser((action, body) => {
+    if (action === "save_gossip") return {module:gossip, build:"review_saved"};
+    if (action === "detail") return row; // stale or invalid persisted choice
+    return listing(body.module);
+  });
+  await flush();
+  b.el("module").value = gossip;
+  b.el("module").events.change();
+  await flush();
+  await b.run('detail("' + id + '")');
+  const nodes = b.el("selected").all();
+  const select = nodes.find(node => node.tag === "select");
+  select.value = "audit:0";
+  select.events.change();
+  nodes.find(node => node.textContent === "Зберегти").events.click();
+  await flush();
+  await flush();
+  assert.match(b.el("operation-status").textContent, /не підтверджено/);
+  assert.doesNotMatch(b.el("operation-status").textContent, /Готовий до імпорту — натисніть/);
+});
+
 test("Gossip same-template auto-ready candidate is not duplicated by its audit lead", async () => {
   const text = "Срібнокрилим стражам потрібна допомога, {Ім'я}.";
   const row = {...fixture, type:"gossip", id:"gossip:68:1978831227",
