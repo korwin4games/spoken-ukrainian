@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Spoken Ukrainian: Quests
-## Notes: Local testing only. Ukrainian Quest translation preview; no recorded audio and no Spoken caption override.
+## Notes: Private Ukrainian Quest text pack for Spoken captions and Compendium, with native Quest UI support; no recorded audio.
 ## Version: 0.1.0-test
 ## Dependencies: Spoken, Spoken_Ukrainian
 ## Group: Spoken
