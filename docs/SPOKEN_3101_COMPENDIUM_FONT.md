@@ -44,3 +44,34 @@ stock fonts for English fallback, and handle stock and skinned pages.
 
 The automated test runs the pinned resolver with simulated client font support.
 Right-page glyph acceptance remains open in [issue #38](https://github.com/korwin4games/spoken-ukrainian/issues/38).
+
+
+## Prepared upstream implementation
+
+[PR #43](https://github.com/korwin4games/spoken-ukrainian/pull/43) now includes a
+[minimal official-Spoken patch proposal](upstream/spoken-quests-compendium-font.patch).
+**Spoken Ukrainian does not apply the patch to the installed player.**
+It is intended for upstream maintainers or testing on a temporary copy of the
+pinned source, not for silently altering the player's files.
+
+The patch only changes `addons/Spoken_Quests/UI/QuestsTab.lua`:
+- `QuestsTab:FontFor(fontObject)` obtains the effective Text Language from
+  `VO.Language:GetTextLanguage()` and delegates to the public
+  `Spoken:FontForLanguage(fontObject, language, self)`.
+- `C.NewPage(holder, QuestsTab)` passes the font-aware page owner.
+  Existing `Compendium.lua` and `TextView.lua` already call the owner's
+  `FontFor` for the page title, part headings, body, and skin font resolution.
+- If the public font API is absent, existing client fonts remain the fallback.
+  English Text Language keeps the ordinary official Spoken font selection.
+
+A separate regression test copies the pinned upstream Quest tab into a
+temporary directory, applies the proposed patch there using `git apply`,
+and executes the font adapter in Lua. It never edits the upstream checkout.
+
+```sh
+uv run --locked python -m unittest discover -s tests -p 'test_spoken_upstream_quest_font_patch.py' -v
+```
+
+**This is not a shipped in-game fix.** It requires acceptance in an official
+Spoken release, a separate validated pin upgrade, and real WoW: Forever glyph
+testing before closing issue #38.
