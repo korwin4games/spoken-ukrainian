@@ -20,7 +20,7 @@ class FreshGossipBuildTests(unittest.TestCase):
         hashed = classicua_hash(english)
         lines = [{"lineId": "g:test", "source": "gossip", "npcId": npc,
                   "npcType": "creature", "originalText": english} for npc in (42, 43)]
-        leaf = SimpleNamespace(origin=SimpleNamespace(file="synthetic.lua", line=4))
+        leaf = SimpleNamespace(origin=SimpleNamespace(file="entries/classic/gossip.lua", line=4))
         state = SimpleNamespace(
             inventory=SimpleNamespace(revision="a" * 40, contexts={"g:test": [
                 {"npc_id": npc, "npc_type": "creature", "wording_sha256": digest(english)}

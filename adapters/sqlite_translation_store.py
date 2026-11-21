@@ -263,7 +263,8 @@ def _initialize_schema(db):
                 SELECT identity,evidence,text,text_sha256,source,reference FROM gossip_simple_choices""")
             db.execute("DROP TABLE gossip_simple_choices")
             db.execute("ALTER TABLE gossip_simple_choices_v11 RENAME TO gossip_simple_choices")
-            db.execute("ALTER TABLE build_import_units ADD COLUMN decision TEXT")
+            if "decision" not in {r[1] for r in db.execute("PRAGMA table_info(build_import_units)")}:
+                db.execute("ALTER TABLE build_import_units ADD COLUMN decision TEXT")
         db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)", (SCHEMA_VERSION,))
         db.commit()
     except BaseException:
