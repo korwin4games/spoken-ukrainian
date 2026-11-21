@@ -47,6 +47,9 @@ uv run --locked python tools/install_addon.py --addons "/path/to/World of Warcra
 
 ## Ігрове тестування — ще не виконано
 
+Причину квадратиків на правій сторінці завдання та команду для перевірки
+описано в [розборі шрифтів Компендіуму](SPOKEN_3101_COMPENDIUM_FONT.uk.md).
+
 1. Встановіть офіційні `Spoken` та `Spoken_Quests` версії 3.10.1. Увімкніть **тільки Quest** і перевірте Spoken Settings → Language → **Text Language → Ukrainian**. Виконайте `/reload`.
 2. Перевірте кирилицю **і ї є ґ І Ї Є Ґ**, українські назви квестів, accept/complete в Compendium та англійський fallback.
 3. Перевірте QuestFrame, журнал, Shift для оригіналу, ім’я/клас/расу/стать та перенесення рядків.

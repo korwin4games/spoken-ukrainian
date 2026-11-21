@@ -4,6 +4,9 @@ Issue #38 / PR #39. Text is independent of any Ukrainian voice pack. **This is a
 private local-test build, not a public release.** Actual WoW: Forever client
 acceptance remains outstanding.
 
+The reported right-page squares are tracked in the
+[Quest Compendium font investigation](SPOKEN_3101_COMPENDIUM_FONT.md).
+
 ## Verified upstream source contract
 
 - Active source pin: official `spoken/v3.10.1` commit
