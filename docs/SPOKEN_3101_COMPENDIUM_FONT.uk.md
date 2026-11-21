@@ -44,3 +44,36 @@
 
 Автоматичний тест перевіряє метод Spoken на імітованому клієнті. Перевірка
 літер на правій сторінці залишається відкритою в [issue #38](https://github.com/korwin4games/spoken-ukrainian/issues/38).
+
+
+## Підготовлене виправлення для upstream
+
+У межах [PR #43](https://github.com/korwin4games/spoken-ukrainian/pull/43) додано
+[мінімальний патч для офіційного Spoken](upstream/spoken-quests-compendium-font.patch).
+Патч **не встановлюється нашим аддоном** і не змінює локальні файли WoW.
+Він призначений для прийняття супроводжувачами Spoken або ізольованої перевірки
+на тимчасовій копії закріпленого джерела.
+
+Зміни тільки в `addons/Spoken_Quests/UI/QuestsTab.lua`:
+- `QuestsTab:FontFor(fontObject)` використовує фактичну `Text Language`
+  через `VO.Language:GetTextLanguage()` і публічний
+  `Spoken:FontForLanguage(fontObject, language, self)`.
+- `C.NewPage(holder, QuestsTab)` надає цей метод штатній сторінці.
+  `Compendium.lua` і `TextView.lua` уже підтримують `FontFor` власника,
+  зокрема для заголовка, основного тексту, назв частин і тем оформлення.
+- За відсутності нового API застосовується звичайний шрифт клієнта.
+  Англійська `Text Language` використовує вибір шрифту офіційного Spoken.
+
+Перевірка патча відбувається **без зміни upstream checkout**: тест копіює
+файл закріпленої ревізії в тимчасовий каталог, виконує
+`git apply --check` і `git apply` до копії та перевіряє Lua-метод.
+Запуск із локально доступним checkout `spoken-wow`:
+
+```sh
+uv run --locked python -m unittest discover -s tests -p 'test_spoken_upstream_quest_font_patch.py' -v
+```
+
+**Не вважайте виправлення доступним у грі**, поки воно не потрапить до
+офіційного релізу Spoken. Після цього потрібно окремо оновити закріплену
+версію, повторити тести й перевірити кирилицю у WoW: Forever. Issue #38
+залишається відкритим.
