@@ -41,6 +41,7 @@ class GossipTextsTests(unittest.TestCase):
 
     def test_synthetic_gossip_module_hashes_npc_reply_shift_and_fallback(self):
         data = builder.local_gossip_texts(self.fixture_state())
+        data["greetingsByNpc"] = {42: {3242472692: "Вигадане привітання."}}
         generated = builder.render_gossip_lua(data)
         self.assertIn("Вітаю", generated.decode())
         self.assertNotIn("unknown-pattern", generated.decode())
@@ -149,6 +150,8 @@ eventFrame:Fire("MODIFIER_STATE_CHANGED")
 local reply = stringWidget()
 reply.count = 0
 function reply:Resize() self.count = self.count + 1 end
+GossipGreetingTextMixin.Setup(greet, "Where is the inn?")
+assert(greet.GreetingText:GetText() == "Вигадане привітання.")
 GossipOptionButtonMixin.Setup(reply, {name = "Where is the inn?"})
 assert(reply:GetText() == "> Ось де заїзд.")
 assert(reply.count >= 2)

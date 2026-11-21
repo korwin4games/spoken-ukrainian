@@ -49,14 +49,15 @@ local function EnglishHash(value)
     return math.fmod(count, 4294967291)
 end
 
-local function TranslatedText(npcID, sourceText)
+local function TranslatedText(npcID, sourceText, kind)
     if not npcID or type(sourceText) ~= "string" then return nil end
     local hash = EnglishHash(sourceText)
     if not hash then return nil end
     local excluded = corpus.excluded and corpus.excluded[npcID]
     if excluded and excluded[hash] then return nil end
     local byNpc = corpus.byNpc and corpus.byNpc[npcID]
-    local translation = (byNpc and byNpc[hash])
+    local greetings = kind == "greeting" and corpus.greetingsByNpc and corpus.greetingsByNpc[npcID]
+    local translation = (greetings and greetings[hash]) or (byNpc and byNpc[hash])
         or (corpus.common and corpus.common[hash])
     if type(translation) ~= "string" or translation == "" then return nil end
     return SU:ExpandQuestText(translation)
@@ -75,7 +76,7 @@ end
 local function Resize(widget, owner, kind)
     if kind == "reply" then
         if type(owner.Resize) == "function" then owner:Resize() end
-    elseif kind == "npc" then
+    elseif kind == "npc" or kind == "greeting" then
         if owner and type(owner.SetHeight) == "function"
                 and type(widget.GetHeight) == "function" then
             owner:SetHeight(widget:GetHeight())
@@ -99,7 +100,7 @@ local function Capture(widget, english, owner, kind)
     snapshots[widget] = nil
     if ClassicUAActive() then return end
     local npcID = NpcID()
-    local uk = TranslatedText(npcID, english)
+    local uk = TranslatedText(npcID, english, kind)
     if type(uk) ~= "string" or uk == "" then return end
     local original = widget:GetText()
     if type(original) ~= "string" or original == "" then return end
@@ -115,15 +116,15 @@ local function Capture(widget, english, owner, kind)
     Refresh(widget, snapshot)
 end
 
-local function OnNPCText(widget, english, owner)
+local function OnNPCText(widget, english, owner, kind)
     if writing[widget] then return end
     if type(widget.GetText) ~= "function" then return end
-    Capture(widget, english, owner, "npc")
+    Capture(widget, english, owner, kind or "npc")
 end
 
 local function OnGreetingSetup(frame, english)
     if not frame or not frame.GreetingText then return end
-    OnNPCText(frame.GreetingText, english, frame)
+    OnNPCText(frame.GreetingText, english, frame, "greeting")
 end
 
 local function OnReplySetup(row, info)

@@ -9,6 +9,7 @@ from adapters.crosswalk import digest
 from adapters.source_revision_store import sha
 from adapters.sqlite_translation_store import connection
 from tools.gossip_coverage import gossip_evidence
+from tools import gossip_provider_policy as providers
 from tools.quest_simple import usable_text
 
 
@@ -211,6 +212,47 @@ def selections(db_path):
             "SELECT identity,evidence,text,text_sha256,source,reference FROM gossip_simple_choices")}
 
 
+def ua_forever_choices(records, npc, hashed, members, originals):
+    from tools.gossip_candidate_tables import template
+    from tools.gossip_coverage import classicua_hash
+    from tools.gossip_mapping_audit import wording
+    from tools.manager_inventory import review_candidate
+
+    context_sha256 = digest(members)
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        text, english = record.get("text"), record.get("english")
+        if (record.get("npc_id") != npc or record.get("english_hash") != hashed
+                or record.get("scope") not in (npc, "!common")
+                or record.get("role") != "greeting" or record.get("faction") != "shared"
+                or record.get("context_sha256") != context_sha256
+                or record.get("revision") != providers.UA_REVISION
+                or record.get("file_sha256") != providers.UA_GOSSIP_SHA256
+                or type(record.get("line")) is not int or record["line"] < 1
+                or not isinstance(text, str) or record.get("sha256") != sha(text)
+                or not classicua_hash(english) or re.search(r"\$\d+[A-Za-z]", text)):
+            continue
+        exact = classicua_hash(english) == hashed and all(
+            wording(original) == wording(english) for original in originals)
+        if exact:
+            kind = "exact_common" if record["scope"] == "!common" else "exact_npc"
+        elif (template(english) and all(template(original) == template(english) for original in originals)
+              and len({tuple(sorted(Counter(TOKENS.findall(original)).items()))
+                       for original in originals}) == 1):
+            kind = "same_template"
+        else:
+            continue
+        try:
+            for original in originals:
+                runtime_text(original, text)
+        except ValueError:
+            continue
+        ref = f"{providers.UA_GOSSIP_PATH}:{record['line']} [{record['scope']}][{classicua_hash(english)}]"
+        yield review_candidate(text, "ua_forever", ref, record["revision"], "candidate") | {
+            "match_type": kind, "file_sha256": record["file_sha256"]}
+
+
 def rows(state, lines, db_path, units, audit=None):
     from tools.build_ukrainian import local_gossip_texts
     from tools.manager_inventory import review_candidate, status_for, translation_state
@@ -218,6 +260,7 @@ def rows(state, lines, db_path, units, audit=None):
     lookup = local_gossip_texts(state)
     groups, unsafe = contexts(state, lines)
     stored = selections(db_path)
+    ua_forever = providers.load_ua_forever_candidates(state)
     for (npc, hashed), members in sorted(groups.items()):
         identity = f"gossip:{npc}:{hashed}"
         originals = sorted({line["originalText"] for line in members})
@@ -244,8 +287,9 @@ def rows(state, lines, db_path, units, audit=None):
                 except ValueError:
                     continue
                 choices.append(review_candidate(text, "classicua", ref, state.source.revision, "candidate")
-                               | {"match_type": "exact_common" if scope == "!common" else "exact_npc"})
-        ambiguous_audit = False
+                               | {"match_type": "exact_common" if scope == "!common" else "exact_npc",
+                                  "file_sha256": state.source.files.get(leaf.origin.file)})
+        ambiguous = set()
         auto_context_safe = match.get("category") != "ambiguous_npc_type"
         if binding and auto_context_safe and not choices and match:
             matching = safe_audit_candidates(match, originals, npc, state, lookup)
@@ -253,14 +297,23 @@ def rows(state, lines, db_path, units, audit=None):
                 (scope, source_hash), (kind, leaf, value) = matching[0]
                 ref = f"{leaf.origin.file}:{leaf.origin.line} [{scope}][{source_hash}]"
                 choices.append(review_candidate(value, "classicua", ref, state.source.revision, "candidate")
-                               | {"match_type": kind})
+                               | {"match_type": kind, "file_sha256": state.source.files.get(leaf.origin.file)})
             elif len(matching) > 1:
-                ambiguous_audit = True
-        selected, built, stale = None, None, False
+                ambiguous.add("classicua")
+        if binding and auto_context_safe and (npc, hashed) in ua_forever:
+            ua_choices = list(ua_forever_choices(ua_forever[npc, hashed], npc, hashed, members, originals))
+            if (len({c["reference"] for c in ua_choices}) > 1
+                    and all(c["match_type"] == "same_template" for c in ua_choices)):
+                ambiguous.add("ua_forever")
+            choices[:0] = ua_choices
+        preferred, selected, built, stale = None, None, None, False
+        provider, reason = None, providers.UNSAFE
         if identity in stored:
             old, text, fingerprint, source, ref = stored[identity]
+            preferred = next((c for c in choices if c["sha256"] == fingerprint
+                              and c["reference"] == ref and c["provider"] == source), None)
             current = old == binding and sha(text) == fingerprint and (
-                source == "manual" or any(c["sha256"] == fingerprint and c["reference"] == ref for c in choices))
+                source == "manual" or preferred is not None)
             if current:
                 try:
                     # Persisted choices must still fit every verified wording
@@ -270,32 +323,34 @@ def rows(state, lines, db_path, units, audit=None):
                 except ValueError:
                     current = False
             if current:
+                provider, reason = source, providers.EXPLICIT
                 selected = {"text": text, "rendered": rendered, "source": source, "reference": ref,
-                            "match_type": next((c["match_type"] for c in choices
-                                                if c["sha256"] == fingerprint and c["reference"] == ref),
-                                               "manual" if source == "manual" else "unknown")}
+                            "match_type": preferred["match_type"] if preferred else "manual"}
                 if source == "manual":
-                    choices.append(review_candidate(text, source, ref, state.inventory.revision, "selected"))
-                unit = units.get(("gossip", f"npc:{npc}:{hashed}"))
-                if unit and unit["route"] == "user_selected" and unit["text_sha256"] == sha(rendered):
-                    built = unit | {"text_sha256": fingerprint}
+                    preferred = review_candidate(text, source, ref, state.inventory.revision, "selected")
+                    choices.append(preferred)
             stale = not current
-        # A single safe, unambiguous ClassicUA translation needs no manual
-        # selection. Ambiguous NPC types or explicit choices require review.
-        # A stale explicit user choice must never be silently overwritten.
-        if identity not in stored and binding and auto_context_safe:
-            unique = {candidate["sha256"]: candidate for candidate in choices}
-            if len(unique) == 1:
-                candidate = next(iter(unique.values()))
-                text = candidate["text"]
+            if stale:
+                provider, reason = None, providers.STALE
+        elif binding and auto_context_safe:
+            preferred, provider, reason = providers.resolve_provider(choices, ambiguous=ambiguous)
+            if preferred:
+                text = preferred["text"]
                 rendered = runtime_text(originals[0], text)
                 selected = {"text": text, "rendered": rendered,
-                            "source": "classicua", "reference": candidate["reference"],
-                            "auto": True, "match_type": candidate.get("match_type", "exact_npc")}
-                unit = units.get(("gossip", f"npc:{npc}:{hashed}"))
-                if (unit and unit["route"] == "pinned_unique"
-                        and unit["text_sha256"] == sha(rendered)):
-                    built = unit | {"text_sha256": sha(text)}
+                            "source": provider, "reference": preferred["reference"],
+                            "auto": True, "match_type": preferred["match_type"]}
+        choices = providers.deduplicate(choices, preferred)
+        decision = {"provider": provider, "reason": reason, "provenance": []}
+        if selected:
+            fingerprint = sha(selected["text"])
+            decision["provenance"] = next(c["provenance"] for c in choices if c["sha256"] == fingerprint)
+            route = "pinned_unique" if selected.get("auto") else "user_selected"
+            unit = units.get(("gossip", f"npc:{npc}:{hashed}"))
+            if (unit and unit["route"] == route and unit["source"] == provider
+                    and unit["text_sha256"] == sha(selected["rendered"])
+                    and unit.get("decision", decision) == decision):
+                built = unit | {"text_sha256": fingerprint}
         alternatives = []
         for field in ("corpus_alternate", "whitespace_candidates", "alternatives", "wrong_npc_scope",
                       "other_families", "glossary", "dynamic", "reply_only", "template_candidates"):
@@ -309,7 +364,7 @@ def rows(state, lines, db_path, units, audit=None):
                                      "reference": f"{origin.get('file', '')}:{origin.get('key_line', origin.get('line', ''))}",
                                      "scope": scope, "hash": source_hash, "ukrainian": text})
         ready = selected is not None and built is None
-        conflict = (ambiguous_audit or len({c["sha256"] for c in choices}) > 1) and selected is None
+        conflict = reason == providers.AMBIGUOUS
         yield {"id": identity, "type": "gossip", "label": members[0].get("npcName") or f"NPC {npc}",
                "npc_id": npc, "english_hash": hashed, "originals": originals,
                "contexts": evidence_contexts, "review_binding": binding,
@@ -319,8 +374,11 @@ def rows(state, lines, db_path, units, audit=None):
                "translation_state": translation_state(choices), "built": built,
                "recorded": identity in stored and selected is not None,
                "ready_to_import": ready, "needs_choice": conflict, "candidate_conflict": conflict,
-               "unverified_alternatives": alternatives, "match_types": audit_match_types(match),
+               "unverified_alternatives": alternatives, "match_types": list(dict.fromkeys(
+                   audit_match_types(match) + [c["match_type"] for c in choices
+                                               if c["provider"] == "ua_forever"])),
                "candidates": choices, "selection": selected,
+               "provider_decision": decision,
                "selected_sha256": sha(selected["text"]) if selected else None}
 
 

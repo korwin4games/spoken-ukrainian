@@ -103,6 +103,7 @@ class GossipSimpleUITests(TestCase):
 
     def test_manager_save_gossip_updates_cached_detail_and_ready_filter(self):
         """Exercise the exact browser Save -> SQLite -> list/detail reload path."""
+        from contextlib import closing
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
 
@@ -120,7 +121,6 @@ class GossipSimpleUITests(TestCase):
             with connection(db_path):
                 pass
             manager = manager_module.ManagerUI(root / "ClassicUA", root / "Spoken", db_path)
-            self.addCleanup(manager.close)
 
             def view_loader(classicua, spoken, db_path, archive, *, module, input_loader):
                 self.assertEqual(module, builder.GOSSIP_MODULE)
@@ -133,7 +133,7 @@ class GossipSimpleUITests(TestCase):
 
             archive_paths = {builder.QUEST_MODULE: root / "quest.zip",
                              builder.GOSSIP_MODULE: gossip_zip}
-            with patch.object(builder, "DIST", root), patch.object(
+            with closing(manager), patch.object(builder, "DIST", root), patch.object(
                     manager_module, "ARCHIVES", archive_paths), patch.object(
                     manager, "validate_checkouts", return_value=("verified-pins",)), patch(
                     "tools.manager_inventory.load_inventory", side_effect=view_loader):

@@ -366,6 +366,29 @@ function renderDetail(row) {
     badge(status, row.built && !row.ready_to_import ? "built" : ""), english, simpleEditor(row)];
   if (row.type === "gossip") {
     blocks.push(make("p", "Тип відповідності: " + matchText(row.match_types), "muted"));
+    if (row.provider_decision) {
+      const providers = {ua_forever: "UA Forever", classicua: "ClassicUA",
+        manual: "Власний переклад", original_english: "Англійська"};
+      const reasons = {explicit_selection: "Збережений вибір",
+        higher_priority_provider: "Пріоритет джерела",
+        identical_provider_translations: "Однаковий переклад в обох джерелах",
+        unique_provider_candidate: "Єдиний придатний переклад",
+        classicua_fallback: "Резервне джерело",
+        provider_ambiguous: "Джерело має кілька різних перекладів",
+        english_fallback: "Збережено англійський оригінал",
+        stale_selection: "Збережений вибір потребує перевірки",
+        unsafe_context: "Контекст потребує перевірки"};
+      const {provider, reason, provenance} = row.provider_decision;
+      blocks.push(make("p", [providers[provider], reasons[reason]].filter(Boolean).join(" · "), "muted"));
+      if (provenance?.length) {
+        const origins = make("details");
+        origins.append(make("summary", "Походження вибраного перекладу"));
+        for (const origin of provenance) {
+          origins.append(make("p", [providers[origin.provider], origin.reference, origin.revision].join(" · ")));
+        }
+        blocks.push(origins);
+      }
+    }
     if (row.selection?.auto) {
       blocks.push(make("p", "Автоматично вибрано для локального тестування: " +
         (matchNames[row.selection.match_type] || row.selection.match_type), "muted"));
