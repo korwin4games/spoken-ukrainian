@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: Spoken Ukrainian: Interface
+## Notes: Ukrainian interface strings for Spoken 3.10.1.
+## Version: 0.1.0-test
+## Dependencies: Spoken
+## LoadOnDemand: 1
+## Group: Spoken
+## X-Part-Of: Spoken Ukrainian
+## X-Spoken-Interface: ukUA
+## X-Spoken-InterfaceFormat: 1
+## X-Spoken-LanguageName: Ukrainian
+## X-Spoken-LanguageNative: Українська
+
+Interface.lua

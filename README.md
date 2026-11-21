@@ -1,5 +1,9 @@
 # Spoken Ukrainian 🇺🇦
 
+**Ukrainian interface for Spoken 3.10.1.** Install the optional
+`Spoken_Interface_UA` addon to translate Spoken's settings and Compendium
+labels through **Interface Language**. [Setup guide](docs/SPOKEN_3101_INTERFACE_PACK.md).
+
 **Spoken 3.10.1 text-only integration (merged PR #39; private WoW test builds):** Quest and Gossip have independent Ukrainian Text Packs for Spoken captions/Compendium. The source pin is now the audited 3.10.1 tag; canonical/variant mappings fail closed, with no Ukrainian voice pack required. Native Quest/Gossip hooks are retained, and Gossip includes its own Cyrillic font. **Actual WoW: Forever testing is still required.** [Integration and rollback guide](docs/SPOKEN_3101_TEXT_PACK.md).
 
 ## Quest auto-import rules (private testing)
