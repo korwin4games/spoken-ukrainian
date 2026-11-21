@@ -173,10 +173,11 @@ def _validate_build_rows(rows):
         raise ValueError("invalid_build_inventory_rows")
     indexed = {}
     for row in rows:
-        if type(row) is not dict or set(row) not in (
-                {"domain", "unit", "entity", "source", "route"},
-                {"domain", "unit", "entity", "source", "route", "text_sha256"}):
+        required = {"domain", "unit", "entity", "source", "route"}
+        if type(row) is not dict or not required <= row.keys() <= required | {"text_sha256", "decision"}:
             raise ValueError("invalid_build_inventory_row")
+        if "decision" in row:
+            _validate_gossip_build_decision(row)
         if "text_sha256" in row and (type(row["text_sha256"]) is not str
                                       or not HEX64.fullmatch(row["text_sha256"])):
             raise ValueError("invalid_build_inventory_text_fingerprint")
@@ -191,6 +192,31 @@ def _validate_build_rows(rows):
             raise ValueError("duplicate_build_inventory_unit")
         indexed[key] = row
     return [indexed[k] for k in sorted(indexed)]
+
+
+def _validate_gossip_build_decision(row):
+    from tools.gossip_provider_policy import EXPLICIT, FALLBACK, IDENTICAL, PRIORITY_WIN, UNIQUE
+
+    decision = row["decision"]
+    if (row["domain"] != "gossip" or type(decision) is not dict
+            or set(decision) != {"provider", "reason", "provenance"}
+            or decision["provider"] != row["source"]
+            or decision["provider"] not in ("classicua", "ua_forever", "manual")
+            or decision["reason"] not in (EXPLICIT, FALLBACK, IDENTICAL, PRIORITY_WIN, UNIQUE)
+            or type(decision["provenance"]) is not list or not decision["provenance"]):
+        raise ValueError("invalid_gossip_build_decision")
+    for origin in decision["provenance"]:
+        keys = {"provider", "revision", "reference", "sha256"}
+        if (type(origin) is not dict or not keys <= origin.keys() <= keys | {"file_sha256"}
+                or origin["provider"] not in ("classicua", "ua_forever", "manual")
+                or not isinstance(origin["revision"], str) or not re.fullmatch(r"[a-f0-9]{40}", origin["revision"])
+                or not isinstance(origin["sha256"], str) or not HEX64.fullmatch(origin["sha256"])
+                or ("file_sha256" in origin and (not isinstance(origin["file_sha256"], str)
+                                                 or not HEX64.fullmatch(origin["file_sha256"])))
+                or not isinstance(origin["reference"], str)
+                or not re.fullmatch(r"(?:local_selection|entries/[a-z0-9_/]+/gossip\.lua:\d+ "
+                                    r"\[(?:!common|\d+)\]\[\d+\])", origin["reference"])):
+            raise ValueError("invalid_gossip_build_decision")
 
 
 def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
@@ -223,10 +249,12 @@ def store_successful_build(db_path, *, artifact_sha256, spoken_revision,
                     (fingerprint, artifact_sha256, spoken_revision, classicua_revision, module))
                 snapshot_id = cur.lastrowid
                 db.executemany("""INSERT INTO build_import_units
-                    (snapshot_id, domain, unit_key, entity_key, source, route, text_sha256)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (snapshot_id, domain, unit_key, entity_key, source, route, text_sha256, decision)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     [(snapshot_id, r["domain"], r["unit"], r["entity"],
-                      r["source"], r["route"], r.get("text_sha256", "")) for r in checked])
+                      r["source"], r["route"], r.get("text_sha256", ""),
+                      json.dumps(r["decision"], sort_keys=True) if "decision" in r else None)
+                     for r in checked])
                 new = True
             if module is None:
                 db.execute("""INSERT INTO build_import_head(singleton, snapshot_id) VALUES(1, ?)

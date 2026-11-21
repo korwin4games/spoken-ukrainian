@@ -338,6 +338,18 @@ test("Verified Gossip candidates retain source provenance when audit alternative
   assert.equal(b.requests.some(request => request.action === "save_gossip"), false);
 });
 
+test("Gossip details show selected provider and its decision reason", async () => {
+  const row = {...fixture, type:"gossip", id:"gossip:3143:1810368146",
+    provider_decision:{provider:"ua_forever", reason:"higher_priority_provider",
+      provenance:[{provider:"ua_forever", reference:"gossip.lua:99", revision:"pinned-fixture"}]}};
+  const b = browser((action, body) => action === "detail" ? row : listing(body.module));
+  await flush();
+  b.run("renderDetail(" + JSON.stringify(row) + ")");
+  const content = b.el("selected").all().map(node => node.textContent).join("\n");
+  assert.match(content, /UA Forever · Пріоритет джерела/);
+  assert.match(content, /UA Forever · gossip\.lua:99 · pinned-fixture/);
+});
+
 test("Gossip uses the selected module and retains the shared path during operation", async () => {
   let complete;
   const pending = new Promise(resolve => { complete = resolve; });

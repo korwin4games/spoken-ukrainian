@@ -435,7 +435,8 @@ def local_gossip_texts(state):
 
 def render_gossip_lua(gossip, *, excluded=(), inflections=None):
     """UTF-8 Lua data table, packed into private ignored ZIP only."""
-    if type(gossip) is not dict or set(gossip) != {"byNpc", "common"}:
+    if type(gossip) is not dict or set(gossip) not in (
+            {"byNpc", "common"}, {"byNpc", "common", "greetingsByNpc"}):
         raise ValueError("invalid_gossip_lookup")
     lines = [
         "-- GENERATED local test from audited source and human-reviewed Gossip hashes.",
@@ -443,18 +444,21 @@ def render_gossip_lua(gossip, *, excluded=(), inflections=None):
         "SpokenUkrainian = SpokenUkrainian or {}",
         *inflection_lines(inflections),
         "SpokenUkrainian.GossipTexts = {",
-        "    byNpc = {",
     ]
-    for npcID, rows in sorted(gossip["byNpc"].items()):
-        if type(npcID) is not int or npcID <= 0 or type(rows) is not dict:
-            raise ValueError("invalid_gossip_npc_id")
-        lines.append("        [%d] = {" % npcID)
-        for digest, value in sorted(rows.items()):
-            if type(digest) is not int or not 0 < digest < 4294967291:
-                raise ValueError("invalid_gossip_text_hash")
-            lines.append("            [%d] = %s," % (digest, lua_quote(value)))
-        lines.append("        },")
-    lines.append("    },")
+    for field in ("byNpc", "greetingsByNpc"):
+        if field not in gossip:
+            continue
+        lines.append(f"    {field} = {{")
+        for npcID, rows in sorted(gossip[field].items()):
+            if type(npcID) is not int or npcID <= 0 or type(rows) is not dict:
+                raise ValueError("invalid_gossip_npc_id")
+            lines.append("        [%d] = {" % npcID)
+            for digest, value in sorted(rows.items()):
+                if type(digest) is not int or not 0 < digest < 4294967291:
+                    raise ValueError("invalid_gossip_text_hash")
+                lines.append("            [%d] = %s," % (digest, lua_quote(value)))
+            lines.append("        },")
+        lines.append("    },")
     lines.append("    common = {")
     for digest, value in sorted(gossip["common"].items()):
         if type(digest) is not int or not 0 < digest < 4294967291:
@@ -683,11 +687,15 @@ def build_gossip(classicua, spoken, destination):
         if selection is None:
             continue
         npc, hashed = row["npc_id"], row["english_hash"]
-        gossip["byNpc"].setdefault(npc, {})[hashed] = selection["rendered"]
+        if selection["source"] == "ua_forever":
+            gossip.setdefault("greetingsByNpc", {}).setdefault(npc, {})[hashed] = selection["rendered"]
+        else:
+            gossip["byNpc"].setdefault(npc, {})[hashed] = selection["rendered"]
         units.append({"domain": "gossip", "unit": f"npc:{npc}:{hashed}", "entity": str(npc),
                       "source": selection["source"],
                       "route": "pinned_unique" if selection.get("auto") else "user_selected",
-                      "text_sha256": sha(selection["rendered"])})
+                      "text_sha256": sha(selection["rendered"]),
+                      **({"decision": row["provider_decision"]} if "provider_decision" in row else {})})
     forms = read_classicua_inflections(classicua, view.state.source.files)
     from tools.spoken_text_pack import gossip_payload, render_spoken_text_pack
 
@@ -703,7 +711,9 @@ def build_gossip(classicua, spoken, destination):
         db_path, artifact_sha256=digest, module=GOSSIP_MODULE, rows=units,
         spoken_revision=view.state.inventory.revision, classicua_revision=view.state.source.revision)
     return {"artifact": artifact, "sha256": digest, "import_inventory": imported,
-            "gossip_text_records": {"npc_ids": len(gossip["byNpc"]), "npc_hashes": len(units),
+            "gossip_text_records": {"npc_ids": len(gossip["byNpc"].keys()
+                                                   | gossip.get("greetingsByNpc", {}).keys()),
+                                    "npc_hashes": len(units),
                                     "common_hashes": 0}}
 
 

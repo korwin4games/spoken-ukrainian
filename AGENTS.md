@@ -1,5 +1,10 @@
 # Instructions for coding agents
 
+## Gossip provider priority and rights
+
+- Preserve valid explicit local selections. Then prefer one eligible UA Forever 1.0.6 greeting, fall back to ClassicUA when UA Forever has no eligible candidate, and preserve English when neither supplies one. A unique higher-priority candidate wins when the providers disagree. Hold ambiguities within the first eligible provider for review. Collapse identical texts while retaining both sources' provenance. Preserve historical approvals and decisions.
+- UA Forever acquisition stays disabled until the project records reuse permission and attribution. Test the policy with synthetic provider records and metadata-only counts. Share one resolver across Manager, CLI, readiness and ZIP export. Retain stable decision reasons, source revision and fingerprints, scoped greeting and original evidence, runtime placeholder parity, and the whole-corpus canonical-ID checks.
+
 - A single scoped, provenance-verified `same_template` Gossip candidate can be **automatically ready** when the English templates match and **all** required runtime placeholders match. Count documented ClassicUA grammatical forms such as `{Ім'я}`, `{Клас}`, `{Раса}` and `{стать:male:female}` as the equivalents of `$N`, `$C`, `$R` and `$G`; retain the original forms for expansion in-game. Still reject missing/extra/mismatched placeholders, unsupported inflections, NPC-scope conflicts and unverified evidence. Distinguish a truly safe sole candidate from the existence of one **unverified audit lead**. Dropdown labels must be compact; keep full references in the audit detail view.
 ## Gossip validation: distinguish content slots from layout
 

@@ -1,5 +1,39 @@
 # Spoken ↔ ClassicUA Gossip mapping audit
 
+## UA Forever priority and coverage projection
+
+The private Gossip Manager and CLI share the same decision used for the
+independent Gossip ZIP. A current explicit user selection takes precedence.
+Otherwise, one eligible UA Forever 1.0.6 greeting wins over ClassicUA, including
+when their translations differ. If UA Forever has no eligible candidate,
+ClassicUA can supply one. Multiple distinct eligible choices within the first
+eligible provider stay pending. Identical text appears once with both sources'
+provenance. Where neither provider supplies a candidate, the game keeps English.
+
+The UA Forever acquisition boundary is closed until reuse permission and
+attribution are documented. There is no production option to load its text.
+An authorized adapter must verify the pin, greeting role, NPC scope, English
+hash, all original contexts and placeholder compatibility. Faction-restricted
+candidates require additional runtime scope evidence. UA Forever greeting data
+has a separate native lookup from menu replies and Quest-frame greetings.
+
+The metadata-only empty-ledger projection uses UA Forever 1.0.6
+(`0bbc033be68b6e48b098f0891eaca1b974b2d954`) and the two active pins below.
+UA Forever wins all 244 differing cross-provider pairs and is attributed
+alongside ClassicUA for 2,177 identical ones. The 83 pairs with an eligible
+ClassicUA choice but unresolved UA Forever ambiguity stay pending. Technical
+coverage is **6,572 / 7,429 native pairs (88.46%)** and **3,321 / 4,641 global
+Spoken IDs (71.56%)** after the complete-corpus export check. Eligible coverage
+with UA Forever disabled remains **2,504 / 7,429 (33.71%)** in the same
+empty-ledger comparison. These counts describe verified source opportunities
+before rights clearance and live-client acceptance. [UA Forever 1.0.6](https://github.com/sysrover/UA_Forever/releases/tag/1.0.6)
+
+The Manager shows the provider and the reason for its decision. Its JSON summary
+provides reason counts. Successful builds record text-free reason codes and
+provider references, revisions and fingerprints in SQLite, alongside the
+existing artifact and unit metadata. Automatic resolution never writes a human
+selection or approval.
+
 ## Source revisions and reproduction
 
 | Source | Commit | Role |

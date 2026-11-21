@@ -1,6 +1,7 @@
 """Private read model joining pinned originals, review evidence and ZIP inventory."""
 from collections import Counter, defaultdict
 from functools import cached_property
+import json
 from types import SimpleNamespace
 
 from adapters.auto_one_to_one import EVENT_POSITION, machine_candidates
@@ -61,10 +62,11 @@ def latest_units(db, archive, spoken_revision, classicua_revision, module=MODULE
             (module, module, spoken_revision, classicua_revision)).fetchone()
         if not head or file_stamp(archive) != head[1]:
             return {}, None
-        rows = db.execute("""SELECT domain, unit_key, source, route, text_sha256
+        rows = db.execute("""SELECT domain, unit_key, source, route, text_sha256, decision
             FROM build_import_units WHERE snapshot_id=?""", (head[0],)).fetchall()
         return {(domain, key): {"source": source, "route": route, "text_sha256": fingerprint}
-                for domain, key, source, route, fingerprint in rows}, {"sha256": head[1], "built_at": head[2]}
+                | ({"decision": json.loads(decision)} if decision else {})
+                for domain, key, source, route, fingerprint, decision in rows}, {"sha256": head[1], "built_at": head[2]}
     finally:
         db.rollback()
 
@@ -117,6 +119,11 @@ class ModuleInventory:
                             "unverified_alternatives": sum(bool(r.get("unverified_alternatives")) for r in rows),
                             "not_included_by_status": dict(pending),
                             "by_status": dict(counts)}
+            if kind == "gossip":
+                decisions = [r["provider_decision"] for r in rows if "provider_decision" in r]
+                result[kind]["provider_reasons"] = dict(Counter(d["reason"] for d in decisions))
+                result[kind]["selected_providers"] = dict(Counter(
+                    r["selection"]["source"] for r in rows if r.get("selection")))
         result["gossip_archive_units"] = {
             "npc_hash_pairs": sum(domain == "gossip" for domain, _ in self.units),
             "common_hashes": sum(domain == "gossip_common" for domain, _ in self.units),

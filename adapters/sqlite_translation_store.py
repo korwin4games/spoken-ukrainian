@@ -21,7 +21,7 @@ LEDGER_NAMES = frozenset({
     "gossip-machine-one-to-one.json",
 })
 DB_ENV = "SPOKEN_TRANSLATION_DB"
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 def default_db_path():
@@ -253,6 +253,18 @@ def _initialize_schema(db):
             identity TEXT PRIMARY KEY, evidence TEXT NOT NULL, text TEXT NOT NULL,
             text_sha256 TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('classicua', 'manual')),
             reference TEXT NOT NULL)""")
+        if not db.execute("SELECT 1 FROM schema_migrations WHERE version=11").fetchone():
+            db.execute("""CREATE TABLE gossip_simple_choices_v11 (
+                identity TEXT PRIMARY KEY, evidence TEXT NOT NULL, text TEXT NOT NULL,
+                text_sha256 TEXT NOT NULL, source TEXT NOT NULL
+                    CHECK(source IN ('classicua', 'manual', 'ua_forever')),
+                reference TEXT NOT NULL)""")
+            db.execute("""INSERT INTO gossip_simple_choices_v11
+                SELECT identity,evidence,text,text_sha256,source,reference FROM gossip_simple_choices""")
+            db.execute("DROP TABLE gossip_simple_choices")
+            db.execute("ALTER TABLE gossip_simple_choices_v11 RENAME TO gossip_simple_choices")
+            if "decision" not in {r[1] for r in db.execute("PRAGMA table_info(build_import_units)")}:
+                db.execute("ALTER TABLE build_import_units ADD COLUMN decision TEXT")
         db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (?)", (SCHEMA_VERSION,))
         db.commit()
     except BaseException:
